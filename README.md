@@ -7,6 +7,8 @@ authorized to test.
 **Core loop:** Register target → Map attack surface → Threat model → Test →
 Evidence → Risk score → Remediate → Retest (before/after).
 
-See [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the original concept notes
-(drafted under the working title "AegisAI").
-# Sentra
+## License
+
+Copyright (c) 2026 Joynto Ghosh, Md. Azizul Islam and Sumaiyea Binte Faruque.
+All rights reserved. This is not open-source software: no part of it may be
+used, copied or distributed without written permission. See [LICENSE](LICENSE).

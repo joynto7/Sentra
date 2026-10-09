@@ -1,0 +1,24 @@
+# Local only (not pushed): report, diagrams, UI plan, handoff files
+docs/
+.claude/
+CLAUDE.md
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets
+.env
+
+# Build outputs
+*.pdf
+PROJECT_BRIEF.md
