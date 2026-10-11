@@ -1,0 +1,82 @@
+# Local development stack. Start it with:  docker compose up -d
+# The web app runs with `npm run dev` in frontend/, or in Docker with:
+#   docker compose --profile web up -d
+name: sentra
+
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+psycopg://sentra:sentra@db:5432/sentra
+    REDIS_URL: redis://redis:6379/0
+    CORS_ORIGINS: '["http://localhost:3000"]'
+  volumes:
+    - ./backend:/app
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_USER: sentra
+      POSTGRES_PASSWORD: sentra
+      POSTGRES_DB: sentra
+    ports:
+      - "5433:5432"   # for database tools on your laptop: localhost:5433
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentra -d sentra"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4.11-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    # Catches every e-mail Sentra sends during development: http://localhost:8025
+    image: axllent/mailpit:v1.31.2
+    ports:
+      - "8025:8025"
+
+  api:
+    <<: *backend
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *backend
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+
+  web:
+    profiles: ["web"]
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+
+volumes:
+  db-data:
