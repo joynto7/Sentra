@@ -1,0 +1,11 @@
+# Direct dependencies of the API server and workers (exact versions).
+# requirements.txt is generated from this file and pins every package.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.1
+alembic==1.20.0
+psycopg[binary]==3.3.6
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.3.0
+celery[redis]==5.6.3
