@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { ChevronsUpDown, LogOut } from "lucide-react"
+import { LogOut } from "lucide-react"
 
 import {
   Sidebar,
@@ -25,18 +25,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { OrganizationSwitcher } from "@/components/layout/organization-switcher"
 import { SentraLogo } from "@/components/layout/sentra-logo"
 import { useSession } from "@/components/session-provider"
 import { visibleNavigation } from "@/config/navigation"
 import { apiFetch } from "@/lib/api"
-import { initials, placeholderMembership } from "@/lib/session"
+import { initials } from "@/lib/session"
 
 export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const user = useSession()
-  const membership = placeholderMembership
-  const groups = visibleNavigation(membership.role)
+  // Pages inside the app always have an organization (the session provider makes sure).
+  const organization = user.organization!
+  const groups = visibleNavigation(organization.role)
 
   async function logOut() {
     await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
@@ -52,14 +54,7 @@ export function AppSidebar() {
             Sentra
           </span>
         </Link>
-        <button
-          type="button"
-          className="flex h-9 items-center justify-between rounded-md border border-sidebar-border px-2.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden"
-          aria-label={`Organization: ${membership.organization}`}
-        >
-          <span className="truncate">{membership.organization}</span>
-          <ChevronsUpDown className="size-4 text-sidebar-label" aria-hidden="true" />
-        </button>
+        <OrganizationSwitcher current={organization} />
       </SidebarHeader>
 
       <SidebarContent className="px-1">
@@ -108,7 +103,7 @@ export function AppSidebar() {
             </span>
             <span className="min-w-0 group-data-[collapsible=icon]:hidden">
               <span className="block truncate text-sm font-medium text-white">{user.name}</span>
-              <span className="block truncate text-xs text-sidebar-label">{membership.roleLabel}</span>
+              <span className="block truncate text-xs text-sidebar-label">{organization.role_label}</span>
             </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
