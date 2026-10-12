@@ -5,6 +5,7 @@ Each module package may contain:
     schemas.py  request and response shapes
     service.py  business logic
     router.py   API endpoints, exposed as `router`
+    startup.py  work to do when the API starts, exposed as `on_startup()`
 
 Modules are discovered automatically: adding a module never requires editing a
 shared file, so team members can work on different modules without conflicts.
@@ -12,7 +13,7 @@ shared file, so team members can work on different modules without conflicts.
 
 import importlib
 import pkgutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from types import ModuleType
 
 from fastapi import APIRouter
@@ -39,3 +40,8 @@ def load_models() -> None:
 def routers() -> list[APIRouter]:
     """The `router` of every module that has a router.py."""
     return [module.router for module in _submodules("router")]
+
+
+def startup_hooks() -> list[Callable[[], None]]:
+    """The `on_startup` function of every module that has a startup.py."""
+    return [module.on_startup for module in _submodules("startup")]
