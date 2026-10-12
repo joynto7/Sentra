@@ -49,7 +49,7 @@ def change_role(
     user = db.get_one(User, membership.user_id)
     if membership.role == role:
         return membership, user
-    if membership.role == Role.ORG_ADMIN and _admin_count(db, admin.organization_id) == 1:
+    if membership.role == Role.ORG_ADMIN and admin_count(db, admin.organization_id) == 1:
         raise ConflictError(
             f"{user.name} is the only Organization Administrator. "
             "Give another member this role first.",
@@ -67,7 +67,7 @@ def change_role(
     return membership, user
 
 
-def _admin_count(db: Session, organization_id: uuid.UUID) -> int:
+def admin_count(db: Session, organization_id: uuid.UUID) -> int:
     return db.scalar(
         select(func.count())
         .select_from(Membership)
