@@ -39,3 +39,22 @@ class UserOut(BaseModel):
 
 class MessageOut(BaseModel):
     message: str
+
+
+class OrganizationCreate(BaseModel):
+    name: str = Field(max_length=500)
+
+
+class OrganizationOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    role: str
+    role_label: str
+    is_current: bool = False
+
+
+class MeOut(UserOut):
+    """The logged-in user and the organization this browser is working in (None = none yet)."""
+
+    organization: OrganizationOut | None
