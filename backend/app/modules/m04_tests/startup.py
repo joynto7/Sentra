@@ -3,7 +3,8 @@ import logging
 from app.core.database import SessionLocal
 from app.modules.m04_tests.library import sync_built_in_library
 
-log = logging.getLogger(__name__)
+# Logged through uvicorn's logger, so the line appears in `docker compose logs api`.
+log = logging.getLogger("uvicorn.error")
 
 
 def on_startup() -> None:
