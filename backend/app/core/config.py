@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_lock_minutes: int = 15
 
+    # Encryption of target credentials (FR-2.2, NFR-3.1): an AES-256 key, base64-encoded, kept
+    # outside the database. Make one with:
+    #   python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"
+    credentials_key: str = ""
+    # Server-side request forgery protection (NFR-3.4): targets on private network addresses are
+    # refused, unless an on-premises deployment allows them.
+    allow_private_targets: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -15,6 +15,9 @@ x-backend: &backend
     SMTP_HOST: mailpit
     SMTP_PORT: "1025"
     COOKIE_SECURE: "false"   # local development runs on http://localhost
+    # Encrypts target credentials (FR-2.2). This key is for local development only;
+    # a CREDENTIALS_KEY in .env replaces it, and every real deployment sets its own.
+    CREDENTIALS_KEY: "${CREDENTIALS_KEY:-kqmQKFLVD12H8tuxKcXU0ZIN4O2Y/EMTbbrptiL5Yew=}"
   volumes:
     - ./backend:/app
   depends_on:
