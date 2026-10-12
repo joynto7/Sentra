@@ -1,0 +1,5 @@
+# Same line endings on Mac, Windows and Linux, so patches and diffs always match.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
