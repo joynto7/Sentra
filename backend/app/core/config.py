@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
     web_url: str = "http://localhost:3000"
+    # Run every module's startup.py when the API starts (switched off in the tests).
+    run_startup_hooks: bool = True
 
     # E-mail: "smtp" sends through SMTP (Mailpit in development); "memory" keeps
     # messages in app.core.email.outbox (used by the tests).
