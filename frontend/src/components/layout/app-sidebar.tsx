@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { ChevronsUpDown } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { ChevronsUpDown, LogOut } from "lucide-react"
 
 import {
   Sidebar,
@@ -17,13 +17,31 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SentraLogo } from "@/components/layout/sentra-logo"
+import { useSession } from "@/components/session-provider"
 import { visibleNavigation } from "@/config/navigation"
-import { currentUser, initials } from "@/lib/session"
+import { apiFetch } from "@/lib/api"
+import { initials, placeholderMembership } from "@/lib/session"
 
 export function AppSidebar() {
   const pathname = usePathname()
-  const groups = visibleNavigation(currentUser.role)
+  const router = useRouter()
+  const user = useSession()
+  const membership = placeholderMembership
+  const groups = visibleNavigation(membership.role)
+
+  async function logOut() {
+    await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
+    router.replace("/login")
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -37,9 +55,9 @@ export function AppSidebar() {
         <button
           type="button"
           className="flex h-9 items-center justify-between rounded-md border border-sidebar-border px-2.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden"
-          aria-label={`Organization: ${currentUser.organization}`}
+          aria-label={`Organization: ${membership.organization}`}
         >
-          <span className="truncate">{currentUser.organization}</span>
+          <span className="truncate">{membership.organization}</span>
           <ChevronsUpDown className="size-4 text-sidebar-label" aria-hidden="true" />
         </button>
       </SidebarHeader>
@@ -76,19 +94,35 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-3">
-        <div className="flex items-center gap-2.5">
-          <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-active text-xs font-semibold text-white"
-            aria-hidden="true"
+      <SidebarFooter className="border-t border-sidebar-border p-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex w-full items-center gap-2.5 rounded-md p-1.5 text-left hover:bg-sidebar-accent"
+            aria-label={`Account menu for ${user.name}`}
           >
-            {initials(currentUser.name)}
-          </span>
-          <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <p className="truncate text-sm font-medium text-white">{currentUser.name}</p>
-            <p className="truncate text-xs text-sidebar-label">{currentUser.roleLabel}</p>
-          </div>
-        </div>
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-active text-xs font-semibold text-white"
+              aria-hidden="true"
+            >
+              {initials(user.name)}
+            </span>
+            <span className="min-w-0 group-data-[collapsible=icon]:hidden">
+              <span className="block truncate text-sm font-medium text-white">{user.name}</span>
+              <span className="block truncate text-xs text-sidebar-label">{membership.roleLabel}</span>
+            </span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-56">
+            <DropdownMenuLabel className="font-normal">
+              <span className="block truncate text-sm font-medium">{user.name}</span>
+              <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={logOut}>
+              <LogOut aria-hidden="true" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
