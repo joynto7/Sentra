@@ -1,6 +1,10 @@
 import os
 from collections.abc import Iterator
 
+# Test settings, set before the app reads its configuration.
+os.environ.setdefault("EMAIL_BACKEND", "memory")
+os.environ.setdefault("COOKIE_SECURE", "false")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -9,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core import models  # noqa: F401
 from app.core.config import get_settings
 from app.core.database import Base, get_db
+from app.core.email import outbox
 from app.main import app
 from app.modules import load_models
 
@@ -41,6 +46,13 @@ def db(engine) -> Iterator[Session]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture(autouse=True)
+def _clear_outbox() -> Iterator[None]:
+    outbox.clear()
+    yield
+    outbox.clear()
 
 
 @pytest.fixture

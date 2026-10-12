@@ -12,6 +12,9 @@ x-backend: &backend
     DATABASE_URL: postgresql+psycopg://sentra:sentra@db:5432/sentra
     REDIS_URL: redis://redis:6379/0
     CORS_ORIGINS: '["http://localhost:3000"]'
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
+    COOKIE_SECURE: "false"   # local development runs on http://localhost
   volumes:
     - ./backend:/app
   depends_on:
