@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -88,3 +89,15 @@ class TargetCredential(UUIDPrimaryKey, Timestamps, Base):
     def decrypt(self) -> str:
         """Only the Target Connector calls this, at the moment it calls the target (FR-2.2)."""
         return crypto.decrypt(self.encrypted_value, self.context)
+
+
+class TargetPacing(Base):
+    """When the next request to a target may leave. The Target Connector spaces its requests with
+    it, so a target never gets more than its rate, whatever the number of workers (FR-5.7)."""
+
+    __tablename__ = "target_pacing"
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), primary_key=True
+    )
+    next_request_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
