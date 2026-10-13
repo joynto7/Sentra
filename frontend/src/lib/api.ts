@@ -46,7 +46,18 @@ export function fieldErrors(error: unknown): Record<string, string> {
   return Object.fromEntries(error.details.map((d) => [d.field, d.message]))
 }
 
-/** Only allow redirects to paths inside Sentra (prevents open redirects). */
+/**
+ * Only allow redirects to paths inside Sentra (prevents open redirects). The browser's own URL rules
+ * decide: "//host", "/\host" and "/<tab>/host" all start with "/" but lead to another site.
+ */
 export function safeNextPath(next: string | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"
+  if (!next?.startsWith("/")) return "/dashboard"
+  try {
+    const url = new URL(next, "http://sentra.local")
+    const path = `${url.pathname}${url.search}${url.hash}`
+    // "/.//host" is tidied up to "//host", so the result is checked again.
+    return url.origin === "http://sentra.local" && !path.startsWith("//") ? path : "/dashboard"
+  } catch {
+    return "/dashboard"
+  }
 }
