@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Search } from "lucide-react"
+import { Lock, Plus, Search } from "lucide-react"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
+import { useSession } from "@/components/session-provider"
 import { CoverageStrip } from "@/components/test-library/coverage-strip"
 import { FilterGroup } from "@/components/test-library/filter-group"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -15,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useCan } from "@/lib/permissions"
 import {
   type Catalogue,
   type CoverageRow,
@@ -31,9 +33,25 @@ function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
 }
 
+/** "Create custom test" in the page header, for the roles that may (FR-1.6, FR-4.3). */
+export function CatalogueActions() {
+  const canCreate = useCan("manage_custom_tests")
+  if (!canCreate) return null
+  return (
+    <Button asChild className="h-9 shrink-0 hover:bg-primary-hover">
+      <Link href="/test-library/new">
+        <Plus aria-hidden="true" />
+        Create custom test
+      </Link>
+    </Button>
+  )
+}
+
 /** The test catalogue: coverage, search, filters with counts and the results table (UC-4.1). */
 export function TestCatalogue() {
   const router = useRouter()
+  const organization = useSession().organization?.name ?? "Your organization"
+  const canCreate = useCan("manage_custom_tests")
   const [search, setSearch] = useState("")
   const [categories, setCategories] = useState<string[]>([])
   const [severities, setSeverities] = useState<string[]>([])
@@ -124,7 +142,10 @@ export function TestCatalogue() {
           />
           <FilterGroup
             title="Origin"
-            options={[{ value: "built_in", label: ORIGIN_LABEL.built_in }]}
+            options={[
+              { value: "built_in", label: ORIGIN_LABEL.built_in },
+              { value: "custom", label: ORIGIN_LABEL.custom },
+            ]}
             selected={origins}
             counts={data?.facets.origin}
             onToggle={(v) => changeFilter(setOrigins, v)}
@@ -164,11 +185,22 @@ export function TestCatalogue() {
           {data && data.total === 0 && (
             <EmptyState
               title="No tests match these filters"
-              description="Remove some filters or change the search."
+              description={
+                canCreate
+                  ? "Remove some filters or change the search. If the test you need doesn't exist, create it."
+                  : "Remove some filters or change the search."
+              }
               action={
-                <Button variant="outline" className="h-9" onClick={clearFilters}>
-                  Clear filters
-                </Button>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="outline" className="h-9" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                  {canCreate && (
+                    <Button asChild variant="outline" className="h-9">
+                      <Link href="/test-library/new">Create custom test</Link>
+                    </Button>
+                  )}
+                </div>
               }
             />
           )}
@@ -224,6 +256,12 @@ export function TestCatalogue() {
                         <Badge variant="secondary" className="font-normal">
                           {ORIGIN_LABEL[test.origin] ?? test.origin}
                         </Badge>
+                        {test.origin === "custom" && (
+                          <span className="mt-1 flex items-center gap-1 text-xs whitespace-nowrap text-muted-foreground">
+                            <Lock className="size-3" aria-hidden="true" />
+                            {organization} only
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
