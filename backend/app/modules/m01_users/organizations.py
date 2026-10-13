@@ -79,6 +79,19 @@ def current(db: Session, session: UserSession) -> Membership | None:
     return first
 
 
+def mfa_required_by(db: Session, user: User) -> list[str]:
+    """The names of the user's organizations that require two-step verification (FR-1.2, UC-1.7).
+    If there is one, the user can't log in without it (UC-1.2, 3b)."""
+    return list(
+        db.scalars(
+            select(Organization.name)
+            .join(Membership, Membership.organization_id == Organization.id)
+            .where(Membership.user_id == user.id, Organization.mfa_required)
+            .order_by(Organization.name)
+        )
+    )
+
+
 def _membership(db: Session, user_id: uuid.UUID, organization_id: uuid.UUID) -> Membership | None:
     return db.scalar(
         select(Membership).where(

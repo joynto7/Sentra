@@ -1,6 +1,7 @@
 """Business logic for accounts, login and sessions (FR-1.1, UC-1.1 – UC-1.3)."""
 
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 
 from fastapi import BackgroundTasks
 from sqlalchemy import delete, select, update
@@ -8,11 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.email import send_email
-from app.core.errors import AppError, FieldValidationError
-from app.modules.m01_users import emails
+from app.core.errors import AppError, FieldValidationError, NotAuthenticatedError
+from app.modules.m01_users import emails, organizations
 from app.modules.m01_users.models import (
     AccountEvent,
     AccountEventKind,
+    LoginThrottle,
     OneTimeToken,
     TokenPurpose,
     User,
@@ -32,8 +34,12 @@ from app.modules.m09_reporting.notifications import notify
 
 VERIFY_EMAIL_VALID_FOR = timedelta(hours=24)
 RESET_PASSWORD_VALID_FOR = timedelta(minutes=30)
+# Time for the second step of a login, including setting up an app when it is required (UC-1.2).
+SECOND_STEP_VALID_FOR = timedelta(minutes=15)
 
 INVALID_CREDENTIALS = "The e-mail address or password is incorrect."
+LOGIN_EXPIRED = "Your login has expired. Log in again."
+WRONG_PASSWORD = "The password is incorrect."
 TERMS_REQUIRED = (
     "You need to accept the terms to create an account. "
     "Sentra may only test systems you are allowed to test."
@@ -165,28 +171,75 @@ def resend_verification(db: Session, email: str, background: BackgroundTasks) ->
 # ---------------------------------------------------------------- login and sessions
 
 
-def login(
-    db: Session, email: str, password: str, user_agent: str | None, ip_address: str | None
-) -> tuple[User, str]:
-    """UC-1.2. Returns the user and the raw session token for the cookie."""
-    settings = get_settings()
-    user = db.scalar(select(User).where(User.email == _normalize(email)))
+class LoginStep(StrEnum):
+    """What follows a correct password (UC-1.2)."""
 
-    if user is not None and user.locked_until is not None and user.locked_until > _now():
+    DONE = "done"  # logged in (3a: no two-step verification)
+    MFA = "mfa"  # enter a code from the authenticator app (steps 3-4)
+    MFA_SETUP = "mfa_setup"  # an organization requires it, so it is set up first (3b)
+
+
+def is_locked(db: Session, email: str) -> bool:
+    throttle = db.get(LoginThrottle, hash_token(_normalize(email)))
+    return (
+        throttle is not None
+        and throttle.locked_until is not None
+        and (throttle.locked_until > _now())
+    )
+
+
+def check_not_locked(db: Session, email: str) -> None:
+    if is_locked(db, email):
         raise AppError(
             "Too many failed attempts. Wait 15 minutes and try again.",
             code="too_many_attempts",
             status_code=429,
         )
 
+
+def count_failed_attempt(
+    db: Session,
+    email: str,
+    user: User | None,
+    kind: AccountEventKind,
+    ip_address: str | None,
+    user_agent: str | None,
+) -> None:
+    """A wrong password or code (UC-1.2 quality requirement): five in a row lock the address for
+    15 minutes, which makes guessing too slow to work. Unknown addresses are counted the same
+    way, so the lock reveals nothing (FR-1.1). The caller commits."""
+    settings = get_settings()
+    if user is not None:
+        record(db, user, kind, ip_address, user_agent)
+    key = hash_token(_normalize(email))
+    throttle = db.get(LoginThrottle, key) or LoginThrottle(email_hash=key, failures=0)
+    db.add(throttle)
+    throttle.failures += 1
+    throttle.updated_at = _now()
+    if throttle.failures >= settings.login_max_failures:
+        throttle.locked_until = _now() + timedelta(minutes=settings.login_lock_minutes)
+        throttle.failures = 0
+    # Addresses with no failure for a day are forgotten, so the table stays small.
+    db.execute(delete(LoginThrottle).where(LoginThrottle.updated_at < _now() - timedelta(days=1)))
+
+
+def forget_failures(db: Session, email: str) -> None:
+    """After a successful login or a password reset. The caller commits."""
+    db.execute(delete(LoginThrottle).where(LoginThrottle.email_hash == hash_token(email)))
+
+
+def login(
+    db: Session, email: str, password: str, user_agent: str | None, ip_address: str | None
+) -> tuple[User, LoginStep, str]:
+    """UC-1.2 steps 1-2. Returns the user, the next step and a raw token: the session token when
+    the step is DONE, else the token of the second step (steps 3-4)."""
+    email = _normalize(email)
+    check_not_locked(db, email)  # for every address, so a lock says nothing about accounts
+    user = db.scalar(select(User).where(User.email == email))
+
     if user is None or not verify_password(user.password_hash, password):
-        if user is not None:
-            record(db, user, AccountEventKind.LOGIN_FAILED, ip_address, user_agent)
-            user.failed_login_count += 1
-            if user.failed_login_count >= settings.login_max_failures:
-                user.locked_until = _now() + timedelta(minutes=settings.login_lock_minutes)
-                user.failed_login_count = 0
-            db.commit()
+        count_failed_attempt(db, email, user, AccountEventKind.LOGIN_FAILED, ip_address, user_agent)
+        db.commit()
         raise AppError(INVALID_CREDENTIALS, code="invalid_credentials", status_code=401)
 
     # The password is correct, so it is safe to say why the login cannot continue.
@@ -205,12 +258,77 @@ def login(
 
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(password)
-    user.failed_login_count = 0
-    user.locked_until = None
+
+    # Steps 3-4: with two-step verification the session waits for the code. The failed attempts
+    # are not reset yet, so entering the password again doesn't give more tries at the code.
+    if user.mfa_enabled or organizations.mfa_required_by(db, user):
+        step = LoginStep.MFA if user.mfa_enabled else LoginStep.MFA_SETUP
+        return user, step, start_second_step(db, user)
+
+    forget_failures(db, user.email)
     raw = start_session(db, user, user_agent, ip_address)
     record(db, user, AccountEventKind.LOGGED_IN, ip_address, user_agent)
     db.commit()
-    return user, raw
+    return user, LoginStep.DONE, raw
+
+
+def start_second_step(db: Session, user: User) -> str:
+    """The raw token of a login's second step (steps 3-4). Starting a new login ends an older
+    one that is still waiting."""
+    raw = _issue_token(db, user, TokenPurpose.MFA_LOGIN, SECOND_STEP_VALID_FOR)
+    db.commit()
+    return raw
+
+
+def _second_step_token(db: Session, raw: str | None) -> OneTimeToken:
+    token = None
+    if raw:
+        token = db.scalar(
+            select(OneTimeToken).where(
+                OneTimeToken.token_hash == hash_token(raw),
+                OneTimeToken.purpose == TokenPurpose.MFA_LOGIN,
+            )
+        )
+    if token is None or token.used_at is not None or token.expires_at <= _now():
+        raise NotAuthenticatedError(LOGIN_EXPIRED, code="login_expired")
+    return token
+
+
+def pending_login(db: Session, raw: str | None) -> User:
+    """The user of a login whose password was right and whose second step is still open."""
+    user = db.get_one(User, _second_step_token(db, raw).user_id)
+    if user.status != UserStatus.ACTIVE:
+        raise NotAuthenticatedError(LOGIN_EXPIRED, code="login_expired")
+    return user
+
+
+def finish_login(
+    db: Session, raw: str | None, user: User, user_agent: str | None, ip_address: str | None
+) -> str:
+    """UC-1.2 step 5 after the second step: the token is used up and the session starts.
+    Returns the raw session token."""
+    _second_step_token(db, raw).used_at = _now()
+    forget_failures(db, user.email)
+    session = start_session(db, user, user_agent, ip_address)
+    record(db, user, AccountEventKind.LOGGED_IN, ip_address, user_agent)
+    db.commit()
+    return session
+
+
+def cancel_login(db: Session, raw: str | None) -> None:
+    """ "Back to login" or "Not you?" during the second step: the token stops working."""
+    if not raw:
+        return
+    db.execute(
+        update(OneTimeToken)
+        .where(
+            OneTimeToken.token_hash == hash_token(raw),
+            OneTimeToken.purpose == TokenPurpose.MFA_LOGIN,
+            OneTimeToken.used_at.is_(None),
+        )
+        .values(used_at=_now())
+    )
+    db.commit()
 
 
 def start_session(db: Session, user: User, user_agent: str | None, ip_address: str | None) -> str:
@@ -260,6 +378,22 @@ def logout(db: Session, raw: str) -> None:
     db.commit()
 
 
+def confirm_password(db: Session, user: User, session: UserSession, password: str) -> None:
+    """The user enters their password again before changing security settings (UC-1.7 step 2,
+    NFR-3.5). For a few minutes afterwards, this session may change them."""
+    if not verify_password(user.password_hash, password):
+        raise FieldValidationError("password", WRONG_PASSWORD)
+    session.password_confirmed_at = _now()
+    db.commit()
+
+
+def password_confirmed_until(session: UserSession) -> datetime | None:
+    if session.password_confirmed_at is None:
+        return None
+    minutes = get_settings().password_confirmation_minutes
+    return session.password_confirmed_at + timedelta(minutes=minutes)
+
+
 # ---------------------------------------------------------------- password reset
 
 
@@ -285,8 +419,7 @@ def reset_password(db: Session, raw: str, new_password: str, background: Backgro
     user = _use_token(db, raw, TokenPurpose.RESET_PASSWORD)
     user.password_hash = hash_password(new_password)
     user.password_changed_at = _now()
-    user.failed_login_count = 0
-    user.locked_until = None
+    forget_failures(db, user.email)
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     record(db, user, AccountEventKind.PASSWORD_RESET)
     db.commit()

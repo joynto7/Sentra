@@ -27,6 +27,7 @@ def member_out(membership: Membership, user: User, me: User) -> MemberOut:
         email=user.email,
         role=membership.role,
         role_label=ROLE_LABELS[Role(membership.role)],
+        mfa_enabled=user.mfa_enabled,
         last_login_at=user.last_login_at,
         joined_at=membership.created_at,
         is_you=user.id == me.id,

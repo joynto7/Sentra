@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.models import Organization
 from app.modules.m01_users import invitations, service
-from app.modules.m01_users.cookies import set_session_cookie
+from app.modules.m01_users.cookies import set_second_step_cookie, set_session_cookie
 from app.modules.m01_users.deps import current_session, current_user
 from app.modules.m01_users.models import (
     ROLE_LABELS,
@@ -25,7 +25,7 @@ from app.modules.m01_users.schemas import (
     InvitationRegisterIn,
     InvitationTokenIn,
     InviteIn,
-    MeOut,
+    JoinedOut,
     OrganizationOut,
     PasswordIn,
     UserOut,
@@ -151,9 +151,10 @@ def register_and_accept(
     response: Response,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
-) -> MeOut:
-    """UC-1.9 for a person without an account: create it, join and log in, in one step."""
-    membership, raw = invitations.register_and_accept(
+) -> JoinedOut:
+    """UC-1.9 for a person without an account: create it, join and log in, in one step. If the
+    organization requires two-step verification, the login's second step sets it up first."""
+    membership, step, raw = invitations.register_and_accept(
         db,
         data.token,
         data.name,
@@ -163,12 +164,16 @@ def register_and_accept(
         request.client.host if request.client else None,
         background,
     )
-    set_session_cookie(response, raw)
+    if step == service.LoginStep.DONE:
+        set_session_cookie(response, raw)
+    else:
+        set_second_step_cookie(response, raw)
     user = db.get_one(User, membership.user_id)
     organization = db.get_one(Organization, membership.organization_id)
-    return MeOut(
+    return JoinedOut(
         **UserOut.model_validate(user).model_dump(),
         organization=organization_out(membership, organization, organization.id),
+        step=step,
     )
 
 

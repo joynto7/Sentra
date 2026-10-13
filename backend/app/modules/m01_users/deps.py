@@ -1,5 +1,7 @@
 """FastAPI dependencies for other modules: `Depends(current_user)` protects an endpoint."""
 
+from datetime import UTC, datetime
+
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
@@ -41,3 +43,17 @@ def current_membership(
             "Create an organization or accept an invitation first.", code="no_organization"
         )
     return membership
+
+
+def recent_password_confirmation(
+    session: UserSession = Depends(current_session),
+) -> UserSession:
+    """For settings that need the password again (UC-1.7 step 2, NFR-3.5): this session must have
+    confirmed it in the last 10 minutes, with POST /auth/confirm-password."""
+    until = service.password_confirmed_until(session)
+    if until is None or until <= datetime.now(UTC):
+        raise PermissionDeniedError(
+            "Enter your password again to change these settings.",
+            code="password_confirmation_required",
+        )
+    return session

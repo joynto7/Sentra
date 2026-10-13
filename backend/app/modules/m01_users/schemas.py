@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.modules.m01_users.models import Role
 
@@ -63,6 +63,22 @@ class MeOut(UserOut):
     organization: OrganizationOut | None
 
 
+class LoginOut(BaseModel):
+    """The answer to a correct password (UC-1.2): logged in, or the second step comes first.
+    Before the second step it tells no more than the address that was typed in."""
+
+    step: str  # "done", "mfa" (enter a code, steps 3-4) or "mfa_setup" (set it up first, 3b)
+    email: str
+    required_by: list[str] = []  # 3b: the organizations that require two-step verification
+
+
+class JoinedOut(MeOut):
+    """A new account made from an invitation (UC-1.9): logged in, or the organization requires
+    two-step verification, which is set up first (step "mfa_setup", UC-1.2 3b)."""
+
+    step: str
+
+
 class PermissionOut(BaseModel):
     action: str
     label: str
@@ -84,6 +100,7 @@ class MemberOut(BaseModel):
     email: str
     role: str
     role_label: str
+    mfa_enabled: bool  # the "Two-step verification" column (UC-10.1 step 1)
     last_login_at: datetime | None
     joined_at: datetime
     is_you: bool
@@ -187,3 +204,59 @@ class ActivityOut(BaseModel):
     ip_address: str | None
     user_agent: str | None
     created_at: datetime
+
+
+# ---------------------------------------------------------------- two-step verification (FR-1.2)
+
+
+class SecondStepIn(BaseModel):
+    """UC-1.2 step 4: a code from the app, or a recovery code instead (4a)."""
+
+    code: str | None = Field(default=None, max_length=20)
+    recovery_code: str | None = Field(default=None, max_length=40)
+
+    @model_validator(mode="after")
+    def one_of_them(self) -> "SecondStepIn":
+        if (self.code is None) == (self.recovery_code is None):
+            raise ValueError("Send either a code or a recovery code.")
+        return self
+
+
+class CodeIn(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+
+
+class MfaSetupOut(BaseModel):
+    """UC-1.4 step 3, shown only during the setup: the QR code and the same secret as a key."""
+
+    secret: str
+    uri: str  # the otpauth:// address inside the QR code
+    qr_code: str  # an SVG image as a data: URI
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: list[str]  # shown only this once (UC-1.4 step 6)
+
+
+class MfaStatusOut(BaseModel):
+    """The Two-step verification card of the Security page (Screen 09)."""
+
+    enabled: bool
+    enabled_at: datetime | None
+    recovery_codes_left: int
+    recovery_codes_total: int
+    required_by: list[str]  # the user's organizations that require it
+
+
+class OrganizationSecurityIn(BaseModel):
+    mfa_required: bool
+
+
+class OrganizationSecurityOut(BaseModel):
+    """The Organization security page (Screen 11, UC-1.7)."""
+
+    mfa_required: bool
+    members_without_mfa: int
+    # This session's last password confirmation, and until when it allows changes (step 2).
+    password_confirmed_at: datetime | None
+    password_confirmed_until: datetime | None

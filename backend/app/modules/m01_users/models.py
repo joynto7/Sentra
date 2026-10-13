@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -26,8 +26,6 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     status: Mapped[str] = mapped_column(String(20), server_default=UserStatus.UNVERIFIED.value)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     terms_accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    failed_login_count: Mapped[int] = mapped_column(server_default="0")
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The organization opened last, so the next login opens it again (UC-1.2, 6a).
     last_organization_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -41,12 +39,38 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     password_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=func.now()
     )
+    # Two-step verification (FR-1.2). The secret of the authenticator app is stored encrypted
+    # (UC-1.4 quality requirement 3); a new one waits in mfa_pending_secret until its first code
+    # is entered (UC-1.4 step 5).
+    mfa_secret: Mapped[str | None] = mapped_column(Text)
+    mfa_pending_secret: Mapped[str | None] = mapped_column(Text)
+    mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The time step of the last accepted code, so the same code can't be used twice.
+    mfa_last_step: Mapped[int | None] = mapped_column(BigInteger)
+
+    @property
+    def mfa_enabled(self) -> bool:
+        return self.mfa_enabled_at is not None
+
+
+class LoginThrottle(Base):
+    """Failed logins per typed e-mail address (UC-1.2 quality requirement). It is kept for every
+    address, whether an account exists or not, so that a lock never tells which addresses have
+    accounts (FR-1.1). Only a hash of the address is stored."""
+
+    __tablename__ = "login_throttles"
+
+    email_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failures: Mapped[int] = mapped_column(default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class TokenPurpose(StrEnum):
     VERIFY_EMAIL = "verify_email"
     RESET_PASSWORD = "reset_password"
     CHANGE_EMAIL = "change_email"  # confirms the new address of UC-1.11, 2a
+    MFA_LOGIN = "mfa_login"  # a login whose password was right, waiting for the second step
 
 
 class OneTimeToken(UUIDPrimaryKey, Base):
@@ -81,6 +105,9 @@ class UserSession(UUIDPrimaryKey, Base):
     ip_address: Mapped[str | None] = mapped_column(String(45))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # When the user last entered their password again in this session, for settings that need a
+    # fresh confirmation, such as the organization's security (UC-1.7 step 2, NFR-3.5).
+    password_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AccountEventKind(StrEnum):
@@ -94,6 +121,10 @@ class AccountEventKind(StrEnum):
     EMAIL_CHANGED = "email_changed"
     SESSION_ENDED = "session_ended"  # the user logged out one of their other sessions
     OTHER_SESSIONS_ENDED = "other_sessions_ended"
+    MFA_ENABLED = "mfa_enabled"
+    MFA_FAILED = "mfa_failed"  # a wrong code in the second step of a login
+    RECOVERY_CODE_USED = "recovery_code_used"
+    RECOVERY_CODES_RENEWED = "recovery_codes_renewed"
 
 
 class AccountEvent(UUIDPrimaryKey, Base):
@@ -111,6 +142,20 @@ class AccountEvent(UUIDPrimaryKey, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now()
     )
+
+
+class RecoveryCode(UUIDPrimaryKey, Base):
+    """A code for logging in without the authenticator app (UC-1.2, 4a). It is hashed like a
+    password and works once (UC-1.4 quality requirement 6)."""
+
+    __tablename__ = "recovery_codes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(255))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Role(StrEnum):

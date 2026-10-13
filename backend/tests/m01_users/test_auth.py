@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from app.core.email import outbox
-from app.modules.m01_users.models import OneTimeToken, User, UserSession
+from app.modules.m01_users.models import LoginThrottle, OneTimeToken, User, UserSession
+from app.modules.m01_users.security import hash_token
 
 EMAIL = "arif.hossain@halcyonbank.com"
 PASSWORD = "Copper-Kettle-Morning-42"
@@ -159,6 +160,30 @@ def test_repeated_failures_lock_the_account_for_a_while(client):
 
     assert response.status_code == 429
     assert response.json()["error"]["code"] == "too_many_attempts"
+
+
+def test_a_lock_looks_the_same_for_an_address_without_an_account(client):
+    """FR-1.1: even the lock after repeated failures doesn't tell which addresses have accounts."""
+    register_and_verify(client)
+    answers = {}
+    for email in (EMAIL, "nobody@halcyonbank.com"):
+        for _ in range(5):
+            client.post("/api/v1/auth/login", json={"email": email, "password": "Wrong-Guess-1"})
+        answers[email] = client.post(
+            "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+        )
+
+    known, unknown = answers.values()
+    assert known.status_code == unknown.status_code == 429
+    assert known.json() == unknown.json()
+
+
+def test_only_a_hash_of_a_typed_address_is_kept(client, db):
+    client.post("/api/v1/auth/login", json={"email": "Nobody@HalcyonBank.com", "password": "x"})
+
+    stored = db.scalar(select(LoginThrottle.email_hash))
+
+    assert stored == hash_token("nobody@halcyonbank.com") and "@" not in stored
 
 
 def test_idle_session_expires(client, db):
