@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.models import Organization
 from app.modules.m01_users import organizations, service
+from app.modules.m01_users.account_routes import account_router
 from app.modules.m01_users.cookies import set_session_cookie
 from app.modules.m01_users.deps import current_session, current_user
 from app.modules.m01_users.invitation_routes import admin_router as invitation_admin_router
@@ -119,6 +120,7 @@ def reset_password(
 # All M1 endpoints; the module loader picks up `router`.
 router = APIRouter()
 router.include_router(auth_router)
+router.include_router(account_router)
 router.include_router(organization_router)
 router.include_router(member_router)
 router.include_router(invitation_admin_router)
