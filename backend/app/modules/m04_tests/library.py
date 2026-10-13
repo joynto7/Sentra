@@ -3,6 +3,7 @@
 import hashlib
 import json
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 import yaml
@@ -11,10 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.m04_tests.models import TestDefinition
-from app.modules.m04_tests.schema import LibraryFile, TestDefinitionSpec
+from app.modules.m04_tests.schema import DefinitionFields, LibraryFile, Origin, TestDefinitionSpec
 
 LIBRARY_DIR = Path(__file__).parent / "library"
-BUILT_IN = "built_in"
+BUILT_IN = Origin.BUILT_IN.value
 
 
 class LibraryError(Exception):
@@ -35,9 +36,21 @@ def load_library(directory: Path = LIBRARY_DIR) -> list[TestDefinitionSpec]:
     return specs
 
 
-def content_hash(spec: TestDefinitionSpec) -> str:
-    canonical = json.dumps(spec.model_dump(mode="json"), sort_keys=True)
+def content_hash(spec: DefinitionFields) -> str:
+    data = spec.model_dump(mode="json")
+    # success_rules came in Sprint 1. Leaving it out while it is empty keeps the hash of every
+    # existing test the same, so adding the field does not create a new version of each one.
+    if not data["success_rules"]:
+        del data["success_rules"]
+    canonical = json.dumps(data, sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+@cache
+def safe_templates() -> dict[str, TestDefinitionSpec]:
+    """The safe attempt templates (each with the built-in test that uses it). Attempts are only
+    ever generated from these, with synthetic content and canary tokens (NFR-9.1)."""
+    return {spec.attempt_template: spec for spec in load_library()}
 
 
 @dataclass
@@ -64,6 +77,7 @@ def sync_built_in_library(db: Session, specs: list[TestDefinitionSpec] | None = 
             continue
         if current is not None:
             current.is_current = False
+            db.flush()  # first, because only one version of a test may be current
             result.updated += 1
         else:
             result.added += 1
