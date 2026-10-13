@@ -1,0 +1,319 @@
+"""Campaign creation (FR-5.1, UC-5.1): the checks of step 6, the estimate, saving.
+
+Creating a campaign sends nothing to the target (UC-5.1, quality requirement). Launching, runs
+and schedules come with FR-5.4 and FR-5.3.
+"""
+
+import re
+import uuid
+from dataclasses import dataclass, field
+from datetime import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.errors import AppError, ConflictError, NotFoundError
+from app.core.tenancy import scoped_select
+from app.modules.m01_users.models import Membership, User
+from app.modules.m02_targets.models import Target, TargetStatus
+from app.modules.m04_tests.models import TestDefinition, TestSuite
+from app.modules.m04_tests.suites import ATTEMPTS_PER_TEST
+from app.modules.m05_campaigns.models import Campaign
+
+MAX_BUDGET = 100_000
+MAX_REPETITIONS = 10
+TYPE_NAME = {
+    "chatbot": "chatbot",
+    "rag_application": "RAG application",
+    "tool_using_agent": "tool-using agent",
+}
+
+
+@dataclass
+class CampaignInput:
+    name: str = ""
+    target_id: uuid.UUID | None = None
+    suites: list[str] = field(default_factory=list)
+    adaptive_agent: bool = False
+    attempt_budget: int | None = None
+    request_rate: int | None = None
+    repetitions: int | None = 5
+    window_start: str | None = None
+    window_end: str | None = None
+    time_zone: str = "UTC"
+
+
+# ---------------------------------------------------------------- reading
+
+
+def _visible(model, organization_id: uuid.UUID):
+    return or_(model.organization_id.is_(None), model.organization_id == organization_id)
+
+
+def _suites(db: Session, organization_id: uuid.UUID, codes: list[str]) -> dict[str, TestSuite]:
+    """The current, active suites the organization can use, by code."""
+    rows = db.scalars(
+        select(TestSuite).where(
+            TestSuite.code.in_(codes),
+            TestSuite.is_current.is_(True),
+            TestSuite.status == "active",
+            _visible(TestSuite, organization_id),
+        )
+    )
+    return {suite.code: suite for suite in rows}
+
+
+def _target(db: Session, organization_id: uuid.UUID, target_id: uuid.UUID | None) -> Target | None:
+    if target_id is None:
+        return None
+    return db.scalar(scoped_select(Target, organization_id).where(Target.id == target_id))
+
+
+def estimate(
+    db: Session,
+    organization_id: uuid.UUID,
+    target_id: uuid.UUID | None,
+    codes: list[str],
+    budget: int | None,
+) -> dict:
+    """UC-5.1 step 6: the tests that will run against this target and the attempts they need.
+    Tests that don't apply to the target's type, and retired tests, are skipped."""
+    target = _target(db, organization_id, target_id)
+    suites = _suites(db, organization_id, codes)
+    wanted = list(dict.fromkeys(code for s in codes if s in suites for code in suites[s].tests))
+    tests = db.scalars(
+        select(TestDefinition).where(
+            TestDefinition.code.in_(wanted),
+            TestDefinition.is_current.is_(True),
+            TestDefinition.retired.is_(False),
+            _visible(TestDefinition, organization_id),
+        )
+    ).all()
+    applicable = [t for t in tests if target is None or target.type in t.target_types]
+    skipped = len(tests) - len(applicable)
+    attempts = ATTEMPTS_PER_TEST * len(applicable)
+    warnings = []
+    if target is not None and skipped:
+        kind = TYPE_NAME.get(target.type, target.type)
+        verb = "doesn't" if skipped == 1 else "don't"
+        warnings.append(
+            f"{skipped} test{'' if skipped == 1 else 's'} {verb} apply to a {kind} and are skipped."
+        )
+    if budget and attempts > budget:
+        warnings.append(
+            "The budget is smaller than the estimate, so the run may stop before every test "
+            "has run."
+        )
+    return {
+        "tests": len(applicable),
+        "skipped": skipped,
+        "estimated_attempts": attempts,
+        "target_safe_rate": target.max_request_rate if target else None,
+        # Threat models come with FR-3.1 (Sprint 3); until then UC-5.1, 2a applies.
+        "threat_model": False,
+        "warnings": warnings,
+    }
+
+
+def list_campaigns(
+    db: Session, organization_id: uuid.UUID, suite: str = "", target_id: uuid.UUID | None = None
+) -> list[dict]:
+    """The campaigns page (Screen 33). `suite` gives the campaigns that use a suite (UC-4.5)."""
+    query = scoped_select(Campaign, organization_id).order_by(Campaign.number.desc())
+    if suite:
+        query = query.where(Campaign.suites.contains([suite]))
+    if target_id:
+        query = query.where(Campaign.target_id == target_id)
+    campaigns = db.scalars(query).all()
+    targets = {t.id: t for t in db.scalars(scoped_select(Target, organization_id))}
+    creators = dict(
+        db.execute(
+            select(User.id, User.name).where(User.id.in_({c.created_by_id for c in campaigns}))
+        ).all()
+    )
+    return [_row(c, targets.get(c.target_id), creators.get(c.created_by_id)) for c in campaigns]
+
+
+def get_campaign(db: Session, organization_id: uuid.UUID, code: str) -> dict:
+    match = re.fullmatch(r"C-(\d{1,9})", code)
+    campaign = (
+        db.scalar(
+            scoped_select(Campaign, organization_id).where(Campaign.number == int(match.group(1)))
+        )
+        if match
+        else None
+    )
+    if campaign is None:  # also another organization's campaign (NFR-3.3)
+        raise NotFoundError("Campaign not found.")
+    target = db.get(Target, campaign.target_id)
+    creator = db.get(User, campaign.created_by_id) if campaign.created_by_id else None
+    suites = _suites(db, organization_id, campaign.suites)
+    return {
+        **_row(campaign, target, creator.name if creator else None),
+        "adaptive_agent": campaign.adaptive_agent,
+        "repetitions": campaign.repetitions,
+        "window_start": campaign.window_start,
+        "window_end": campaign.window_end,
+        "time_zone": campaign.time_zone,
+        "suites": [
+            {
+                "code": code,
+                "found": code in suites,
+                "name": suites[code].name if code in suites else code,
+                "version": suites[code].version if code in suites else 0,
+                "test_count": len(suites[code].tests) if code in suites else 0,
+            }
+            for code in campaign.suites
+        ],
+        "estimate": estimate(
+            db, organization_id, campaign.target_id, campaign.suites, campaign.attempt_budget
+        ),
+    }
+
+
+def _row(campaign: Campaign, target: Target | None, creator: str | None) -> dict:
+    return {
+        "code": campaign.code,
+        "name": campaign.name,
+        "target": {
+            "id": target.id,
+            "name": target.name,
+            "type": target.type,
+            "environment": target.environment,
+            "status": target.status,
+            "max_request_rate": target.max_request_rate,
+        }
+        if target
+        else None,
+        "suite_count": len(campaign.suites),
+        "attempt_budget": campaign.attempt_budget,
+        "request_rate": campaign.request_rate,
+        "approval_status": campaign.approval_status,
+        "created_by": creator,
+        "created_at": campaign.created_at,
+    }
+
+
+# ---------------------------------------------------------------- creating
+
+
+def _clock(value: str | None) -> time | None:
+    if not value:
+        return None
+    match = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", value.strip())
+    if not match:
+        raise ValueError
+    return time(int(match.group(1)), int(match.group(2)))
+
+
+def check(db: Session, organization_id: uuid.UUID, data: CampaignInput) -> dict:
+    """UC-5.1 step 6 and 6a: every problem at once, each naming the limit that is exceeded."""
+    errors: list[dict] = []
+
+    def problem(field_name: str, message: str) -> None:
+        errors.append({"field": field_name, "message": message})
+
+    name = data.name.strip()
+    if not name:
+        problem("name", "Enter a name.")
+    elif not 3 <= len(name) <= 120:
+        problem("name", "Use 3 to 120 characters.")
+
+    target = _target(db, organization_id, data.target_id)
+    if data.target_id is None:
+        problem("target_id", "Choose a target.")
+    elif target is None:
+        problem("target_id", "Target not found.")
+    elif target.status == TargetStatus.ARCHIVED:
+        problem("target_id", "This target is archived, so it can't be tested.")
+    elif target.status != TargetStatus.VERIFIED:
+        problem("target_id", "Verify the ownership of this target first.")
+
+    codes = list(dict.fromkeys(code.strip() for code in data.suites))
+    suites = _suites(db, organization_id, codes)
+    if not codes:
+        problem("suites", "Choose at least one test suite.")
+    elif missing := [c for c in codes if c not in suites]:
+        problem("suites", f"Not found or archived: {', '.join(missing)}.")
+    elif target is not None and not estimate(db, organization_id, target.id, codes, None)["tests"]:
+        kind = TYPE_NAME.get(target.type, target.type)
+        problem("suites", f"None of these suites' tests apply to a {kind}. Choose other suites.")
+
+    budget, rate, repetitions = data.attempt_budget, data.request_rate, data.repetitions
+    if budget is None:
+        problem("attempt_budget", "Enter the attempt budget.")
+    elif not 1 <= budget <= MAX_BUDGET:
+        problem("attempt_budget", f"Enter 1 to {MAX_BUDGET:,} attempts.")
+    if rate is None:
+        problem("request_rate", "Enter the maximum request rate.")
+    elif rate < 1:
+        problem("request_rate", "Enter at least 1 request per minute.")
+    elif target is not None and rate > target.max_request_rate:
+        # FR-5.7: never faster than the rate its owner registered as safe.
+        problem(
+            "request_rate",
+            "The rate can't exceed the target's safe rate of "
+            f"{target.max_request_rate} per minute.",
+        )
+    if repetitions is None or not 1 <= repetitions <= MAX_REPETITIONS:
+        problem("repetitions", f"Enter 1 to {MAX_REPETITIONS} repetitions.")
+
+    start = end = None
+    try:
+        start, end = _clock(data.window_start), _clock(data.window_end)
+    except ValueError:
+        problem("window", "Enter the times as hours and minutes, such as 02:00.")
+    else:
+        if (start is None) != (end is None):
+            problem("window", "Enter both the start and the end, or neither.")
+        elif start is not None and start == end:
+            problem("window", "The window must be longer than zero minutes.")
+    try:
+        ZoneInfo(data.time_zone)
+    except (ZoneInfoNotFoundError, ValueError):
+        problem("time_zone", "Unknown time zone.")
+
+    if errors:
+        raise AppError(
+            "Some fields are invalid.", code="validation_error", status_code=422, details=errors
+        )
+    return {
+        "name": name,
+        "target_id": target.id,
+        "suites": codes,
+        "adaptive_agent": data.adaptive_agent,
+        "attempt_budget": budget,
+        "request_rate": rate,
+        "repetitions": repetitions,
+        "window_start": start,
+        "window_end": end,
+        "time_zone": data.time_zone,
+    }
+
+
+def create(db: Session, membership: Membership, data: CampaignInput) -> Campaign:
+    """UC-5.1 step 7: saved, ready to be launched (launching comes with FR-5.4)."""
+    checked = check(db, membership.organization_id, data)
+    number = (
+        db.scalar(
+            select(func.max(Campaign.number)).where(
+                Campaign.organization_id == membership.organization_id
+            )
+        )
+        or 0
+    ) + 1
+    campaign = Campaign(
+        organization_id=membership.organization_id,
+        number=number,
+        created_by_id=membership.user_id,
+        **checked,
+    )
+    db.add(campaign)
+    try:
+        db.commit()
+    except IntegrityError as exc:  # someone saved a campaign at the same moment
+        db.rollback()
+        raise ConflictError("Another campaign was saved at the same moment. Save again.") from exc
+    return campaign
