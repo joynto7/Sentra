@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     # database. Make one with:
     #   python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"
     credentials_key: str = ""
+    # The LLM layer (NFR-7.3): LiteLLM model names, "provider/model", such as
+    # "anthropic/claude-sonnet-5-5", "openai/gpt-5" or "ollama/llama3.1" (a local model).
+    # llm_model serves every task unless llm_task_models names another one for a task, e.g.
+    # LLM_TASK_MODELS='{"llm_judge": "anthropic/claude-haiku-5-5"}'. The providers' keys come from
+    # their own variables (ANTHROPIC_API_KEY, OPENAI_API_KEY). FR-10.3 moves this to the database.
+    llm_model: str = ""
+    llm_task_models: dict[str, str] = {}
+    llm_api_base: str = ""  # e.g. http://host.docker.internal:11434 for Ollama on the laptop
+    llm_timeout_seconds: int = 60
+    llm_retries: int = 2
+
     # Server-side request forgery protection (NFR-3.4): targets on private network addresses are
     # refused, unless an on-premises deployment allows them.
     allow_private_targets: bool = False
