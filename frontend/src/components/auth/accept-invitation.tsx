@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ApiError, apiFetch, fieldErrors } from "@/lib/api"
+import { secondStepPath } from "@/lib/mfa"
 import {
   type InvitationDetails,
   acceptInvitation,
@@ -61,8 +62,10 @@ export function AcceptInvitation({ token }: { token?: string }) {
     setPending(true)
     setErrors({})
     try {
-      await action()
-      router.replace("/dashboard") // step 6: the workspace of the organization
+      const result = await action()
+      // A new account in an organization that requires two-step verification sets it up first.
+      const setupFirst = (result as { step?: string } | null)?.step === "mfa_setup"
+      router.replace(setupFirst ? secondStepPath("mfa_setup") : "/dashboard") // step 6: the workspace
     } catch (error) {
       const fields = fieldErrors(error)
       if (error instanceof ApiError && error.code === "invitation_invalid") setState("invalid")

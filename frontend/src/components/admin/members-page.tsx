@@ -1,7 +1,17 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ChevronLeft, ChevronRight, CircleHelp, MoreHorizontal, Search, UserCog, UserPlus, UserRoundX } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  MoreHorizontal,
+  Search,
+  TriangleAlert,
+  UserCog,
+  UserPlus,
+  UserRoundX,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminNav } from "@/components/admin/admin-nav"
@@ -52,8 +62,21 @@ import { initials } from "@/lib/session"
 
 const PAGE_SIZE = 20
 
-/** Screen 12: the members of the organization and the pending invitations (FR-1.5, FR-1.6). */
-export function MembersPage() {
+/** Two-step verification of a member (FR-1.2): "Off" carries a warning, so it is easy to spot. */
+function TwoStep({ on }: { on: boolean }) {
+  return on ? (
+    <span>On</span>
+  ) : (
+    <span className="inline-flex items-center gap-1 font-medium text-warning">
+      <TriangleAlert className="size-3.5" aria-hidden="true" />
+      Off
+    </span>
+  )
+}
+
+/** Screen 12: the members of the organization and the pending invitations (FR-1.5, FR-1.6), with
+ * each member's two-step verification (FR-1.2). */
+export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
   usePageCrumbs([{ label: "Members" }])
   const organization = useSession().organization
   const canManage = useCan("manage_members")
@@ -64,6 +87,7 @@ export function MembersPage() {
   const [tab, setTab] = useState("members")
   const [search, setSearch] = useState("")
   const [role, setRole] = useState("")
+  const [mfa, setMfa] = useState(initialMfa)
   const [page, setPage] = useState(1)
   const [inviting, setInviting] = useState(false)
   const [showRoles, setShowRoles] = useState(false)
@@ -91,9 +115,12 @@ export function MembersPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (members ?? []).filter(
-      (m) => (!role || m.role === role) && (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)),
+      (m) =>
+        (!role || m.role === role) &&
+        (!mfa || m.mfa_enabled === (mfa === "on")) &&
+        (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)),
     )
-  }, [members, search, role])
+  }, [members, search, role, mfa])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const admins = (members ?? []).filter((m) => m.role === "org_admin").length
@@ -155,6 +182,18 @@ export function MembersPage() {
           }}
           options={roles.map((r) => ({ value: r.role, label: r.label }))}
         />
+        <FilterSelect
+          label="Two-step verification"
+          value={mfa}
+          onChange={(v) => {
+            setMfa(v)
+            setPage(1)
+          }}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
         <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
           {members ? `${filtered.length} of ${members.length} members` : ""}
         </span>
@@ -172,7 +211,7 @@ export function MembersPage() {
         <div className="p-4">
           <EmptyState
             title="No members match"
-            description="Change the search or the role filter."
+            description="Change the search or the filters."
             action={
               <Button
                 variant="outline"
@@ -180,6 +219,7 @@ export function MembersPage() {
                 onClick={() => {
                   setSearch("")
                   setRole("")
+                  setMfa("")
                 }}
               >
                 Clear filters
@@ -197,6 +237,7 @@ export function MembersPage() {
                 <TableRow>
                   <TableHead className="text-xs">Member</TableHead>
                   <TableHead className="hidden text-xs @md:table-cell">Role</TableHead>
+                  <TableHead className="hidden text-xs @xl:table-cell">Two-step verification</TableHead>
                   <TableHead className="hidden text-right text-xs @2xl:table-cell">Last login</TableHead>
                   <TableHead className="w-12 text-xs">
                     <span className="sr-only">Actions</span>
@@ -222,14 +263,21 @@ export function MembersPage() {
                           </div>
                           <div className="text-xs text-muted-foreground">{member.email}</div>
                           <div className="text-xs whitespace-normal text-muted-foreground @md:hidden">
-                            {member.role_label} · Last login: {lastSeen(member.last_login_at)}
+                            {member.role_label} · Two-step verification: <TwoStep on={member.mfa_enabled} /> · Last login:{" "}
+                            {lastSeen(member.last_login_at)}
                           </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden text-[13px] whitespace-normal @md:table-cell">
                       {member.role_label}
+                      <div className="text-xs text-muted-foreground @xl:hidden">
+                        Two-step verification: <TwoStep on={member.mfa_enabled} />
+                      </div>
                       <div className="text-xs text-muted-foreground @2xl:hidden">Last login: {lastSeen(member.last_login_at)}</div>
+                    </TableCell>
+                    <TableCell className="hidden text-[13px] @xl:table-cell">
+                      <TwoStep on={member.mfa_enabled} />
                     </TableCell>
                     <TableCell className="tabular hidden text-right text-[13px] @2xl:table-cell">{lastSeen(member.last_login_at)}</TableCell>
                     <TableCell className="text-right">
