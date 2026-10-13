@@ -117,6 +117,20 @@ def test_retired_tests_are_skipped_and_cannot_be_added(analyst):
     assert details(again) == {"tests": f"Retired, so it can't be added: {code}."}
 
 
+def test_a_test_retired_after_joining_does_not_block_a_change(analyst):
+    code = custom_test(analyst)
+    analyst.post(URL, json=suite(tests=[code, "PI-DIR-001"]))
+    analyst.post(f"/api/v1/test-definitions/{code}/retire", json={"reason": "Replaced"})
+
+    response = analyst.post(
+        f"{URL}/HB-SUITE-001/versions",
+        json={**suite(tests=[code, "PI-DIR-001", "PI-IND-014"]), "reason": "One more test"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["test_count"] == 2  # the retired test stays listed, and is skipped
+
+
 def test_a_change_is_saved_as_a_new_version_and_the_old_one_stays(analyst):
     analyst.post(URL, json=suite())
 

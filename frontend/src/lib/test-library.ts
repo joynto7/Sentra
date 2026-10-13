@@ -49,7 +49,10 @@ export type TestDetail = TestSummary & {
   retired: boolean
   success_rules: (SuccessRule & { method: string; sentence: string })[]
   versions: Version[]
+  suites: SuiteRef[] // the active suites that include the test (UC-4.3 step 2)
 }
+
+export type SuiteRef = { code: string; name: string; version: number; origin: string }
 
 export const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"]
 
@@ -212,3 +215,67 @@ export const saveVersion = (code: string, source: Source, reason: string) =>
   apiFetch<TestDetail>(`${path(code)}/versions`, post({ ...source, reason }))
 export const retireTest = (code: string, reason: string) =>
   apiFetch<TestDetail>(`${path(code)}/retire`, post({ reason }))
+
+// ---------------------------------------------------------------- test suites (FR-4.4)
+
+/** What a suite's tests cover and the attempts one run needs (UC-4.4 step 4). */
+export type SuiteSummary = {
+  test_count: number
+  categories: string[]
+  target_types: string[]
+  estimated_attempts: number
+  warnings: string[]
+}
+
+export type SuiteItem = SuiteSummary & { code: string; version: number; origin: string; name: string; purpose: string }
+
+export type SuiteTest = {
+  code: string
+  found: boolean
+  name: string
+  category: string
+  severity: Severity
+  target_types: string[]
+  version: number
+  origin: string
+  retired: boolean
+}
+
+export type SuiteVersion = { version: number; is_current: boolean; status: string; change_note: string; created_at: string }
+
+export type SuiteDetail = SuiteItem & {
+  is_current: boolean
+  status: string
+  test_codes: string[]
+  tests: SuiteTest[]
+  versions: SuiteVersion[]
+}
+
+export type SuiteInput = { name: string; purpose: string; tests: string[] }
+
+const suitePath = (code: string) => `/v1/test-suites/${encodeURIComponent(code)}`
+
+export const listSuites = () => apiFetch<SuiteItem[]>("/v1/test-suites")
+export const getSuite = (code: string, version?: number) =>
+  apiFetch<SuiteDetail>(version ? `${suitePath(code)}/versions/${version}` : suitePath(code))
+export const suiteSummary = (tests: string[]) => apiFetch<SuiteSummary>("/v1/test-suites/summary", post({ tests }))
+export const createSuite = (input: SuiteInput) => apiFetch<SuiteDetail>("/v1/test-suites", post(input))
+export const saveSuiteVersion = (code: string, input: SuiteInput, reason: string) =>
+  apiFetch<SuiteDetail>(`${suitePath(code)}/versions`, post({ ...input, reason }))
+export const archiveSuite = (code: string, reason: string) =>
+  apiFetch<SuiteDetail>(`${suitePath(code)}/archive`, post({ reason }))
+
+/** "about 540": estimates are rounded so they don't look exact. */
+export function aboutAttempts(count: number): string {
+  return count ? `about ${count.toLocaleString("en-US")}` : "none"
+}
+
+/** Every test the organization can add to a suite: built-in and its own, without retired ones. */
+export async function listAllTests(): Promise<TestSummary[]> {
+  const items: TestSummary[] = []
+  for (let page = 1; ; page++) {
+    const result = await apiFetch<Catalogue>(`/v1/test-definitions?page=${page}&page_size=100`)
+    items.push(...result.items)
+    if (items.length >= result.total || result.items.length === 0) return items
+  }
+}
