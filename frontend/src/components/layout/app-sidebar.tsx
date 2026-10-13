@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LogOut } from "lucide-react"
+import { LogOut, ShieldCheck, UserRound } from "lucide-react"
 
 import {
   Sidebar,
@@ -111,6 +111,19 @@ export function AppSidebar() {
               <span className="block truncate text-sm font-medium">{user.name}</span>
               <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/account/profile">
+                <UserRound aria-hidden="true" />
+                Profile
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/account/security">
+                <ShieldCheck aria-hidden="true" />
+                Security
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={logOut}>
               <LogOut aria-hidden="true" />
