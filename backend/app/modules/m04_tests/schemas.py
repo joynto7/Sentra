@@ -41,6 +41,13 @@ class SuccessRuleOut(BaseModel):
     sentence: str  # e.g. "Tool call to issue_refund happens without a confirmation step ..."
 
 
+class SuiteRefOut(BaseModel):
+    code: str
+    name: str
+    version: int
+    origin: str
+
+
 class TestDefinitionDetail(TestDefinitionSummary):
     category_name: str
     is_current: bool
@@ -53,6 +60,7 @@ class TestDefinitionDetail(TestDefinitionSummary):
     retired: bool
     success_rules: list[SuccessRuleOut]
     versions: list[VersionOut]
+    suites: list[SuiteRefOut] = []  # the active suites that include the test (UC-4.3 step 2)
 
 
 class CatalogueOut(BaseModel):
@@ -141,3 +149,72 @@ class RuleCheckOut(BaseModel):
 class VocabularyOut(BaseModel):
     templates: list[TemplateOut]
     rule_checks: list[RuleCheckOut]
+
+
+# ---------------------------------------------------------------- test suites (FR-4.4)
+
+
+class SuiteIn(BaseModel):
+    """A suite from the builder (Screen 32). The service checks it and names each problem."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default="", max_length=200)
+    purpose: str = Field(default="", max_length=1000)
+    tests: list[str] = Field(default_factory=list, max_length=500)
+
+
+class SuiteVersionIn(SuiteIn):
+    reason: str = Field(default="", max_length=200)  # UC-4.5 step 3
+
+
+class SuiteTestsIn(BaseModel):
+    tests: list[str] = Field(default_factory=list, max_length=500)
+
+
+class SuiteSummaryOut(BaseModel):
+    """What the chosen tests cover, and the attempts one run needs (UC-4.4 step 4)."""
+
+    test_count: int
+    categories: list[str]
+    target_types: list[str]
+    estimated_attempts: int
+    warnings: list[str]
+
+
+class SuiteListItem(SuiteSummaryOut):
+    code: str
+    version: int
+    origin: str
+    name: str
+    purpose: str
+
+
+class SuiteTestOut(BaseModel):
+    code: str
+    found: bool
+    name: str = ""
+    category: str = ""
+    severity: str = ""
+    target_types: list[str] = []
+    version: int = 0
+    origin: str = ""
+    retired: bool = False
+
+
+class SuiteVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    version: int
+    is_current: bool
+    status: str
+    change_note: str
+    created_at: datetime
+
+
+class SuiteDetail(SuiteListItem):
+    is_current: bool
+    status: str
+    test_codes: list[str]
+    tests: list[SuiteTestOut]
+    versions: list[SuiteVersionOut]
