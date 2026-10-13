@@ -8,6 +8,7 @@ import { AccountNav } from "@/components/account/account-nav"
 import { FormField } from "@/components/auth/form-field"
 import { PasswordInput } from "@/components/auth/password-input"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
+import { NotificationPreferences } from "@/components/notifications/notification-preferences"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -261,6 +262,7 @@ export function ProfilePage() {
             </div>
           </section>
         )}
+        <NotificationPreferences />
       </div>
     </div>
   )
