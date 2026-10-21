@@ -13,9 +13,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.core.models import Organization
-from app.modules.m01_users.models import Membership
+from app.modules.m01_users.models import Membership, User
 from app.modules.m04_tests import content_rules
 from app.modules.m04_tests.library import BUILT_IN, content_hash, safe_templates
 from app.modules.m04_tests.models import TestDefinition
@@ -241,6 +242,7 @@ def create(db: Session, membership: Membership, fields: DefinitionFields) -> Tes
         change_note="Initial version",
         **fields.model_dump(mode="json"),
     )
+    _audit(db, membership, test, "test.created", f"Created custom test {test.code}")
     return _save(db, test)
 
 
@@ -257,6 +259,9 @@ def new_version(
             code="unchanged",
             status_code=422,
         )
+    _audit(
+        db, membership, current, "test.updated", f"Saved version {current.version + 1} of {code}"
+    )
     return _next_version(db, current, fields.model_dump(mode="json"), digest, reason, False)
 
 
@@ -265,6 +270,7 @@ def retire(db: Session, membership: Membership, code: str, reason: str) -> TestD
     past results keep showing it."""
     current = editable(db, membership.organization_id, code)
     content = {key: getattr(current, key) for key in FIELDS}
+    _audit(db, membership, current, "test.retired", f"Retired custom test {code}")
     return _next_version(db, current, content, current.content_hash, reason, True)
 
 
@@ -310,6 +316,19 @@ def _next_version(
         **content,
     )
     return _save(db, test)
+
+
+def _audit(
+    db: Session, membership: Membership, test: TestDefinition, action: str, summary: str
+) -> None:
+    audit.record(
+        db,
+        organization_id=membership.organization_id,
+        actor=db.get_one(User, membership.user_id),
+        action=action,
+        summary=summary,
+        item=audit.Item("test", test.code, test.name),
+    )
 
 
 def _save(db: Session, test: TestDefinition) -> TestDefinition:
