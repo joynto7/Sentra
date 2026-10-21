@@ -14,6 +14,8 @@ pyyaml==6.0.3
 cryptography==50.0.2
 # The HTTP client of the Target Connector
 httpx==0.28.1
+# DNS lookups of ownership verification records (FR-2.3)
+dnspython==2.9.0
 segno==1.6.6
 litellm==1.105.0
 # LiteLLM retries passing errors with tenacity, which it doesn't install itself.

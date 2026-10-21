@@ -3,6 +3,7 @@
 import re
 import secrets
 import uuid
+from urllib.parse import urlsplit
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -42,6 +43,10 @@ VALUE_REQUIRED = "Enter the secret."
 VALUE_LINE_BREAK = "The value can't contain line breaks."
 VALUE_TOO_LONG = "Use at most 4,096 characters."
 ARCHIVED = "This target is archived. Restore it before changing it."
+LAB_ADDRESS = (
+    "This address belongs to Sentra's own Security Lab. Sentra adds its lab targets itself, so "
+    "it can't be registered here."
+)
 
 _HEADER = re.compile(r"[A-Za-z0-9-]{1,100}")
 _RESERVED = {"host", "content-length", "content-type", "transfer-encoding", "connection"}
@@ -182,6 +187,7 @@ def register(db: Session, membership: Membership, data: TargetIn) -> Target:
         {"endpoint_url": url, "environment": target.environment, "type": target.type},
     )
     db.commit()
+    _test_connection(db, target, membership.user_id)  # step 7
     return get_target(db, membership.organization_id, target.id)
 
 
@@ -229,10 +235,13 @@ def update(db: Session, membership: Membership, target_id: uuid.UUID, data: Targ
         target.endpoint_url = url
         target.status = TargetStatus.UNVERIFIED  # ownership must be proved again (FR-2.6)
         target.verification_token = secrets.token_hex(16)
+        target.verified_at = target.verified_by_id = target.verification_method = None
         summary += "; its new endpoint must be verified again"
     if changed:
         _audit(db, membership, target, "target.updated", summary, {"changed": changed})
     db.commit()
+    if {"endpoint_url", "request_format"} & set(changed):
+        _test_connection(db, target, membership.user_id)  # UC-2.2, after a configuration change
     return get_target(db, membership.organization_id, target.id)
 
 
@@ -257,6 +266,7 @@ def replace_credentials(
         {"headers": [name for name, _, _ in credentials]},
     )
     db.commit()
+    _test_connection(db, target, membership.user_id)  # UC-2.2, after a configuration change
     return get_target(db, membership.organization_id, target.id)
 
 
@@ -264,6 +274,14 @@ def request_format(target: Target) -> RequestFormat:
     return (
         RequestFormat.OPENAI_CHAT if target.request_template is None else RequestFormat.CUSTOM_JSON
     )
+
+
+def _test_connection(db: Session, target: Target, user_id: uuid.UUID) -> None:
+    """Sentra tests the connection itself after a registration or a change (UC-2.2 trigger); the
+    page shows the result when the worker has finished."""
+    from app.modules.m02_targets import connection
+
+    connection.start(db, target, user_id)
 
 
 def _changeable(db: Session, membership: Membership, target_id: uuid.UUID) -> Target:
@@ -326,11 +344,23 @@ def _endpoint(errors: _Errors, url: str) -> str:
     if len(url) > 2048:
         errors.add("endpoint_url", URL_TOO_LONG)
         return url
+    # Only lab targets that Sentra adds itself may use lab addresses (UC-11.1, quality
+    # requirement 4), also where private addresses are allowed.
+    if _host(url) in get_settings().lab_hosts:
+        errors.add("endpoint_url", LAB_ADDRESS)
+        return url
     try:
         return addresses.check_url(url, allow_private=get_settings().allow_private_targets)
     except addresses.AddressNotAllowed as exc:
         errors.add("endpoint_url", str(exc))
         return url
+
+
+def _host(url: str) -> str:
+    try:
+        return urlsplit(url.strip()).hostname or ""
+    except ValueError:  # e.g. an unclosed [ of an IPv6 address; check_url names the problem
+        return ""
 
 
 def _rate(errors: _Errors, rate: int | None) -> int:

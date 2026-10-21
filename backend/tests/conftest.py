@@ -7,7 +7,10 @@ os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("RUN_STARTUP_HOOKS", "false")
 # A fixed AES-256 key for the tests only (FR-2.2). Real deployments set their own.
 os.environ.setdefault("CREDENTIALS_KEY", "c2VudHJhLXRlc3RzLW9ubHktbm90LWEtcmVhbC1rZXk=")
+# Background jobs run at once, inside the request, instead of on a worker.
+os.environ.setdefault("RUN_JOBS_INLINE", "true")
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -49,6 +52,23 @@ def db(engine) -> Iterator[Session]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+def greeting(request: httpx.Request) -> httpx.Response:
+    """How every target answers in the tests, unless a test says otherwise."""
+    if request.method == "GET":
+        return httpx.Response(404)
+    return httpx.Response(
+        200, json={"choices": [{"message": {"content": "Hello! How can I help you today?"}}]}
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch) -> None:
+    """No request to a target ever leaves the tests: the Target Connector's network is replaced."""
+    from app.workers.connector import connector
+
+    monkeypatch.setattr(connector, "TRANSPORT", httpx.MockTransport(greeting))
 
 
 @pytest.fixture(autouse=True)
