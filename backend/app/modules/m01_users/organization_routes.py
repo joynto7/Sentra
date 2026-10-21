@@ -5,10 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.models import Organization
-from app.modules.m01_users import organizations
-from app.modules.m01_users.deps import current_session, current_user
+from app.modules.m01_users import getting_started, organizations
+from app.modules.m01_users.deps import current_membership, current_session, current_user
 from app.modules.m01_users.models import ROLE_LABELS, Membership, Role, User, UserSession
-from app.modules.m01_users.schemas import OrganizationCreate, OrganizationOut
+from app.modules.m01_users.schemas import (
+    FirstStepsOut,
+    FirstStepTarget,
+    OrganizationCreate,
+    OrganizationOut,
+)
 
 router = APIRouter(prefix="/organizations", tags=["M1 Organizations"])
 
@@ -38,6 +43,27 @@ def create_organization(
     membership = organizations.create(db, user, session, data.name)
     organization = db.get_one(Organization, membership.organization_id)
     return organization_out(membership, organization, organization.id)
+
+
+@router.get("/current/getting-started")
+def first_steps(
+    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> FirstStepsOut:
+    """Screen 07 Getting started: the five first steps and which are done. Every member may read
+    them; the organization comes from the session (NFR-3.3)."""
+    steps = getting_started.first_steps(db, membership.organization_id)
+    targets = ("first_target", "unverified_target", "verified_target")
+    return FirstStepsOut(
+        **{
+            **steps.__dict__,
+            **{
+                name: FirstStepTarget(**getattr(steps, name).__dict__)
+                if getattr(steps, name)
+                else None
+                for name in targets
+            },
+        }
+    )
 
 
 @router.get("")
