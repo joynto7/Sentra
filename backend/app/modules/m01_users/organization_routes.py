@@ -23,6 +23,7 @@ def organization_out(
         role=membership.role,
         role_label=ROLE_LABELS[Role(membership.role)],
         is_current=organization.id == current_id,
+        status=membership.status,
     )
 
 

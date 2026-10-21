@@ -170,3 +170,40 @@ def mfa_required(name: str, organization: str) -> tuple[str, str]:
         f"{link}\n\n"
         "You need an authenticator app on your phone that supports time-based codes (TOTP).\n",
     )
+
+
+def membership_suspended(name: str, organization: str, reason: str) -> tuple[str, str]:
+    return (
+        f"Your access to {organization} is suspended",
+        f"Hello {name},\n\n"
+        f"An Organization Administrator of {organization} suspended your access to it on Sentra.\n"
+        f"Reason: {reason}\n\n"
+        "Your account and your other organizations are not affected. Contact the organization's "
+        "administrators if you have questions.\n",
+    )
+
+
+def membership_reactivated(name: str, organization: str) -> tuple[str, str]:
+    return (
+        f"Your access to {organization} is restored",
+        f"Hello {name},\n\n"
+        f"Your access to {organization} on Sentra is restored, with your previous role.\n",
+    )
+
+
+def account_suspended(name: str, reason: str) -> tuple[str, str]:
+    return (
+        "Your Sentra account is suspended",
+        f"Hello {name},\n\n"
+        "A Sentra Platform Administrator suspended your account for security or support reasons, "
+        "in every organization it belongs to. You have been logged out.\n"
+        f"Reason: {reason}\n\n"
+        "Contact your organization administrator if you have questions.\n",
+    )
+
+
+def account_reactivated(name: str) -> tuple[str, str]:
+    return (
+        "Your Sentra account is active again",
+        f"Hello {name},\n\nYour Sentra account is active again. You can log in as before.\n",
+    )

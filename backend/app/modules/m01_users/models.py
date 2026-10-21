@@ -12,6 +12,8 @@ from app.core.models import OrganizationScoped, Timestamps, UUIDPrimaryKey
 class UserStatus(StrEnum):
     UNVERIFIED = "unverified"  # registered, e-mail address not confirmed yet
     ACTIVE = "active"
+    # Suspended in every organization by a Platform Administrator (UC-10.2, 1a): no login, and
+    # every session has ended. Reactivating the account makes it active again.
     DISABLED = "disabled"
 
 
@@ -50,6 +52,9 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     # The Platform Administrator operates Sentra itself and is not an organization role
     # (report 2.4, UC-10.1). Only a server command grants it (m10_admin/platform_admin.py).
     platform_admin: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # Why and when a Platform Administrator suspended the account (UC-10.2, 1a).
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suspension_reason: Mapped[str | None] = mapped_column(String(300))
 
     @property
     def mfa_enabled(self) -> bool:
@@ -178,6 +183,13 @@ ROLE_LABELS = {
 }
 
 
+class MembershipStatus(StrEnum):
+    """Suspension blocks a member's access without removing them (UC-10.2), unlike removal."""
+
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+
+
 class Membership(UUIDPrimaryKey, Timestamps, Base):
     """A user's place in one organization, with a role. A user may have several (FR-1.4)."""
 
@@ -191,6 +203,22 @@ class Membership(UUIDPrimaryKey, Timestamps, Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(30))
+    # FR-10.1: a suspended member keeps the role and history but can't open the organization.
+    status: Mapped[str] = mapped_column(
+        String(20), default=MembershipStatus.ACTIVE, server_default=MembershipStatus.ACTIVE.value
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suspended_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    suspension_reason: Mapped[str | None] = mapped_column(String(300))
+    # Set when the whole account was suspended (UC-10.2, 1a), so reactivating the account
+    # restores exactly these memberships and not those an organization suspended itself.
+    suspended_by_platform: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+
+    @property
+    def active(self) -> bool:
+        return self.status == MembershipStatus.ACTIVE
 
 
 class InvitationStatus(StrEnum):

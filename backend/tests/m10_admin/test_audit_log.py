@@ -374,4 +374,5 @@ def test_platform_administrators_have_their_own_log(client, db, monkeypatch):
     )
     # The platform log holds no organization content, and Lena can't read Halcyon Bank's log.
     assert client.get(LOG).status_code == 403
-    assert db.scalar(select(Membership).join(User).where(User.email == "lena@example.com")) is None
+    lena = db.scalar(select(User.id).where(User.email == "lena@example.com"))
+    assert db.scalar(select(Membership).where(Membership.user_id == lena)) is None
