@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
   CircleHelp,
+  CirclePause,
+  CirclePlay,
   MoreHorizontal,
   Search,
   TriangleAlert,
@@ -17,8 +20,10 @@ import { toast } from "sonner"
 import { AdminNav } from "@/components/admin/admin-nav"
 import { ChangeRoleDialog } from "@/components/admin/change-role-dialog"
 import { InviteDialog } from "@/components/admin/invite-dialog"
+import { ReactivateMemberDialog } from "@/components/admin/reactivate-member-dialog"
 import { RemoveMemberDialog } from "@/components/admin/remove-member-dialog"
 import { RolesDialog } from "@/components/admin/roles-dialog"
+import { SuspendMemberDialog } from "@/components/admin/suspend-member-dialog"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { useSession } from "@/components/session-provider"
@@ -46,6 +51,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ApiError } from "@/lib/api"
 import {
   type Invitation,
@@ -61,6 +67,7 @@ import { type RoleInfo, loadRoles, useCan } from "@/lib/permissions"
 import { initials } from "@/lib/session"
 
 const PAGE_SIZE = 20
+const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
 
 /** Two-step verification of a member (FR-1.2): "Off" carries a warning, so it is easy to spot. */
 function TwoStep({ on }: { on: boolean }) {
@@ -74,9 +81,50 @@ function TwoStep({ on }: { on: boolean }) {
   )
 }
 
+/** A member's status as icon and text (FR-10.1); a suspension says who, when and why. */
+function MemberStatus({ member }: { member: Member }) {
+  if (member.status !== "suspended") {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <CircleCheck className="size-4 text-success" aria-hidden="true" />
+        Active
+      </span>
+    )
+  }
+  const by = member.suspended_by ? ` by ${member.suspended_by}` : ""
+  const when = member.suspended_at ? ` on ${DAY.format(new Date(member.suspended_at))}` : ""
+  const why = member.suspension_reason ? ` Reason: ${member.suspension_reason}` : ""
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="inline-flex min-h-6 items-center gap-1.5 rounded-sm text-warning underline decoration-dashed underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          <CirclePause className="size-4" aria-hidden="true" />
+          Suspended
+          <span className="sr-only">
+            {by}
+            {when}.{why}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">
+        Suspended{by}
+        {when}.{why}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 /** Screen 12: the members of the organization and the pending invitations (FR-1.5, FR-1.6), with
- * each member's two-step verification (FR-1.2). */
-export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
+ * each member's status (FR-10.1) and two-step verification (FR-1.2). */
+export function MembersPage({
+  initialMfa = "",
+  initialSearch = "",
+  initialTab = "members",
+}: {
+  initialMfa?: string
+  initialSearch?: string
+  initialTab?: string
+}) {
   usePageCrumbs([{ label: "Members" }])
   const organization = useSession().organization
   const canManage = useCan("manage_members")
@@ -84,15 +132,18 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
   const [invitations, setInvitations] = useState<Invitation[] | null>(null)
   const [roles, setRoles] = useState<RoleInfo[]>([])
   const [error, setError] = useState(false)
-  const [tab, setTab] = useState("members")
-  const [search, setSearch] = useState("")
+  const [tab, setTab] = useState(initialTab)
+  const [search, setSearch] = useState(initialSearch)
   const [role, setRole] = useState("")
+  const [status, setStatus] = useState("")
   const [mfa, setMfa] = useState(initialMfa)
   const [page, setPage] = useState(1)
   const [inviting, setInviting] = useState(false)
   const [showRoles, setShowRoles] = useState(false)
   const [changing, setChanging] = useState<Member | null>(null)
   const [removing, setRemoving] = useState<Member | null>(null)
+  const [suspending, setSuspending] = useState<Member | null>(null)
+  const [reactivating, setReactivating] = useState<Member | null>(null)
   const [revoking, setRevoking] = useState<Invitation | null>(null)
 
   const load = useCallback(() => {
@@ -117,13 +168,15 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
     return (members ?? []).filter(
       (m) =>
         (!role || m.role === role) &&
+        (!status || m.status === status) &&
         (!mfa || m.mfa_enabled === (mfa === "on")) &&
         (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)),
     )
-  }, [members, search, role, mfa])
+  }, [members, search, role, status, mfa])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const admins = (members ?? []).filter((m) => m.role === "org_admin").length
+  // Only active administrators count: a suspended one can't administer (FR-10.1).
+  const admins = (members ?? []).filter((m) => m.role === "org_admin" && m.status !== "suspended").length
 
   if (canManage === false) {
     return (
@@ -183,6 +236,18 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
           options={roles.map((r) => ({ value: r.role, label: r.label }))}
         />
         <FilterSelect
+          label="Status"
+          value={status}
+          onChange={(v) => {
+            setStatus(v)
+            setPage(1)
+          }}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "suspended", label: "Suspended" },
+          ]}
+        />
+        <FilterSelect
           label="Two-step verification"
           value={mfa}
           onChange={(v) => {
@@ -219,6 +284,7 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
                 onClick={() => {
                   setSearch("")
                   setRole("")
+                  setStatus("")
                   setMfa("")
                 }}
               >
@@ -237,6 +303,7 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
                 <TableRow>
                   <TableHead className="text-xs">Member</TableHead>
                   <TableHead className="hidden text-xs @md:table-cell">Role</TableHead>
+                  <TableHead className="hidden text-xs @lg:table-cell">Status</TableHead>
                   <TableHead className="hidden text-xs @xl:table-cell">Two-step verification</TableHead>
                   <TableHead className="hidden text-right text-xs @2xl:table-cell">Last login</TableHead>
                   <TableHead className="w-12 text-xs">
@@ -263,18 +330,24 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
                           </div>
                           <div className="text-xs text-muted-foreground">{member.email}</div>
                           <div className="text-xs whitespace-normal text-muted-foreground @md:hidden">
-                            {member.role_label} · Two-step verification: <TwoStep on={member.mfa_enabled} /> · Last login:{" "}
-                            {lastSeen(member.last_login_at)}
+                            {member.role_label} · <MemberStatus member={member} /> · Two-step verification:{" "}
+                            <TwoStep on={member.mfa_enabled} /> · Last login: {lastSeen(member.last_login_at)}
                           </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden text-[13px] whitespace-normal @md:table-cell">
                       {member.role_label}
+                      <div className="text-xs text-muted-foreground @lg:hidden">
+                        <MemberStatus member={member} />
+                      </div>
                       <div className="text-xs text-muted-foreground @xl:hidden">
                         Two-step verification: <TwoStep on={member.mfa_enabled} />
                       </div>
                       <div className="text-xs text-muted-foreground @2xl:hidden">Last login: {lastSeen(member.last_login_at)}</div>
+                    </TableCell>
+                    <TableCell className="hidden text-[13px] @lg:table-cell">
+                      <MemberStatus member={member} />
                     </TableCell>
                     <TableCell className="hidden text-[13px] @xl:table-cell">
                       <TwoStep on={member.mfa_enabled} />
@@ -292,6 +365,18 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
                             <UserCog aria-hidden="true" />
                             Change role
                           </DropdownMenuItem>
+                          {!member.is_you && member.status !== "suspended" && (
+                            <DropdownMenuItem onSelect={() => setSuspending(member)}>
+                              <CirclePause aria-hidden="true" />
+                              Suspend
+                            </DropdownMenuItem>
+                          )}
+                          {member.status === "suspended" && (
+                            <DropdownMenuItem onSelect={() => setReactivating(member)}>
+                              <CirclePlay aria-hidden="true" />
+                              Reactivate
+                            </DropdownMenuItem>
+                          )}
                           {!member.is_you && (
                             <>
                               <DropdownMenuSeparator />
@@ -476,6 +561,24 @@ export function MembersPage({ initialMfa = "" }: { initialMfa?: string }) {
           toast.success(`${member.name} is now ${/^[AEIOU]/.test(member.role_label) ? "an" : "a"} ${member.role_label}`, {
             description: "The new role applies from their next request.",
           })
+          load()
+        }}
+      />
+      <SuspendMemberDialog
+        member={suspending}
+        organization={organization?.name ?? "the organization"}
+        onClose={() => setSuspending(null)}
+        onSuspended={(member) => {
+          toast.success(`${member.name} is suspended`, { description: "Their access ended at once. Their role and history stay." })
+          load()
+        }}
+      />
+      <ReactivateMemberDialog
+        member={reactivating}
+        organization={organization?.name ?? "the organization"}
+        onClose={() => setReactivating(null)}
+        onReactivated={(member) => {
+          toast.success(`${member.name} is active again`, { description: `They can open the organization with the role ${member.role_label}.` })
           load()
         }}
       />

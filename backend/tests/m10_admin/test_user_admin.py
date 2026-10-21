@@ -112,6 +112,7 @@ def test_the_members_list_shows_the_suspension(client, db):
         "Tom",
     )
     assert omar["role_label"] == "AI Application Developer"
+    assert omar["suspended_by_platform"] is False
 
 
 @pytest.mark.parametrize(
@@ -293,6 +294,11 @@ def test_reactivating_restores_only_what_the_platform_suspended(lena, db, client
         )
     )
     assert reactivate(client, kestrel).json()["error"]["code"] == "account_suspended"
+    listed = next(m for m in client.get(MEMBERS).json() if m["email"] == "rahim@example.com")
+    assert (listed["suspended_by_platform"], listed["suspended_by"]) == (
+        True,
+        "Lena (Sentra platform)",
+    )
     log_in(client, "lena@example.com")
     response = client.post(
         f"{ACCOUNTS}/{user(db, 'rahim@example.com').id}/reactivate", json={"password": PASSWORD}

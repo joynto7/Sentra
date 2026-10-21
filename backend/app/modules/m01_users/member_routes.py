@@ -37,6 +37,7 @@ def member_out(
         suspended_at=membership.suspended_at,
         suspension_reason=membership.suspension_reason,
         suspended_by=suspended_by,
+        suspended_by_platform=membership.suspended_by_platform,
     )
 
 
