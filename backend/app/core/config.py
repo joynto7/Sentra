@@ -68,6 +68,27 @@ class Settings(BaseSettings):
     # the workers. The tests set this to run them at once, inside the request.
     run_jobs_inline: bool = False
 
+    # Campaign runs (FR-5.4, FR-5.7). A worker works on one run for at most run_slice_seconds, then
+    # puts it back at the end of the queue, so every run gets its turn (NFR-6.4).
+    run_slice_seconds: int = 25
+    # A target that answers "overloaded" (HTTP 429 or 503) this many times in a row stops the run
+    # (FR-5.7); other errors in a row stop it after run_max_errors.
+    run_max_overloads: int = 3
+    run_max_errors: int = 5
+    # A target that can't be reached pauses the run, which retries after these delays in seconds
+    # and stops after the last one (NFR-2.3).
+    run_retry_delays: list[int] = [15, 30, 60, 120, 240]
+    # The platform's default monthly limits of an organization (UC-10.6, 1a), until FR-10.4 lets
+    # Platform Administrators set them for each organization.
+    default_monthly_campaign_runs: int = 100
+    default_monthly_attempts: int = 50_000
+    default_monthly_llm_cost_usd: float = 100.0
+    # Live events of campaign runs (FR-5.6): "redis" (a stream per run), or "memory" in the tests.
+    live_events_backend: str = "redis"
+    # The live stream of a run closes after this many seconds and the browser reconnects with the
+    # last event it saw, so the session and the membership are checked again (NFR-3.3).
+    live_stream_seconds: int = 60
+
     # Server-side request forgery protection (NFR-3.4): targets on private network addresses are
     # refused, unless an on-premises deployment allows them.
     allow_private_targets: bool = False

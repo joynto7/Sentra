@@ -4,7 +4,9 @@ the identifier of what they started, whose status the page then follows (API des
 
 A job is a function `fn(db, *ids)`. @job registers it under a name and makes it a Celery task.
 start() places it in the queue, or, with RUN_JOBS_INLINE (the tests), runs it at once in the
-caller's session. Commit the row the job works on before starting it, so the worker finds it.
+caller's session; a job meant for later (a countdown) is then kept in DEFERRED, where a test runs
+it when it wants to (run_deferred). Commit the row the job works on before starting it, so the
+worker finds it.
 """
 
 import importlib
@@ -19,6 +21,8 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger("uvicorn.error")
 REGISTRY: dict[str, Callable] = {}
+# With RUN_JOBS_INLINE: the jobs started with a countdown, as (name, args, countdown)
+DEFERRED: list[tuple[str, list[str], float]] = []
 QUEUE_DOWN = (
     "Sentra's background workers can't be reached right now, so this couldn't start. "
     "Try again in a minute."
@@ -50,6 +54,9 @@ def start(db: Session, name: str, *args, countdown: float | None = None) -> bool
     if get_settings().run_jobs_inline:
         for module in celery_app.conf.include:  # registers every job
             importlib.import_module(module)
+        if countdown:
+            DEFERRED.append((name, texts, countdown))
+            return True
         REGISTRY[name](db, *texts)
         return True
     try:
@@ -58,3 +65,13 @@ def start(db: Session, name: str, *args, countdown: float | None = None) -> bool
         logger.exception("Couldn't queue the job %s", name)
         return False
     return True
+
+
+def run_deferred(db: Session) -> int:
+    """With RUN_JOBS_INLINE: runs the jobs that were started with a countdown, as if their time
+    had come, and returns how many ran (the jobs they start in turn wait for the next call)."""
+    waiting = list(DEFERRED)
+    DEFERRED.clear()
+    for name, texts, _ in waiting:
+        REGISTRY[name](db, *texts)
+    return len(waiting)

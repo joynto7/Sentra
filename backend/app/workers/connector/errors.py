@@ -36,6 +36,8 @@ class TargetOverloaded(ConnectorError):
         wait = f" It asks to wait {retry_after} seconds." if retry_after else ""
         super().__init__(f"The target is overloaded (HTTP {status_code}).{wait}")
         self.status_code = status_code
+        # Retry-After in seconds, when the target gave it as a number (RFC 9110, 10.2.3)
+        self.retry_after = int(retry_after) if retry_after and retry_after.isdigit() else None
 
 
 class TargetHTTPError(ConnectorError):

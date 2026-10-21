@@ -77,10 +77,12 @@ def complete(
     schema: type[BaseModel] | None = None,
     max_tokens: int = 1024,
     temperature: float = 0.0,
+    campaign_run_id: uuid.UUID | None = None,
 ) -> Completion:
     """Sends `data` to the model of `task` under the fixed `instructions` and returns the reply.
     `instructions` must be text written in Sentra's code; anything that came from a target belongs
-    in `data`. The usage is recorded and committed in `db`."""
+    in `data`. The usage is recorded and committed in `db`, with the campaign run it served, if
+    any, so the run's cost counts it (FR-5.7)."""
     choice = model_for(task)
     if choice is None:
         raise LLMUnavailable(f"No model is configured for {TASK_LABELS[task]}.")
@@ -97,6 +99,7 @@ def complete(
 
     usage = LLMUsage(
         organization_id=organization_id,
+        campaign_run_id=campaign_run_id,
         task=task,
         model=choice.model,
         provider=choice.provider,

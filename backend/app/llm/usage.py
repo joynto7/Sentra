@@ -1,5 +1,6 @@
 """What an organization's requests through the LLM layer used: per provider and model in the
-current month (UC-10.5 step 2), and the month's cost for the usage limits (FR-10.4)."""
+current month (UC-10.5 step 2), the month's cost for the usage limits (FR-10.4), and the cost of
+one campaign run."""
 
 import uuid
 from dataclasses import dataclass
@@ -43,3 +44,13 @@ def this_month(db: Session, organization_id: uuid.UUID) -> list[ModelUsage]:
 
 def cost_this_month(db: Session, organization_id: uuid.UUID) -> Decimal:
     return sum((usage.cost_usd for usage in this_month(db, organization_id)), Decimal(0))
+
+
+def cost_of_run(db: Session, campaign_run_id: uuid.UUID) -> Decimal:
+    """What the requests that served one campaign run cost, e.g. its LLM judge (UC-5.6 step 2)."""
+    total = db.scalar(
+        select(func.coalesce(func.sum(LLMUsage.cost_usd), 0)).where(
+            LLMUsage.campaign_run_id == campaign_run_id
+        )
+    )
+    return Decimal(total)
