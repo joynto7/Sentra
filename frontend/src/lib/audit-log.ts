@@ -261,6 +261,7 @@ const NAMES: Record<string, string> = {
   checked: "Checked at",
   dns_txt_record: "DNS TXT record",
   endpoint_url: "Endpoint URL",
+  local_models_only: "Local models only",
   max_request_rate: "Maximum request rate",
   mfa_required: "Two-step verification required",
   rag_application: "RAG application",

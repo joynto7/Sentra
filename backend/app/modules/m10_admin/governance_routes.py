@@ -14,10 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import AuditLogEntry, digest
 from app.core.database import get_db
+from app.core.models import Organization
 from app.modules.m01_users.deps import current_user, platform_admin
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m10_admin import audit_log, user_admin
+from app.modules.m10_admin import audit_log, data_sharing, user_admin
 from app.modules.m10_admin.schemas import (
     AccountOrganizationOut,
     AccountOut,
@@ -28,8 +29,11 @@ from app.modules.m10_admin.schemas import (
     AuditExportIn,
     AuditFiltersOut,
     AuditLogPage,
+    DataSharingIn,
+    DataSharingOut,
     IntegrityOut,
     ItemOut,
+    LLMTaskOut,
     MembershipStatusOut,
     PasswordConfirmIn,
     SuspendIn,
@@ -39,6 +43,7 @@ from app.modules.m10_admin.schemas import (
 router = APIRouter(prefix="/admin", tags=["M10 Administration"])
 can_view = require(Action.VIEW_AUDIT_LOG)  # Organization Administrators (FR-1.6)
 can_manage_members = require(Action.MANAGE_MEMBERS)  # Organization Administrators
+can_manage_data = require(Action.MANAGE_DATA_SETTINGS)  # Organization Administrators
 
 
 def entry_out(entry: AuditLogEntry) -> AuditEntryOut:
@@ -330,3 +335,41 @@ def reactivate_account(
 
 def _account_row(db: Session, user_id: uuid.UUID) -> AccountOut:
     return account_out(user_admin.account_row(db, user_id))
+
+
+# ---------------------------------------------------------------- data and AI (UC-10.5)
+
+
+def data_sharing_out(db: Session, organization: Organization) -> DataSharingOut:
+    found = data_sharing.overview(db, organization)
+    return DataSharingOut(
+        local_models_only=found.local_models_only,
+        changed_by=found.changed_by,
+        changed_at=found.changed_at,
+        tasks=[LLMTaskOut(**row.__dict__) for row in found.tasks],
+        masking=found.masking,
+    )
+
+
+@router.get("/data-and-ai")
+def data_and_ai(
+    membership: Membership = Depends(can_manage_data), db: Session = Depends(get_db)
+) -> DataSharingOut:
+    """Screen 59: which provider and model gets the organization's data for each task, what it
+    receives and how often it was used this month (UC-10.5 steps 1-2)."""
+    return data_sharing_out(db, db.get_one(Organization, membership.organization_id))
+
+
+@router.put("/data-and-ai")
+def change_data_and_ai(
+    data: DataSharingIn,
+    background: BackgroundTasks,
+    membership: Membership = Depends(can_manage_data),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> DataSharingOut:
+    """UC-10.5 steps 3-6 and 3a: "Local models only", confirmed with the password."""
+    organization = data_sharing.set_local_models_only(
+        db, membership, user, data.local_models_only, data.password, background
+    )
+    return data_sharing_out(db, organization)

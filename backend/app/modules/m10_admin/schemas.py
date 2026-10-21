@@ -129,3 +129,32 @@ class AccountPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class LLMTaskOut(BaseModel):
+    """One row of Screen 59: a task of Sentra's AI and where the organization's data goes for it
+    (UC-10.5 steps 1-2)."""
+
+    task: str
+    function: str
+    model: str | None
+    provider: str | None
+    deployment: str | None  # "external" (the data leaves the platform) or "local"
+    receives: str
+    requests_this_month: int
+    local_model: bool  # it stays available with local models only
+    available: bool  # with the organization's current setting
+    without_model: str  # what the function does without a model (UC-10.5, 4a1)
+
+
+class DataSharingOut(BaseModel):
+    local_models_only: bool
+    changed_by: str | None
+    changed_at: datetime | None
+    tasks: list[LLMTaskOut]
+    masking: str
+
+
+class DataSharingIn(BaseModel):
+    local_models_only: bool
+    password: str = Field(min_length=1, max_length=256)  # UC-10.5 step 5 (NFR-3.5)

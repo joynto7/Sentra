@@ -45,12 +45,15 @@ class ModelChoice:
     deployment: Deployment
 
 
-def model_for(task: LLMTask) -> ModelChoice | None:
-    """The model configured for a task, or None when there is none."""
+def model_for(task: LLMTask, *, local_only: bool = False) -> ModelChoice | None:
+    """The model configured for a task, or None when there is none. With `local_only` (an
+    organization that uses local models only, UC-10.5), only a model on the platform counts."""
     settings = get_settings()
     name = (settings.llm_task_models.get(task) or settings.llm_model).strip()
     if not name:
         return None
     provider = name.split("/", 1)[0] if "/" in name else ""
     deployment = Deployment.LOCAL if provider in LOCAL_PROVIDERS else Deployment.EXTERNAL
+    if local_only and deployment != Deployment.LOCAL:
+        return None
     return ModelChoice(model=name, provider=provider or "unknown", deployment=deployment)
