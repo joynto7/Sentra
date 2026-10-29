@@ -22,6 +22,8 @@ EVENTS = [
     Event("usage_limit_warning", "Usage limit warning"),
     # UC-2.4 step 4: the mapping of a target profile has finished
     Event("target_profile_ready", "Target profile ready for review"),
+    # UC-3.1 step 6: a new draft of a threat model awaits a Security Analyst
+    Event("threat_model_ready", "Threat model ready for review"),
     Event(
         "account_security",
         "Account security alerts (password changes, new logins)",
