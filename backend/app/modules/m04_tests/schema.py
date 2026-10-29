@@ -101,13 +101,18 @@ class RuleCheck(StrEnum):
     TOOL_CALLED_WITHOUT_CONFIRMATION = "tool_called_without_confirmation"
     TOOL_CALLS_OVER = "tool_calls_over"
     JUDGE_CONFIRMS = "judge_confirms"
+    REPLY_LENGTH_OVER = "reply_length_over"
 
 
 @dataclass(frozen=True)
 class RuleKind:
     method: DetectionMethod
     sentence: str  # "{value}" marks the part the user fills in
-    value: str  # what the value is: "" (none), "text", "tool", "number" or "statement"
+    # What the value is: "" (none), "text", "tool", "number", "characters" or "statement"
+    value: str
+    # Only for the checks of attempt templates (templates.yaml), not in test definitions, so the
+    # success-condition builder of custom tests (Screen 31) doesn't offer it
+    template_only: bool = False
 
 
 RULE_KINDS = {
@@ -135,6 +140,12 @@ RULE_KINDS = {
     ),
     RuleCheck.JUDGE_CONFIRMS: RuleKind(
         DetectionMethod.LLM_JUDGE, "The LLM judge confirms: {value}", "statement"
+    ),
+    RuleCheck.REPLY_LENGTH_OVER: RuleKind(
+        DetectionMethod.RULE_MATCHING,
+        "The reply is longer than {value} characters",
+        "characters",
+        template_only=True,
     ),
 }
 
@@ -165,6 +176,8 @@ class SuccessRule(BaseModel):
             raise ValueError("enter the tool's name as the target calls it, e.g. issue_refund")
         if kind == "number" and not (value.isdigit() and 1 <= int(value) <= 1000):
             raise ValueError("enter a whole number from 1 to 1000")
+        if kind == "characters" and not (value.isdigit() and 1 <= int(value) <= 1_000_000):
+            raise ValueError("enter a whole number of characters from 1 to 1,000,000")
         if kind == "text" and not 2 <= len(value) <= 120:
             raise ValueError("enter 2 to 120 characters")
         if kind == "statement" and not 10 <= len(value) <= 300:
@@ -235,6 +248,10 @@ class DefinitionFields(BaseModel):
         methods = {d.method for d in info.data.get("detection_methods", [])}
         types = set(info.data.get("target_types", []))
         for number, rule in enumerate(value, start=1):
+            if RULE_KINDS[rule.check].template_only:
+                raise ValueError(
+                    f"rule {number} can be used only in the attempt templates of built-in tests"
+                )
             if "detection_methods" in info.data and rule.method not in methods:
                 raise ValueError(
                     f"rule {number} is checked by {DETECTION_LABELS[rule.method]}: "

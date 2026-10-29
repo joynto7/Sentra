@@ -73,6 +73,12 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=10
     networks: [default, lab]  # the Target Connector runs here, so the worker reaches the lab
 
+  analysis-worker:
+    <<: *backend
+    # The LLM judge (FR-6.1) on its own queue, so its waits for a model never hold up the attempts
+    # of campaign runs (NFR-1.4). It reaches only the LLM providers, never a target or the lab.
+    command: celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=analysis --hostname=analysis@%h
+
   lab-rag-chatbot:
     # The first lab target (FR-11.1): an intentionally vulnerable RAG chatbot with synthetic data.
     # Start it with:  docker compose --profile lab up -d

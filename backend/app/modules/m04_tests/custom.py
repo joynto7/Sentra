@@ -186,6 +186,7 @@ def vocabulary() -> dict:
         "rule_checks": [
             {"check": check, "method": kind.method, "sentence": kind.sentence, "value": kind.value}
             for check, kind in RULE_KINDS.items()
+            if not kind.template_only
         ],
     }
 

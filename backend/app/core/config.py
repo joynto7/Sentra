@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     default_monthly_campaign_runs: int = 100
     default_monthly_attempts: int = 50_000
     default_monthly_llm_cost_usd: float = 100.0
+    # The LLM judge (FR-6.1; UC-6.1, 3a): a judge that can't answer (the provider fails, or the
+    # monthly LLM cost limit is reached) tries again after these delays in seconds; after the last
+    # one the attempt is marked as not evaluated by the judge.
+    detection_judge_retry_delays: list[int] = [60, 300, 900]
     # Live events of campaign runs (FR-5.6): "redis" (a stream per run), or "memory" in the tests.
     live_events_backend: str = "redis"
     # The live stream of a run closes after this many seconds and the browser reconnects with the
