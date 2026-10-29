@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FrameworkRef(BaseModel):
@@ -46,6 +46,7 @@ class VersionSummary(BaseModel):
     approved_at: datetime | None
     approved_by: str | None
     threat_count: int
+    runs: int  # campaign runs that were based on this version (UC-3.4 step 2)
 
 
 class VersionOut(VersionSummary):
@@ -100,6 +101,7 @@ class ThreatModelRow(BaseModel):
     job: JobOut | None
     blocker: str | None
     blocker_code: str | None
+    without_test: int | None  # threats of the newest version that no test covers (FR-3.4)
 
 
 class ThreatModelList(BaseModel):
@@ -109,3 +111,162 @@ class ThreatModelList(BaseModel):
     drafts_to_review: int  # targets whose newest version is a draft
     approved: int  # targets whose newest version is approved
     without_threat_model: int  # verified targets that have no threat model yet
+
+
+# ---------------------------------------------------------------- reviewing (UC-3.2)
+
+
+class ThreatEdit(BaseModel):
+    """An existing threat as the analyst left it; only what differs counts as a change."""
+
+    number: int
+    title: str = Field(min_length=5, max_length=200)
+    owasp: list[str] = Field(default_factory=list, max_length=4)
+    atlas: str | None = None
+    likelihood: int = Field(ge=1, le=5)
+    impact: int = Field(ge=1, le=5)
+    reason: str = Field(default="", max_length=300)  # why the rating changed, if it did
+
+
+class ThreatNew(BaseModel):
+    title: str = Field(min_length=5, max_length=200)
+    component_kind: str
+    component_name: str = Field(min_length=1, max_length=120)
+    owasp: list[str] = Field(default_factory=list, max_length=4)
+    atlas: str | None = None
+    likelihood: int = Field(ge=1, le=5)
+    impact: int = Field(ge=1, le=5)
+    reason: str = Field(default="", max_length=300)
+
+
+class ThreatRemoval(BaseModel):
+    number: int
+    reason: str = Field(default="", max_length=300)
+
+
+class VersionIn(BaseModel):
+    """UC-3.2 steps 3-4: the changes to the version the analyst started from (`base_version`)."""
+
+    base_version: int
+    edit: list[ThreatEdit] = Field(default_factory=list, max_length=200)
+    add: list[ThreatNew] = Field(default_factory=list, max_length=50)
+    remove: list[ThreatRemoval] = Field(default_factory=list, max_length=200)
+    restore: list[int] = Field(default_factory=list, max_length=200)  # removed threats back
+
+
+class RunRef(BaseModel):
+    id: uuid.UUID
+    code: str  # e.g. R-212-1
+    started_at: datetime | None
+
+
+class FieldChange(BaseModel):
+    field: str  # title, owasp, atlas, likelihood or impact
+    before: str
+    after: str
+
+
+class ComparedThreat(BaseModel):
+    number: int
+    title: str
+    component_name: str
+    owasp: list[str]
+    atlas: str | None
+    likelihood: int
+    impact: int
+    reason: str | None
+
+
+class ChangedThreat(BaseModel):
+    number: int
+    title: str
+    component_name: str
+    changes: list[FieldChange]
+    reason: str | None
+
+
+class CompareOut(BaseModel):
+    """UC-3.4: what was added, removed and changed between two versions, with the reasons."""
+
+    base: VersionSummary
+    compare: VersionSummary
+    added: list[ComparedThreat]
+    removed: list[ComparedThreat]
+    changed: list[ChangedThreat]
+    identical: bool
+    base_runs: list[RunRef]
+    compare_runs: list[RunRef]
+
+
+# ---------------------------------------------------------------- recommendations (UC-3.3)
+
+
+class ThreatRef(BaseModel):
+    number: int
+    title: str
+    risk: int
+
+
+class SuiteRecommendation(BaseModel):
+    code: str
+    name: str
+    purpose: str
+    version: int
+    origin: str  # built_in or custom
+    tests: int  # tests of the suite that apply to the target's type
+    attempts: int  # about this many attempts per run
+    threats: list[ThreatRef]  # the threats it addresses, highest risk first
+    top_risk: int  # the highest risk among them; 0 when it addresses none
+    recommended: bool  # it addresses at least one threat
+    selected: bool  # in the saved selection, or else in Sentra's proposal
+
+
+class GapAcceptanceOut(BaseModel):
+    reason: str
+    accepted_by: str | None
+    accepted_at: datetime
+    version: int  # the version it was accepted in
+
+
+class GapOut(BaseModel):
+    """A threat that no available test covers (UC-3.3 step 3)."""
+
+    number: int
+    title: str
+    component_name: str
+    owasp: list[FrameworkRef]
+    risk: int
+    out_of_scope: bool  # only LLM03 or LLM09, which no test of the library can cover
+    accepted: GapAcceptanceOut | None
+
+
+class SelectionOut(BaseModel):
+    version: int  # the approved version it was saved for
+    suites: list[str]
+    uncovered: list[int]
+    saved_by: str | None
+    saved_at: datetime
+    current: bool  # saved for the newest approved version
+
+
+class Recommendations(BaseModel):
+    """Screen 27."""
+
+    target: TargetRef
+    version: VersionSummary  # the newest approved version
+    threats_total: int
+    threats_covered: int  # by some available test
+    suites: list[SuiteRecommendation]  # recommended ones first, by risk
+    gaps: list[GapOut]
+    selection: SelectionOut | None
+
+
+class SelectionIn(BaseModel):
+    version: int
+    suites: list[str] = Field(max_length=50)
+
+
+class GapIn(BaseModel):
+    version: int
+    threat: int
+    reason: str = Field(default="", max_length=300)

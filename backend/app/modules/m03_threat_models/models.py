@@ -179,6 +179,51 @@ class ThreatModelJob(UUIDPrimaryKey, OrganizationScoped, Base):
     message: Mapped[str | None] = mapped_column(Text)  # why it failed, or used no LLM
 
 
+class ThreatModelSelection(UUIDPrimaryKey, OrganizationScoped, Base):
+    """UC-3.3 steps 5-6: the test suites a Security Analyst accepted as the default for the
+    target's new campaigns. The newest row counts; earlier ones stay as the history."""
+
+    __tablename__ = "threat_model_selections"
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), index=True
+    )
+    threat_model_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("threat_models.id", ondelete="CASCADE")
+    )
+    suites: Mapped[list[str]] = mapped_column(JSONB)  # suite codes; the tests aren't copied
+    # The threats these suites don't cover, recorded with the selection (UC-3.3 success end)
+    uncovered: Mapped[list[int]] = mapped_column(JSONB, default=list)
+    saved_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    saved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+
+
+class ThreatGapAcceptance(UUIDPrimaryKey, OrganizationScoped, Base):
+    """UC-3.3, 3a1: the reason why a threat that no test covers is accepted for now. It belongs
+    to the threat's number, so it stays with the threat in later versions."""
+
+    __tablename__ = "threat_gap_acceptances"
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), index=True
+    )
+    threat_model_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("threat_models.id", ondelete="CASCADE")
+    )  # the version it was accepted in
+    threat_no: Mapped[int]
+    reason: Mapped[str] = mapped_column(String(300))
+    accepted_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    accepted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+
+
 # FR-3.3: a stored version is never changed. Attached to the tables, so the tests' create_all()
 # makes the triggers as well as the migration does. A version may still be approved once, and a
 # deleted user's ID becomes NULL (ON DELETE SET NULL).
