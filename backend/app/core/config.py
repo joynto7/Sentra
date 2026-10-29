@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     # A target that can't be reached pauses the run, which retries after these delays in seconds
     # and stops after the last one (NFR-2.3).
     run_retry_delays: list[int] = [15, 30, 60, 120, 240]
+    # Sentra's own code failing this many times in a row on one run stops the run (NFR-2.3).
+    run_max_worker_errors: int = 3
     # The platform's default monthly limits of an organization (UC-10.6, 1a), until FR-10.4 lets
     # Platform Administrators set them for each organization.
     default_monthly_campaign_runs: int = 100

@@ -64,7 +64,9 @@ PLACEHOLDERS = {
 _PLACEHOLDER = re.compile(r"\{([^{}\s]*)\}")
 # The shapes of canary tokens: those Sentra makes (canaries.new_token) and those of the lab targets.
 _CANARY_SHAPES = [
-    re.compile(r"\b[A-Z][A-Z0-9]{1,11}(?:-[A-Z0-9]{2,12}){1,2}-[0-9A-F]{8}\b"),  # SENTRA-SYS-1A2B3C4D
+    re.compile(
+        r"\b[A-Z][A-Z0-9]{1,11}(?:-[A-Z0-9]{2,12}){1,2}-[0-9A-F]{8}\b"
+    ),  # SENTRA-SYS-1A2B3C4D
     re.compile(r"\b(?:[A-Z0-9]+-)*CANARY(?:-[A-Z0-9]+)+\b"),  # HB-CANARY-SYS-1A2B3C4D
     re.compile(r"\bcanary\.[0-9a-f]{6,}@", re.IGNORECASE),  # canary.1a2b3c4d@example.com
 ]
@@ -93,7 +95,9 @@ def message_problems(message: str, declared: list[str]) -> list[str]:
     if message != message.strip():
         problems.append("starts or ends with spaces")
     if len(message) > MAX_MESSAGE_CHARS:
-        problems.append(f"is {len(message)} characters long; at most {MAX_MESSAGE_CHARS} are allowed")
+        problems.append(
+            f"is {len(message)} characters long; at most {MAX_MESSAGE_CHARS} are allowed"
+        )
     hidden = [c for c in message if c != "\n" and unicodedata.category(c) in _HIDDEN]
     if hidden:
         names = sorted({unicodedata.name(c, f"U+{ord(c):04X}") for c in hidden})
@@ -154,7 +158,9 @@ class TemplateEntry(BaseModel):
     def _messages_follow_the_rules(self) -> "TemplateEntry":
         problems = []
         if len(self.messages) > MAX_MESSAGES:
-            problems.append(f"has {len(self.messages)} messages; at most {MAX_MESSAGES} are allowed")
+            problems.append(
+                f"has {len(self.messages)} messages; at most {MAX_MESSAGES} are allowed"
+            )
         if len(set(self.messages)) != len(self.messages):
             problems.append("has the same message twice")
         for number, message in enumerate(self.messages, start=1):
@@ -164,7 +170,11 @@ class TemplateEntry(BaseModel):
         for name in self.placeholders:
             if name not in used:
                 problems.append(f"lists the placeholder {{{name}}}, but no message uses it")
-            if PLACEHOLDERS.get(name) and PLACEHOLDERS[name].needs_canary_slot and not self.canary_slot:
+            if (
+                PLACEHOLDERS.get(name)
+                and PLACEHOLDERS[name].needs_canary_slot
+                and not self.canary_slot
+            ):
                 problems.append(f"uses {{{name}}}, which needs a canary_slot")
         if any(rule.check in _CANARY_CHECKS for rule in self.checks) and not self.canary_slot:
             problems.append("has a canary check, which needs a canary_slot")
@@ -212,7 +222,9 @@ def parse(text: str) -> Templates:
         return result
     entries = data.get("templates") if isinstance(data, dict) else None
     if not isinstance(entries, dict) or set(data) != {"templates"}:
-        result.errors[""] = "templates.yaml must contain only the key 'templates' with one entry per name"
+        result.errors[""] = (
+            "templates.yaml must contain only the key 'templates' with one entry per name"
+        )
         return result
     for name, value in entries.items():
         try:
@@ -250,7 +262,9 @@ def library_problems(templates: Templates, library: list[TestDefinitionSpec]) ->
     problems = []
     names = {spec.attempt_template for spec in library}
     found = set(templates.entries) | {n for n in templates.errors if n}
-    problems += [f"{n}: missing; every template of the library needs an entry" for n in sorted(names - found)]
+    problems += [
+        f"{n}: missing; every template of the library needs an entry" for n in sorted(names - found)
+    ]
     problems += [f"{n}: no test of the library uses this template" for n in sorted(found - names)]
     for spec in library:
         entry = templates.entries.get(spec.attempt_template)

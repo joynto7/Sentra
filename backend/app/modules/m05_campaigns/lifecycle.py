@@ -140,6 +140,16 @@ def dispatch(db: Session, run: CampaignRun, countdown: float | None = None) -> b
     return jobs.start(db, JOB, run.id, token, countdown=countdown)
 
 
+def check_later(db: Session, run: CampaignRun) -> None:
+    """Another worker holds the run's lease: a job looks at the run again when the lease runs out,
+    in case that worker is gone (NFR-2.2). The job keeps the current token, so it is stale if the
+    worker queues the run itself before then. Ends the caller's transaction."""
+    seconds = (run.lease_until - now()).total_seconds() + 1 if run.lease_until else 1
+    run_id, token = run.id, run.dispatch_token
+    db.rollback()
+    jobs.start(db, JOB, run_id, token or "", countdown=min(max(seconds, 1), MAX_COUNTDOWN_SECONDS))
+
+
 def cancel_unqueued(db: Session, run_id: uuid.UUID) -> None:
     """The start job couldn't be queued (UC-5.3, failed end): the run ends at once, unseen by
     any worker, and the user gets the reason."""
@@ -349,15 +359,19 @@ def active_run(db: Session, campaign_id: uuid.UUID) -> CampaignRun | None:
 
 def recover(db: Session) -> int:
     """When a worker starts (NFR-2.2): every active run that no worker holds gets a new job, and a
-    run that ended without being finalized is finalized. Returns how many runs were picked up."""
+    run that ended without being finalized is finalized. A run whose lease is still held is looked
+    at again when the lease runs out. Returns how many runs were picked up."""
     picked = 0
     waiting = db.scalars(select(CampaignRun.id).where(CampaignRun.finalized_at.is_(None))).all()
     db.rollback()
     for run_id in waiting:
         run = lock(db, run_id, skip_locked=True)  # skip a run that is being changed right now
         at = now()
-        if run is None or not lease_free(run, at):
+        if run is None:
             db.rollback()
+            continue
+        if not lease_free(run, at):
+            check_later(db, run)
             continue
         if run.status in ENDED:
             db.commit()

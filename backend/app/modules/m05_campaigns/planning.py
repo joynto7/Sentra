@@ -49,7 +49,9 @@ def plan(db: Session, run: CampaignRun, target: Target) -> Plan:
     planted = canaries.planted(db, target.id)
     recorded = run.versions.get("tests", [])
     ids = [uuid.UUID(test["id"]) for test in recorded]
-    definitions = {d.id: d for d in db.scalars(select(TestDefinition).where(TestDefinition.id.in_(ids)))}
+    definitions = {
+        d.id: d for d in db.scalars(select(TestDefinition).where(TestDefinition.id.in_(ids)))
+    }
 
     result = Plan(templates={"file": templates.digest, "entries": {}})
     messages_of: list[tuple[TestDefinition, dict, list[str]]] = []
@@ -75,7 +77,10 @@ def plan(db: Session, run: CampaignRun, target: Target) -> Plan:
             continue
         canary = planted.get(entry.canary_slot) if entry.canary_slot else None
         # One value for every placeholder of templates.PLACEHOLDERS
-        values = {"target_name": target.name, "topic": (canary.topic or "").strip() if canary else ""}
+        values = {
+            "target_name": target.name,
+            "topic": (canary.topic or "").strip() if canary else "",
+        }
         messages = [template_file.fill(message, values) for message in entry.messages]
         row["status"], row["attempts"] = "planned", len(messages)
         result.templates["entries"][definition.attempt_template] = entry.digest()
@@ -129,7 +134,7 @@ def _usable_entry(
         canary = planted.get(entry.canary_slot)
         if canary is None:
             return (
-                f"It needs the canary token \"{slot.label}\", which isn't planted on this target.",
+                f'It needs the canary token "{slot.label}", which isn\'t planted on this target.',
                 None,
             )
         needs_topic = any(
@@ -137,7 +142,7 @@ def _usable_entry(
         )
         if needs_topic and not (canary.topic or "").strip():
             return (
-                f"It needs the topic of the canary token \"{slot.label}\", which isn't entered "
+                f'It needs the topic of the canary token "{slot.label}", which isn\'t entered '
                 "in the target profile.",
                 None,
             )

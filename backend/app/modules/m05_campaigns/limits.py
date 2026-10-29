@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.llm.usage import cost_this_month
-from app.modules.m05_campaigns.models import Attempt, CampaignRun
+from app.modules.m05_campaigns.models import Attempt, CampaignRun, EndReason
 
 
 @dataclass(frozen=True)
@@ -41,8 +41,10 @@ def month_start(now: datetime | None = None) -> datetime:
 
 def next_month_label(now: datetime | None = None) -> str:
     start = month_start(now)
-    following = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(
-        month=start.month + 1
+    following = (
+        start.replace(year=start.year + 1, month=1)
+        if start.month == 12
+        else start.replace(month=start.month + 1)
     )
     return f"{following.day} {following:%B}"
 
@@ -62,7 +64,10 @@ def usage(db: Session, organization_id: uuid.UUID) -> Usage:
     start = month_start()
     runs = db.scalar(
         select(func.count()).where(
-            CampaignRun.organization_id == organization_id, CampaignRun.created_at >= start
+            CampaignRun.organization_id == organization_id,
+            CampaignRun.created_at >= start,
+            # a launch whose start job couldn't be queued doesn't count
+            CampaignRun.end_reason.is_distinct_from(EndReason.QUEUE_UNAVAILABLE),
         )
     )
     attempts = db.scalar(

@@ -19,7 +19,9 @@ class Window:
         start, end = settings.get("window_start"), settings.get("window_end")
         if not start or not end:
             return None
-        return cls(time.fromisoformat(start), time.fromisoformat(end), ZoneInfo(settings["time_zone"]))
+        return cls(
+            time.fromisoformat(start), time.fromisoformat(end), ZoneInfo(settings["time_zone"])
+        )
 
     def _occurrence(self, day: date) -> tuple[datetime, datetime]:
         opens = datetime.combine(day, self.start, self.zone)
