@@ -15,6 +15,13 @@ export type StoredCredential = {
   saved_at: string
 }
 
+export type ConnectionSummaryOut = {
+  status: CheckStatus
+  finished_at: string | null
+  status_code: number | null
+  duration_ms: number | null
+}
+
 export type Target = {
   id: string
   name: string
@@ -32,6 +39,13 @@ export type Target = {
   credentials: StoredCredential[]
   created_at: string
   updated_at: string
+  /** Sentra's own lab target: Sentra places its ownership token itself (FR-11.1). */
+  is_lab: boolean
+  verified_at: string | null
+  verified_by: { id: string; name: string } | null
+  verification_method: VerificationMethod | null
+  last_connection_test: ConnectionSummaryOut | null
+  profile_status: ProfileStatus | null
 }
 
 export type TargetList = {
@@ -43,6 +57,85 @@ export type TargetList = {
 }
 
 export type CredentialInput = { credential_type: CredentialType; name: string; value: string }
+
+/** A check Sentra runs against a target: it starts as running and ends as passed or failed. */
+export type CheckStatus = "running" | "passed" | "failed"
+export type VerificationMethod = "dns_txt_record" | "well_known_file" | "lab"
+
+/** One connection test and its result (FR-2.4, UC-2.2). */
+export type ConnectionTest = {
+  id: string
+  status: CheckStatus
+  created_at: string
+  finished_at: string | null
+  status_code: number | null
+  duration_ms: number | null
+  reply_path: string | null
+  /** The target's reply, masked. Shown as plain text, never as active content (NFR-3.6). */
+  reply_excerpt: string | null
+  error_kind: string | null
+  error_message: string | null
+  /** The part of the answer that didn't match the configured format (UC-2.2, 4a). */
+  unreadable_excerpt: string | null
+}
+
+/** One ownership check: where Sentra looked and what it found (UC-2.3, 4a and 4b). */
+export type OwnershipCheck = {
+  id: string
+  method: VerificationMethod
+  trigger: string
+  status: CheckStatus
+  created_at: string
+  finished_at: string | null
+  checked_location: string
+  found: string | null
+  message: string | null
+  checked_by: string | null
+}
+
+export type Verification = {
+  status: TargetStatus
+  token: string
+  is_lab: boolean
+  /** An IP address has no DNS records, so only the file can be used. */
+  ip_endpoint: boolean
+  dns: { type: string; name: string; value: string } | null
+  file: { url: string; content: string }
+  verified_at: string | null
+  verified_by: string | null
+  method: VerificationMethod | null
+  recent_checks: OwnershipCheck[]
+}
+
+/** Where a profile entry comes from (UC-2.4 step 6 and 3a). */
+export type ProfileSource = "discovered" | "manual" | "unknown"
+/** "not_mapped": the target has no profile yet; it is mapped after its ownership check. */
+export type ProfileStatus = "not_mapped" | "mapping" | "ready" | "partial" | "failed" | "reviewed"
+
+export type ProfileEntry = { key: string; label: string; value: string; source: ProfileSource; note: string }
+export type ProfileTool = { name: string; parameters: string; side_effect: string; source: ProfileSource }
+export type ProfileKnowledge = { name: string; description: string; access: string; source: ProfileSource }
+
+export type TargetProfile = {
+  status: ProfileStatus
+  version: number
+  mapped_at: string | null
+  discovery_requests: number
+  /** Why the mapping stopped early, for example signs of overload (UC-2.4, 2a). */
+  stop_reason: string | null
+  entries: ProfileEntry[]
+  tools: ProfileTool[]
+  knowledge_sources: ProfileKnowledge[]
+  reviewed_at: string | null
+  reviewed_by: string | null
+}
+
+/** What the review saves (UC-2.4 steps 5 and 6). */
+export type ProfilePayload = {
+  entries: Record<string, { value: string }>
+  tools: { name: string; parameters: string; side_effect: string }[]
+  knowledge_sources: { name: string; description: string; access: string }[]
+}
 
 export const TYPE_LABEL: Record<TargetType, string> = {
   chatbot: "Chatbot",
@@ -185,6 +278,79 @@ export function checkEndpoint(endpoint_url: string) {
   })
 }
 
+export const VERIFICATION_LABEL: Record<VerificationMethod, string> = {
+  dns_txt_record: "DNS TXT record",
+  well_known_file: "Well-known file",
+  lab: "Placed by Sentra's lab",
+}
+
+export const SOURCE_LABEL: Record<ProfileSource, string> = {
+  discovered: "Discovered",
+  manual: "Added manually",
+  unknown: "Unknown — please complete",
+}
+
+/** What a failed connection test offers next, besides testing again (UC-2.2, 3a, 3b and 4a). */
+export const CONNECTION_FIX: Record<string, string> = {
+  authentication: "Edit credentials",
+  credentials: "Edit credentials",
+  format: "Adjust the response format",
+  network: "Edit the endpoint",
+  http: "Edit the endpoint",
+  address: "Edit the endpoint",
+  redirect: "Edit the endpoint",
+}
+
+export function startConnectionTest(id: string) {
+  return apiFetch<ConnectionTest>(`/v1/targets/${id}/connection-tests`, { method: "POST" })
+}
+
+export function listConnectionTests(id: string, signal?: AbortSignal) {
+  return apiFetch<ConnectionTest[]>(`/v1/targets/${id}/connection-tests`, { signal })
+}
+
+export function getConnectionTest(id: string, testId: string, signal?: AbortSignal) {
+  return apiFetch<ConnectionTest>(`/v1/targets/${id}/connection-tests/${testId}`, { signal })
+}
+
+export function getVerification(id: string, signal?: AbortSignal) {
+  return apiFetch<Verification>(`/v1/targets/${id}/verification`, { signal })
+}
+
+export function startOwnershipCheck(id: string, method: VerificationMethod) {
+  return apiFetch<OwnershipCheck>(`/v1/targets/${id}/verification/checks`, {
+    method: "POST",
+    body: JSON.stringify({ method }),
+  })
+}
+
+export function getOwnershipCheck(id: string, checkId: string, signal?: AbortSignal) {
+  return apiFetch<OwnershipCheck>(`/v1/targets/${id}/verification/checks/${checkId}`, { signal })
+}
+
+export function getProfile(id: string, signal?: AbortSignal) {
+  return apiFetch<TargetProfile>(`/v1/targets/${id}/profile`, { signal })
+}
+
+export function startProfileMapping(id: string) {
+  return apiFetch<TargetProfile>(`/v1/targets/${id}/profile/mapping`, { method: "POST" })
+}
+
+export function saveProfile(id: string, body: ProfilePayload) {
+  return apiFetch<TargetProfile>(`/v1/targets/${id}/profile`, { method: "PUT", body: JSON.stringify(body) })
+}
+
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+}
+
+/** Date and time, as a check or a run is shown: "8 Oct 2026, 09:42". */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }

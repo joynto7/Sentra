@@ -65,6 +65,36 @@ export const estimateCampaign = (input: { target_id: string | null; suites: stri
   apiFetch<Estimate>("/v1/campaigns/estimate", post(input))
 export const createCampaign = (input: CampaignInput) => apiFetch<CampaignDetail>("/v1/campaigns", post(input))
 
+export type RunStatus = "queued" | "running" | "paused" | "completed" | "stopped" | "cancelled"
+
+/** One run of a campaign (FR-5.4). The runs pages themselves come with UC-5.6 (Screen 36). */
+export type RunItem = {
+  code: string
+  number: number
+  status: RunStatus
+  end_reason: string | null
+  trigger: string
+  launched_by: string | null
+  ended_by: string | null
+  created_at: string
+  started_at: string | null
+  ended_at: string | null
+  attempts_sent: number
+  attempt_budget: number
+}
+
+export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
+  queued: "Queued",
+  running: "Running",
+  paused: "Paused",
+  completed: "Completed",
+  stopped: "Stopped",
+  cancelled: "Cancelled",
+}
+
+export const listRuns = (code: string, signal?: AbortSignal) =>
+  apiFetch<RunItem[]>(`/v1/campaigns/${encodeURIComponent(code)}/runs`, { signal })
+
 export const formatCount = (value: number) => value.toLocaleString("en-US")
 
 /** "02:00–05:00 (Asia/Dhaka)", or "Any time" without a window. */
