@@ -81,6 +81,29 @@ export function notScoredText(reason: NotScoredReason): string {
   return "Not scored — no campaign run yet"
 }
 
+/** FR-7.1 with its factors (NFR-4.2): why a finding has the severity it has (Screen 39). */
+export type FindingSeverity = {
+  code: string
+  severity: Severity
+  calculated_severity: Severity | null
+  adjusted: boolean
+  provisional: boolean
+  rated_at: string | null
+  reproducibility: string | null
+  test_severity: Severity | null
+  factors: {
+    impact?: { level: number; label: string; consequence: string; component: string; sentence: string }
+    exploitability?: { level: number; tries: number; needs_credentials: boolean; sentences: string[] }
+    reproducibility?: { value: string; successes: number; attempts: number; repetitions: number; sentence: string }
+    likelihood?: { level: number }
+    severity?: string
+    provisional?: boolean
+  }
+}
+
+export const getFindingSeverity = (code: string, signal?: AbortSignal) =>
+  apiFetch<FindingSeverity>(`/v1/findings/${encodeURIComponent(code)}/severity`, { signal })
+
 export function getRiskDashboard(params?: URLSearchParams, signal?: AbortSignal) {
   const query = params?.toString()
   return apiFetch<RiskDashboard>(`/v1/risk/dashboard${query ? `?${query}` : ""}`, { signal })

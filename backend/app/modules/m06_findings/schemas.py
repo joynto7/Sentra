@@ -112,6 +112,7 @@ class FindingItem(BaseModel):
     target: TargetRef
     component: ComponentOut
     evidence_count: int
+    reproducibility: str | None  # None until the finding has been rated (FR-7.1)
     first_run: RunRef  # the run it was found in; "new" in that run, "seen again" in later ones
     last_run: RunRef
     first_seen_at: datetime

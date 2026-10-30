@@ -509,6 +509,7 @@ def test_every_member_reads_the_findings_and_another_organization_cant(team, run
     page = team.client.get(FINDINGS).json()
     # The severities are the rated ones (FR-7.1, S-S2-03): the only attempt of each test
     # reproduced its weakness, which makes disclosed data Critical and a system prompt High
+    assert page["items"][0]["reproducibility"] == "1.000"  # Screen 38's column (FR-6.4)
     assert [(i["code"], i["severity"], i["category_name"]) for i in page["items"]] == [
         ("F-002", "critical", "Sensitive Information Disclosure"),  # the most severe first
         ("F-001", "high", "System Prompt Leakage"),
