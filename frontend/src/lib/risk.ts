@@ -76,6 +76,12 @@ export type RiskDashboard = {
   by_status: Record<string, number>
   targets: TargetRiskRow[]
   top_findings: { total: number; items: TopFinding[] }
+  /** FR-7.4: the trends of the period and the OWASP categories (Screen 42). */
+  by_category: CategoryRow[]
+  trends: Trends
+  category: string | null
+  /** True while a category is chosen: the finding counts follow it, the risk scores don't. */
+  category_filtered: boolean
 }
 
 export const BAND_LABEL: Record<RiskBand, string> = {
@@ -155,3 +161,181 @@ export type RiskMethod = {
 }
 
 export const getRiskMethod = (signal?: AbortSignal) => apiFetch<RiskMethod>("/v1/risk/method", { signal })
+
+// ---------------------------------------------------------------- trends (FR-7.4, UC-7.3 step 5)
+
+export type TrendBucket = { starts_at: string; ends_at: string; new: number; closed: number }
+
+export type ScorePoint = {
+  at: string
+  score: number
+  band: RiskBand
+  trigger: string
+  /** The last calculation before the period: where the line starts. */
+  before_period: boolean
+}
+
+export type ScoreSeries = {
+  target: { id: string; name: string }
+  score: number | null
+  band: RiskBand | null
+  points: ScorePoint[]
+}
+
+export type Trends = {
+  buckets: TrendBucket[]
+  scores: ScoreSeries[]
+  /** New minus closed: below zero means fewer open findings than at the start of the period. */
+  net_change: number
+  category: string | null
+}
+
+// ------------------------------------------------- framework coverage (FR-7.4, UC-7.4; Screen 43)
+
+/** What a cell of the coverage matrix says, in the order an analyst must see them. */
+export type CoverageStatus = "gap" | "stale" | "tested" | "not_applicable" | "not_testable" | "out_of_scope"
+
+/** The symbol beside the status, which never stands on its own (NFR-4.3). */
+export const COVERAGE_SYMBOL: Record<CoverageStatus, string> = {
+  tested: "✓",
+  stale: "⚠",
+  gap: "⚠",
+  not_applicable: "—",
+  not_testable: "—",
+  out_of_scope: "⊘",
+}
+
+export type CategoryRow = {
+  code: string
+  name: string | null
+  in_scope: boolean
+  status: CoverageStatus
+  label: string
+  reason: string
+  worst_target: string | null
+  open_total: number
+  open_by_severity: SeverityCounts
+}
+
+export type CoverageCell = {
+  target_id: string
+  target_name: string
+  status: CoverageStatus
+  label: string
+  reason: string
+  run: { code: string; ended_at: string } | null
+  changed_at: string
+  open_findings: number
+  open_by_severity: SeverityCounts
+}
+
+export type CoverageRow = CategoryRow & { cells: CoverageCell[] }
+
+export type Coverage = {
+  framework: "owasp" | "atlas"
+  targets: { id: string; name: string; type: string; environment: string; target_status: string }[]
+  rows: CoverageRow[]
+  by_status: Record<string, number>
+  legend: { status: CoverageStatus; label: string }[]
+}
+
+export type CoverageDetail = {
+  framework: "owasp" | "atlas"
+  code: string
+  name: string | null
+  in_scope: boolean
+  target: { id: string; name: string; type: string }
+  cell: CoverageCell
+  threat_model_version: number | null
+  threats: { number: number; title: string; component: string; risk: number }[]
+  accepted_gap: { threat: number; reason: string; accepted_at: string } | null
+  /** The suites that cover this category for this target; empty is UC-7.4, 5a1. */
+  suites: { code: string; name: string; tests: number; covering: number }[]
+}
+
+export function getCoverage(params: URLSearchParams, signal?: AbortSignal) {
+  return apiFetch<Coverage>(`/v1/risk/coverage?${params}`, { signal })
+}
+
+export function getCoverageCell(code: string, params: URLSearchParams, signal?: AbortSignal) {
+  return apiFetch<CoverageDetail>(`/v1/risk/coverage/${encodeURIComponent(code)}?${params}`, { signal })
+}
+
+// ------------------------------------------------------- attack paths (FR-7.3, UC-7.5; Screen 44)
+
+export type PathNode = {
+  id: string
+  kind: string
+  name: string
+  label: string
+  /** Its place in the application's pipeline, which is the column it is drawn in. */
+  stage: number
+  note: string
+  in_profile: boolean
+  entry: boolean
+  impact: string
+  findings: string[]
+}
+
+export type PathEdge = { from: string; to: string; why: string }
+
+export type PathFinding = {
+  code: string
+  title: string
+  severity: Severity
+  status: FindingStatus
+  category: string
+  unconfirmed: boolean
+  last_seen_at: string
+  node_id: string
+  component: { kind: string; name: string; label: string }
+  in_profile: boolean
+}
+
+export type PathStep = {
+  number: number
+  sentence: string
+  component: { kind: string; name: string; label: string }
+  findings: PathFinding[]
+}
+
+export type AttackPath = {
+  key: string
+  code: string
+  severity: Severity
+  impact: string
+  description: string
+  has_unconfirmed: boolean
+  node_ids: string[]
+  finding_codes: string[]
+  steps: PathStep[]
+  reason?: string | null
+  dismissed_by?: string | null
+  dismissed_at?: string | null
+}
+
+export type AttackPaths = {
+  target: { id: string; name: string; type: string; environment: string }
+  blocker: { code: string; message: string } | null
+  nodes: PathNode[]
+  edges: PathEdge[]
+  paths: AttackPath[]
+  dismissed: AttackPath[]
+  findings: PathFinding[]
+  unconfirmed: number
+  no_paths_reason: string
+  profile_version: number | null
+}
+
+export const getAttackPaths = (targetId: string, signal?: AbortSignal) =>
+  apiFetch<AttackPaths>(`/v1/targets/${targetId}/attack-paths`, { signal })
+
+/** UC-7.5, 6a1: hide a path that an analyst considers implausible, with the reason. */
+export const dismissAttackPath = (targetId: string, key: string, reason: string) =>
+  apiFetch<AttackPaths>(`/v1/targets/${targetId}/attack-paths/${key}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  })
+
+export const restoreAttackPath = (targetId: string, key: string) =>
+  apiFetch<AttackPaths>(`/v1/targets/${targetId}/attack-paths/${key}/dismiss`, { method: "DELETE" })

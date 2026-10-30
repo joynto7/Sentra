@@ -6,8 +6,10 @@ import Link from "next/link"
 import { Reproducibility, StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
+import { CategoryTable } from "@/components/risk/category-table"
 import { RiskTiles } from "@/components/risk/risk-tiles"
 import { ScoreMethod } from "@/components/risk/score-method"
+import { TrendCharts } from "@/components/risk/trend-charts"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
@@ -172,6 +174,7 @@ export function RiskDashboard() {
   const canVerify = useCan("verify_targets")
   const [target, setTarget] = useState("")
   const [days, setDays] = useState(DEFAULT_DAYS)
+  const [category, setCategory] = useState("")
   const [data, setData] = useState<Dashboard | null>(null)
   const [options, setOptions] = useState<{ id: string; name: string }[]>([])
   const [error, setError] = useState(false)
@@ -181,6 +184,7 @@ export function RiskDashboard() {
     const controller = new AbortController()
     const params = new URLSearchParams({ days })
     if (target) params.set("target_id", target)
+    if (category) params.set("category", category)
     getRiskDashboard(params, controller.signal)
       .then((found) => {
         setData(found)
@@ -190,12 +194,13 @@ export function RiskDashboard() {
       })
       .catch(() => !controller.signal.aborted && setError(true))
     return () => controller.abort()
-  }, [target, days, attempt])
+  }, [target, days, category, attempt])
 
-  const filtered = target !== "" || days !== DEFAULT_DAYS
+  const filtered = target !== "" || days !== DEFAULT_DAYS || category !== ""
   const reset = useCallback(() => {
     setTarget("")
     setDays(DEFAULT_DAYS)
+    setCategory("")
   }, [])
   const targetQuery = target ? `&target_id=${target}` : ""
 
@@ -230,6 +235,16 @@ export function RiskDashboard() {
           options={PERIODS}
           allLabel={null}
           changed={days !== DEFAULT_DAYS}
+        />
+        <FilterSelect
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          options={(data?.by_category ?? []).map((row) => ({
+            value: row.code,
+            label: `${row.code} ${row.name ?? ""}`.trim(),
+          }))}
+          allLabel="All OWASP categories"
         />
         {filtered && (
           <Button variant="ghost" size="sm" className="h-9" onClick={reset}>
@@ -284,7 +299,20 @@ export function RiskDashboard() {
             periodDays={data.period_days}
             targetQuery={targetQuery}
           />
+          {data.category_filtered && (
+            <p className="text-[13px] text-muted-foreground">
+              Every count on this page is narrowed to {data.category}. A risk score covers all of a
+              target&apos;s findings, so the scores and their lines stay as they are.
+            </p>
+          )}
           <TargetRisk rows={data.targets} canVerify={canVerify} />
+          <TrendCharts trends={data.trends} periodDays={data.period_days} />
+          <CategoryTable
+            rows={data.by_category}
+            targetQuery={targetQuery}
+            chosen={data.category}
+            onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
+          />
           <div className="grid gap-3 lg:grid-cols-3">
             <ByStatus byStatus={data.by_status} periodDays={data.period_days} targetQuery={targetQuery} />
             <section aria-labelledby="top-findings" className="min-w-0 rounded-[10px] border bg-card lg:col-span-2">

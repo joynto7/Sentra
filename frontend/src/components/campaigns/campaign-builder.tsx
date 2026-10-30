@@ -76,7 +76,8 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
   const [failed, setFailed] = useState(false)
   const [name, setName] = useState("")
   const [targetId, setTargetId] = useState(preselected ?? "")
-  const [chosen, setChosen] = useState<string[]>(suite ? [suite] : [])
+  // Screen 07 names one suite; Screen 43's gap panel names the suites that cover a category.
+  const [chosen, setChosen] = useState<string[]>(suite ? suite.split(",").filter(Boolean) : [])
   const [adaptive, setAdaptive] = useState(false)
   const [budget, setBudget] = useState("1000")
   const [rate, setRate] = useState("")
