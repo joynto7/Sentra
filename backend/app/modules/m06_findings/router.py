@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.errors import NotFoundError
 from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership
 from app.modules.m04_tests.schema import Category, Severity
@@ -19,8 +20,22 @@ from app.modules.m06_findings.schemas import (
     FindingPage,
     RunDetectionPage,
 )
+from app.modules.m09_reporting import api_keys
+from app.modules.m09_reporting.models import ApiKeyScope
 
 router = APIRouter(tags=["M6 Detection, Findings & Evidence"])
+
+# FR-9.5: the findings are the part of the API an integration reads, so these endpoints take a
+# session as before or an API key that holds "Read findings" (UC-9.6). A key that is limited to
+# targets reads only those; every other endpoint of Sentra stays closed to keys.
+reads_findings = api_keys.reader(ApiKeyScope.READ_FINDINGS)
+
+
+def _within(actor: api_keys.Actor, finding: dict) -> None:
+    """A key that is limited to targets gets "not found" for every other target's finding."""
+    target = (finding.get("target") or {}).get("id")
+    if not actor.allows(target):
+        raise NotFoundError("Finding not found.")
 
 
 @router.get("/campaigns/{code}/runs/{number}/detection")
@@ -69,11 +84,20 @@ def list_findings(
     search: str = Query(default="", max_length=200),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
-    membership: Membership = Depends(current_membership),
+    actor: api_keys.Actor = Depends(reads_findings),
     db: Session = Depends(get_db),
 ) -> FindingPage:
     """UC-6.4: the organization's findings, the most severe first, filtered by quick view
     (Screen 38's tabs), severity, category, status, target, campaign run or a search."""
+    limit = actor.target_ids
+    if limit and (target_id is None or target_id not in limit):
+        # A key that is limited to targets never sees another target's findings; without a filter
+        # of its own it reads its first target.
+        target_id = limit[0] if target_id is None else None
+        if target_id is None:
+            return FindingPage.model_validate(
+                {"items": [], "total": 0, "page": page, "page_size": page_size, "counts": {}}
+            )
     filters = service.FindingFilters(
         view=view or "",
         severity=severity or "",
@@ -83,37 +107,40 @@ def list_findings(
         run_id=run_id,
         search=search,
     )
-    data = service.list_findings(db, membership.organization_id, filters, page, page_size)
+    data = service.list_findings(db, actor.organization_id, filters, page, page_size)
     return FindingPage.model_validate(data)
 
 
 @router.get("/findings/filter-options")
 def finding_filter_options(
-    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+    actor: api_keys.Actor = Depends(reads_findings), db: Session = Depends(get_db)
 ) -> FindingFiltersOut:
     """The targets, campaign runs and categories that the organization's findings have."""
-    data = service.finding_filter_options(db, membership.organization_id)
+    data = service.finding_filter_options(db, actor.organization_id)
     return FindingFiltersOut.model_validate(data)
 
 
 @router.get("/findings/{code}")
 def get_finding(
     code: str,
-    membership: Membership = Depends(current_membership),
+    actor: api_keys.Actor = Depends(reads_findings),
     db: Session = Depends(get_db),
 ) -> FindingOut:
     """UC-6.5: one finding with its details (FR-6.2), runs and detection (Screen 39)."""
-    return FindingOut.model_validate(service.finding_detail(db, membership.organization_id, code))
+    found = service.finding_detail(db, actor.organization_id, code)
+    _within(actor, found)
+    return FindingOut.model_validate(found)
 
 
 @router.get("/findings/{code}/evidence")
 def list_evidence(
     code: str,
-    membership: Membership = Depends(current_membership),
+    actor: api_keys.Actor = Depends(reads_findings),
     db: Session = Depends(get_db),
 ) -> list[EvidenceItem]:
     """FR-6.3: the finding's evidence records, in the order they were recorded (Screen 40)."""
-    rows = service.list_evidence(db, membership.organization_id, code)
+    _within(actor, service.finding_detail(db, actor.organization_id, code))
+    rows = service.list_evidence(db, actor.organization_id, code)
     return [EvidenceItem.model_validate(row) for row in rows]
 
 
@@ -121,9 +148,10 @@ def list_evidence(
 def get_evidence(
     code: str,
     number: int,
-    membership: Membership = Depends(current_membership),
+    actor: api_keys.Actor = Depends(reads_findings),
     db: Session = Depends(get_db),
 ) -> EvidenceOut:
     """FR-6.3, NFR-2.4: one evidence document, read-only, with the check of its checksum."""
-    data = service.evidence_detail(db, membership.organization_id, code, number)
+    _within(actor, service.finding_detail(db, actor.organization_id, code))
+    data = service.evidence_detail(db, actor.organization_id, code, number)
     return EvidenceOut.model_validate(data)

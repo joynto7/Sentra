@@ -26,6 +26,8 @@ EVENTS = [
     Event("threat_model_ready", "Threat model ready for review"),
     # UC-8.2 step 6: the remediation proposal of a finding is ready for its review
     Event("remediation_ready", "Remediation proposal ready for review"),
+    # UC-9.6, 3a1: an API key is about to expire, so it can be replaced in time
+    Event("api_key_expiring", "API key about to expire"),
     Event(
         "account_security",
         "Account security alerts (password changes, new logins)",

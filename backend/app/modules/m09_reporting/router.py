@@ -8,6 +8,7 @@ from app.modules.m01_users import organizations
 from app.modules.m01_users.deps import current_session, current_user
 from app.modules.m01_users.models import User, UserSession
 from app.modules.m09_reporting import notifications
+from app.modules.m09_reporting.api_key_routes import router as api_key_router
 from app.modules.m09_reporting.events import EVENTS
 from app.modules.m09_reporting.schemas import (
     MarkedOut,
@@ -18,7 +19,8 @@ from app.modules.m09_reporting.schemas import (
     UnreadOut,
 )
 
-router = APIRouter(prefix="/notifications", tags=["M9 Notifications"])
+router = APIRouter()
+notifications_router = APIRouter(prefix="/notifications", tags=["M9 Notifications"])
 
 
 def organization_id(
@@ -29,7 +31,7 @@ def organization_id(
     return membership.organization_id if membership else None
 
 
-@router.get("")
+@notifications_router.get("")
 def list_notifications(
     unread: bool = False,
     tab: str = Query(default="", pattern="^(|assigned|approvals)$"),
@@ -48,7 +50,7 @@ def list_notifications(
     )
 
 
-@router.get("/unread-count")
+@notifications_router.get("/unread-count")
 def unread_count(
     user: User = Depends(current_user),
     org: uuid.UUID | None = Depends(organization_id),
@@ -58,7 +60,7 @@ def unread_count(
     return UnreadOut(unread_count=notifications.unread_count(db, user.id, org))
 
 
-@router.post("/read-all")
+@notifications_router.post("/read-all")
 def mark_all_read(
     user: User = Depends(current_user),
     org: uuid.UUID | None = Depends(organization_id),
@@ -67,7 +69,7 @@ def mark_all_read(
     return MarkedOut(marked=notifications.mark_all_read(db, user.id, org))
 
 
-@router.get("/preferences")
+@notifications_router.get("/preferences")
 def get_preferences(
     user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> list[PreferenceOut]:
@@ -85,7 +87,7 @@ def get_preferences(
     ]
 
 
-@router.put("/preferences")
+@notifications_router.put("/preferences")
 def set_preferences(
     data: list[PreferenceIn], user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> list[PreferenceOut]:
@@ -93,9 +95,13 @@ def set_preferences(
     return get_preferences(user, db)
 
 
-@router.post("/{notification_id}/read")
+@notifications_router.post("/{notification_id}/read")
 def mark_read(
     notification_id: uuid.UUID, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> NotificationOut:
     """UC-9.3 step 6: opened, so read."""
     return NotificationOut.model_validate(notifications.mark_read(db, user.id, notification_id))
+
+
+router.include_router(notifications_router)
+router.include_router(api_key_router)
