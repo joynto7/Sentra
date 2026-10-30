@@ -644,8 +644,17 @@ export function ThreatModelReview({ targetId, initialVersion }: { targetId: stri
           </p>
         </div>
         {current && (
-          <div className="flex items-center gap-2">
-            <Label htmlFor="version-select">Version</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The two pages that start from a version (UC-3.3 and UC-3.4). */}
+            <Button asChild variant="outline" size="sm" className="h-9">
+              <Link href={`/threat-models/${targetId}/recommendations`}>Recommended suites</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="h-9">
+              <Link href={`/threat-models/${targetId}/versions`}>Version history</Link>
+            </Button>
+            <Label htmlFor="version-select" className="ml-1">
+              Version
+            </Label>
             <Select value={String(current.version)} onValueChange={(value) => selectVersion(Number(value))} disabled={changes > 0}>
               <SelectTrigger
                 id="version-select"

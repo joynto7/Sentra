@@ -157,8 +157,70 @@ export type VersionComparison = {
     reason: string | null
   }[]
   identical: boolean
-  base_runs: { id: string; code: string; started_at: string | null }[]
-  compare_runs: { id: string; code: string; started_at: string | null }[]
+  base_runs: RunRef[]
+  compare_runs: RunRef[]
+}
+
+/** A campaign run that used a version (Screen 28). Empty until FR-5.4 (M5) records them. */
+export type RunRef = { id: string; code: string; started_at: string | null }
+
+/** A threat a test suite addresses (Screen 27). */
+export type ThreatRef = { number: number; title: string; risk: number }
+
+export type SuiteRecommendation = {
+  code: string
+  name: string
+  purpose: string
+  version: number
+  origin: "built_in" | "custom"
+  /** Tests of the suite that apply to this target's type */
+  tests: number
+  attempts: number
+  threats: ThreatRef[]
+  top_risk: number
+  /** It addresses at least one threat of the approved version */
+  recommended: boolean
+  /** In the saved selection, or else in Sentra's proposal */
+  selected: boolean
+}
+
+export type GapAcceptance = {
+  reason: string
+  accepted_by: string | null
+  accepted_at: string
+  version: number
+}
+
+/** A threat that no available test covers (UC-3.3 step 3). */
+export type ThreatGap = {
+  number: number
+  title: string
+  component_name: string
+  owasp: FrameworkRef[]
+  risk: number
+  /** Only LLM03 or LLM09, which lie outside application testing */
+  out_of_scope: boolean
+  accepted: GapAcceptance | null
+}
+
+export type SuiteSelection = {
+  version: number
+  suites: string[]
+  uncovered: number[]
+  saved_by: string | null
+  saved_at: string
+  /** Saved for the version that is approved now */
+  current: boolean
+}
+
+export type Recommendations = {
+  target: ModelTarget
+  version: VersionSummary
+  threats_total: number
+  threats_covered: number
+  suites: SuiteRecommendation[]
+  gaps: ThreatGap[]
+  selection: SuiteSelection | null
 }
 
 const base = "/v1/threat-models"
@@ -176,8 +238,22 @@ export const saveThreatModelVersion = (targetId: string, input: VersionInput) =>
   apiFetch<ThreatModelPage>(`${base}/${targetId}/versions`, post(input))
 export const approveThreatModel = (targetId: string, version: number) =>
   apiFetch<ThreatModelPage>(`${base}/${targetId}/versions/${version}/approve`, post())
-export const compareVersions = (targetId: string, from: number, to: number) =>
-  apiFetch<VersionComparison>(`${base}/${targetId}/compare?base=${from}&compare=${to}`)
+export const compareVersions = (targetId: string, from: number, to: number, signal?: AbortSignal) =>
+  apiFetch<VersionComparison>(`${base}/${targetId}/compare?base=${from}&compare=${to}`, { signal })
+/** UC-3.4, 3a: an earlier version becomes the next draft, which someone approves again. */
+export const restoreThreatModelVersion = (targetId: string, version: number) =>
+  apiFetch<ThreatModelPage>(`${base}/${targetId}/versions/${version}/restore`, post())
+export const getRecommendations = (targetId: string, signal?: AbortSignal) =>
+  apiFetch<Recommendations>(`${base}/${targetId}/recommendations`, { signal })
+/** UC-3.3 steps 5-6: the suites that new campaigns of this target start with. */
+export const saveSuiteSelection = (targetId: string, version: number, suites: string[]) =>
+  apiFetch<Recommendations>(`${base}/${targetId}/selection`, {
+    method: "PUT",
+    body: JSON.stringify({ version, suites }),
+  })
+/** UC-3.3, 3a1: why a threat that no test covers is accepted for now. */
+export const acceptThreatGap = (targetId: string, version: number, threat: number, reason: string) =>
+  apiFetch<Recommendations>(`${base}/${targetId}/gaps`, post({ version, threat, reason }))
 
 /** The OWASP Top 10 for LLM Applications (2025). Threats may name all ten (FR-3.2); no test of
  * the library covers LLM03 and LLM09, which lie outside application testing. */
