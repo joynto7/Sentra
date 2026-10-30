@@ -177,8 +177,22 @@ class Finding(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
     title: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(5))  # OWASP Top 10 for LLM Applications
     atlas: Mapped[list[str]] = mapped_column(JSONB, default=list)  # MITRE ATLAS techniques
-    # The initial severity comes from the test definition (FR-4.2); FR-7.1 rates it.
+    # The severity in force: the initial one of the test definition (FR-4.2) until FR-7.1 rates
+    # the finding, and an analyst's adjustment once there is one (UC-7.1, 4a).
     severity: Mapped[str] = mapped_column(String(15))
+    # What the rating matrix gave, and the factors it used (FR-7.1; m07_risk/rating.py). They are
+    # shown with every severity, so that users can see why it was assigned (NFR-4.2).
+    calculated_severity: Mapped[str | None] = mapped_column(String(15))
+    severity_factors: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # UC-7.1, 3a1: rated on fewer attempts than the campaign's repetitions (FR-6.4)
+    severity_provisional: Mapped[bool] = mapped_column(default=False)
+    severity_rated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # UC-7.1, 4a: an analyst set the severity, so the rating never overwrites it again; FR-6.5
+    # records who did it and why
+    severity_adjusted: Mapped[bool] = mapped_column(default=False)
+    # Successful attempts divided by the attempts that tried this weakness (FR-6.4 measures it
+    # with the campaign's repetitions; until then the attempts the runs have sent count)
+    reproducibility: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     status: Mapped[str] = mapped_column(String(25))
     description: Mapped[str] = mapped_column(Text)  # the observed behaviour, masked
     first_run_id: Mapped[uuid.UUID] = mapped_column(
