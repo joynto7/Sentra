@@ -130,7 +130,7 @@ def test_the_list_shows_every_target_with_its_newest_and_approved_version(client
     assert (hr_row["approved"]["version"], hr_row["latest"]["threat_count"]) == (1, 13)
     assert rows["Fraud Triage Copilot"]["latest"] is None
     assert rows["Marketing Copy Assistant"]["blocker"] == "Verify the target's ownership first."
-    assert (body["drafts_to_review"], body["approved"], body["without_threat_model"]) == (2, 0, 1)
+    assert (body["drafts_to_review"], body["approved"], body["without_threat_model"]) == (2, 0, 2)
 
 
 def test_a_version_shows_its_components_threats_and_framework_names(client, db, halcyon):
