@@ -23,6 +23,7 @@ from app.modules.m08_remediation.models import (
 from app.modules.m08_remediation.schemas import (
     FindingRef,
     FixOut,
+    FixSummary,
     JobOut,
     RemediationList,
     RemediationPage,
@@ -64,6 +65,14 @@ def summary(remediation: Remediation, names: dict) -> VersionSummary:
         created_at=remediation.created_at,
         requested_by=names.get(remediation.requested_by_id),
         fix_count=len(remediation.fixes),
+        fixes_in_short=[
+            FixSummary(
+                kind=fix.kind,
+                kind_label=fix_rules.KIND_LABELS[FixKind(fix.kind)],
+                enforcement=fix.enforcement,
+            )
+            for fix in remediation.fixes
+        ],
     )
 
 
