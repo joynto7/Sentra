@@ -12,7 +12,9 @@ RUN pip install -r requirements-dev.txt
 
 COPY . .
 
-RUN useradd --create-home --uid 1000 sentra && chown -R sentra /app
+# /data/objects: the object storage's directory (app/core/storage.py), a volume in compose.yaml
+RUN useradd --create-home --uid 1000 sentra && mkdir -p /data/objects \
+    && chown -R sentra /app /data/objects
 USER sentra
 
 EXPOSE 8000

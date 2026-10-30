@@ -86,6 +86,7 @@ def test_each_method_is_stored_with_the_attempt_together_with_the_verdict(team, 
             "sentence": "The reply contains the canary token",
             "result": "met",
             "detail": 'The canary token "Synthetic personal data" appears in the reply as it is.',
+            "slot": "personal_data",
         }
     ]
     assert found["canary_token"].duration_ms < 100  # NFR-1.4
