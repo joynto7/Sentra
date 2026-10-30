@@ -3,7 +3,7 @@ through the API: UC-5.3 Launch Campaign, UC-5.6 Monitor Campaign Run, UC-5.7 Con
 Run. The send loop is a stub sender (conftest.py)."""
 
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 
@@ -258,6 +258,36 @@ def test_every_member_can_follow_the_runs_of_a_campaign(team, use):
         "Payments Operations Agent",
     )
     assert [t["status"] for t in detail["tests"]][:2] == ["planned", "skipped"]
+
+
+def test_the_organizations_runs_are_listed_newest_first(team, use):
+    """Screen 33's "Campaign runs" and the recent runs of a target (Screen 20): the runs of every
+    campaign in one list, with the campaign and the target they belong to."""
+    use(attempts=2)
+    launch(team.client)
+    second = night_campaign(team)  # its window opens in two hours, so its run waits in the queue
+    launch(team.client, second)
+    # Both runs are created in the same transaction here, which gives them the same time; a real
+    # launch is a request of its own.
+    team.db.execute(
+        update(CampaignRun)
+        .where(CampaignRun.number == 1, CampaignRun.wake_at.is_(None))
+        .values(created_at=datetime.now(UTC) - timedelta(hours=1))
+    )
+    team.db.commit()
+    log_in(team.client, "maya@example.com")
+
+    listed = team.client.get(f"{CAMPAIGNS}/runs").json()
+    queued = team.client.get(f"{CAMPAIGNS}/runs?status=queued").json()
+    other_target = team.client.get(f"{CAMPAIGNS}/runs?target_id={uuid.uuid4()}").json()
+
+    assert [(r["code"], r["status"], r["campaign"]["name"]) for r in listed] == [
+        ("R-002-1", "queued", "Night assessment"),
+        ("R-001-1", "completed", "Quarterly assessment — Payments Operations Agent"),
+    ]
+    assert listed[0]["target"]["name"] == "Payments Operations Agent"
+    assert [r["code"] for r in queued] == ["R-002-1"]
+    assert other_target == []
 
 
 def test_the_attempts_of_a_run_come_one_page_at_a_time(team, use):

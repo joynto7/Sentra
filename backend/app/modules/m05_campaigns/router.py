@@ -9,7 +9,7 @@ from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership
 from app.modules.m01_users.permissions import Action, require
 from app.modules.m05_campaigns import runs, service
-from app.modules.m05_campaigns.models import ENDED, AttemptStatus
+from app.modules.m05_campaigns.models import ENDED, AttemptStatus, RunStatus
 from app.modules.m05_campaigns.schemas import (
     AttemptOut,
     AttemptPage,
@@ -20,6 +20,7 @@ from app.modules.m05_campaigns.schemas import (
     EstimateOut,
     RunDetail,
     RunListItem,
+    RunOverviewItem,
     StopIn,
 )
 
@@ -63,6 +64,22 @@ def create_campaign(
     return CampaignDetail.model_validate(
         service.get_campaign(db, membership.organization_id, campaign.code)
     )
+
+
+@router.get("/runs")
+def list_organization_runs(
+    target_id: uuid.UUID | None = None,
+    status: RunStatus | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> list[RunOverviewItem]:
+    """The organization's campaign runs, newest first (Screen 33's "Campaign runs", and the
+    recent runs of a target on Screen 20). Every member may read them."""
+    rows = runs.list_organization_runs(
+        db, membership.organization_id, target_id=target_id, status=status or "", limit=limit
+    )
+    return [RunOverviewItem.model_validate(row) for row in rows]
 
 
 @router.get("/{code}")

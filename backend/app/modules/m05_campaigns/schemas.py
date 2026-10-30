@@ -81,6 +81,7 @@ class CampaignDetail(CampaignListItem):
 
 
 class RunListItem(BaseModel):
+    id: uuid.UUID  # the findings of a run are asked for by it (GET /findings?run_id=…)
     code: str  # R-238-2: the second run of C-238
     number: int
     status: str
@@ -93,6 +94,13 @@ class RunListItem(BaseModel):
     ended_at: datetime | None
     attempts_sent: int
     attempt_budget: int
+
+
+class RunOverviewItem(RunListItem):
+    """A run with the campaign and target it belongs to, for the lists that cross campaigns."""
+
+    campaign: "RunCampaignOut | None"
+    target: "RunTargetOut | None"
 
 
 class RunCampaignOut(BaseModel):
