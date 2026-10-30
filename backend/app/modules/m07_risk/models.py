@@ -1,12 +1,13 @@
-"""The risk scores of the targets (FR-7.2). Report, ER diagram 4: every risk score of a target is
-kept, so that its trend can be shown. The severity of a finding (FR-7.1) belongs to the finding
-and is stored with it (m06_findings/models.py)."""
+"""The risk scores of the targets (FR-7.2) and the attack paths an analyst dismissed (FR-7.3).
+Report, ER diagram 4: every risk score of a target is kept, so that its trend can be shown. The
+severity of a finding (FR-7.1) belongs to the finding and is stored with it
+(m06_findings/models.py), and an attack path is derived, not stored (paths.py)."""
 
 import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Index, SmallInteger, String
+from sqlalchemy import DateTime, ForeignKey, Index, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,3 +64,27 @@ class RiskScore(UUIDPrimaryKey, OrganizationScoped, Base):
     # Set when the score is calculated, not by the database: two calculations in one transaction
     # would otherwise share the transaction's time, and the trend needs their order
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AttackPathDismissal(UUIDPrimaryKey, OrganizationScoped, Base):
+    """A path that an analyst considers implausible (UC-7.5, 6a1): it is hidden from the view and
+    from the reports, and the decision is kept with its reason.
+
+    A path itself is not stored: it is derived from the findings and the Target Profile every time
+    the view is opened (paths.py). `path_key` is the digest of its findings in order, so the
+    dismissal holds exactly as long as the path is the same chain; a new finding in the middle
+    makes a new path, which is shown again."""
+
+    __tablename__ = "attack_path_dismissals"
+    __table_args__ = (UniqueConstraint("target_id", "path_key"),)
+
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("targets.id", ondelete="CASCADE"))
+    path_key: Mapped[str] = mapped_column(String(32))
+    # The chain as its findings' codes, in order: what the audit entry and the page name. The key
+    # above is the digest of their ids, which is what identifies the path.
+    finding_codes: Mapped[list] = mapped_column(JSONB)
+    reason: Mapped[str] = mapped_column(String(300))
+    dismissed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    dismissed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

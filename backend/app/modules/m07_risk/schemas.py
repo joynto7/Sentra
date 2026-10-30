@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.modules.m07_risk import paths
 
 
 class TargetRef(BaseModel):
@@ -46,11 +48,212 @@ class TopFindings(BaseModel):
     items: list[TopFindingItem]
 
 
+class CategoryRow(BaseModel):
+    """One OWASP category of the dashboard (Screen 42): the open findings it holds and whether it
+    has been tested (FR-7.4). `worst_target` names the target the status comes from."""
+
+    code: str
+    name: str | None
+    in_scope: bool
+    status: str
+    label: str  # the status in words, so the table needs no colour (NFR-4.3)
+    reason: str
+    worst_target: str | None
+    open_total: int
+    open_by_severity: dict[str, int]
+
+
+class TrendBucket(BaseModel):
+    """One part of the period: the findings that came and the ones that were closed."""
+
+    starts_at: datetime
+    ends_at: datetime
+    new: int
+    closed: int
+
+
+class ScorePoint(BaseModel):
+    at: datetime
+    score: int
+    band: str
+    trigger: str
+    before_period: bool  # the level the line starts from, calculated before the period
+
+
+class ScoreSeries(BaseModel):
+    target: TargetRef
+    score: int | None
+    band: str | None
+    points: list[ScorePoint]
+
+
+class Trends(BaseModel):
+    """UC-7.3 step 5: the risk scores and the new and closed findings across the period."""
+
+    buckets: list[TrendBucket]
+    scores: list[ScoreSeries]
+    net_change: int  # new minus closed: below zero means fewer open findings than at the start
+    category: str | None
+
+
+class CoverageTarget(BaseModel):
+    id: uuid.UUID
+    name: str
+    type: str
+    environment: str
+    target_status: str
+
+
+class CoverageCell(BaseModel):
+    """One cell of the matrix (Screen 43): a status with the facts behind it, so the page can
+    write the sentence with its dates."""
+
+    target_id: uuid.UUID
+    target_name: str
+    status: str
+    label: str
+    reason: str
+    run: dict | None  # the run it was last tested in: code and ended_at
+    changed_at: datetime
+    open_findings: int
+    open_by_severity: dict[str, int]
+
+
+class CoverageRow(CategoryRow):
+    cells: list[CoverageCell]
+
+
+class CoverageOut(BaseModel):
+    """UC-7.4 steps 1-4: the categories or techniques against the targets."""
+
+    framework: str
+    targets: list[CoverageTarget]
+    rows: list[CoverageRow]
+    by_status: dict[str, int]
+    legend: list[dict]
+
+
+class ThreatRef(BaseModel):
+    number: int
+    title: str
+    component: str
+    risk: int
+
+
+class SuiteRef(BaseModel):
+    code: str
+    name: str
+    tests: int  # the tests of the suite that can run against this target
+    covering: int  # of those, the ones of this category
+
+
+class CoverageCellOut(BaseModel):
+    """The panel of Screen 43: one cell with the threats behind it, the suites that would cover it
+    (UC-7.4 step 5) and an accepted gap (5a1)."""
+
+    framework: str
+    code: str
+    name: str | None
+    in_scope: bool
+    target: dict
+    cell: CoverageCell
+    threat_model_version: int | None
+    threats: list[ThreatRef]
+    accepted_gap: dict | None
+    suites: list[SuiteRef]
+
+
+class PathNode(BaseModel):
+    """One component of the target, as its Target Profile records it (UC-7.5 step 2)."""
+
+    id: str
+    kind: str
+    name: str
+    label: str
+    stage: int  # its place in the pipeline, which is the order the graph draws
+    note: str
+    in_profile: bool
+    entry: bool  # what comes from outside: the request itself and the knowledge sources
+    impact: str  # what is at stake when a path ends here
+    findings: list[str]
+
+
+class PathEdge(BaseModel):
+    """A connection of the profile, with the reason it exists (UC-7.5, quality requirement 4)."""
+
+    from_node: str = Field(alias="from")
+    to_node: str = Field(alias="to")
+    why: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PathFinding(BaseModel):
+    code: str
+    title: str
+    severity: str
+    status: str
+    category: str
+    unconfirmed: bool  # 3a1: it still requires confirmation (NFR-9.3)
+    last_seen_at: datetime
+    node_id: str
+    component: dict
+    in_profile: bool
+
+
+class PathStep(BaseModel):
+    """One component on the way, with every open finding that sits on it."""
+
+    number: int
+    sentence: str  # what happens at this component, in plain language (NFR-4.2)
+    component: dict
+    findings: list[PathFinding]
+
+
+class AttackPath(BaseModel):
+    """One chain of findings from something an attacker can reach to an impact (FR-7.3)."""
+
+    key: str
+    code: str  # AP-1, AP-2 …, in the order of the panel; empty for a dismissed path
+    severity: str
+    impact: str
+    description: str
+    has_unconfirmed: bool
+    node_ids: list[str]
+    finding_codes: list[str]
+    steps: list[PathStep]
+    reason: str | None = None  # why it was dismissed (6a1)
+    dismissed_by: str | None = None
+    dismissed_at: datetime | None = None
+
+
+class AttackPathsOut(BaseModel):
+    """UC-7.5: the graph, the findings on it and the paths. The findings are always listed, with
+    or without a graph (the failed end condition)."""
+
+    target: dict
+    blocker: dict | None  # why no graph can be drawn, e.g. no Target Profile yet
+    nodes: list[PathNode]
+    edges: list[PathEdge]
+    paths: list[AttackPath]
+    dismissed: list[AttackPath]
+    findings: list[PathFinding]
+    unconfirmed: int
+    no_paths_reason: str  # 4a1: why no multi-step path was found
+    profile_version: int | None
+
+
+class DismissIn(BaseModel):
+    reason: str = Field(min_length=paths.MIN_REASON, max_length=300)
+
+
 class DashboardOut(BaseModel):
-    """UC-7.3 steps 2-3. The trends, the OWASP coverage and the attack paths of Screens 42-44
-    come with FR-7.3 and FR-7.4."""
+    """UC-7.3 steps 2-5 (Screen 42). The attack paths of Screen 44 are AttackPathsOut, and the
+    matrix of Screen 43 is CoverageOut."""
 
     period_days: int
+    category: str | None  # the chosen OWASP category, or every category
+    category_filtered: bool
     last_run_at: datetime | None  # None: no campaign run yet, so the page guides instead (2a1)
     open_by_severity: dict[str, int]
     open_total: int
@@ -60,6 +263,8 @@ class DashboardOut(BaseModel):
     by_status: dict[str, int]
     targets: list[TargetRiskRow]
     top_findings: TopFindings
+    by_category: list[CategoryRow]
+    trends: Trends
 
 
 class ScoreHistoryItem(BaseModel):
