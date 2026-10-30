@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.audit import AuditLogEntry
 from app.modules.m02_targets.models import TargetStatus
 from app.modules.m03_threat_models import versions
+from app.modules.m05_campaigns.models import Campaign, CampaignRun
 from tests.m01_users.test_organizations import log_in
 from tests.m03_threat_models.conftest import add_target
 
@@ -247,10 +248,57 @@ def test_two_versions_are_compared_with_the_reasons_for_each_change(client, db, 
         2,
         False,
     )
-    assert (body["base_runs"], body["compare"]["runs"]) == ([], 0)  # runs come with FR-5.4
+    assert (body["base_runs"], body["compare"]["runs"]) == ([], 0)  # nothing has run yet
     same = client.get(f"{API}/{target.id}/compare?base=2&compare=2").json()
     assert same["identical"] is True  # 4a
     assert client.get(f"{API}/{target.id}/compare?base=1&compare=7").status_code == 404
+
+
+def test_a_version_names_the_campaign_runs_that_were_based_on_it(client, db, halcyon):
+    """UC-3.4 step 2: a version says which campaign runs used it, so an analyst who compares two
+    versions sees what the change means for what has already been tested (FR-3.3). A run keeps the
+    version of its campaign from the moment it was launched (FR-5.4, `campaign_runs`)."""
+    target = first_version(client, db, halcyon)
+    review(client, target)  # version 2
+    one = versions.get(db, target.id, 1)
+    assert one is not None
+    campaign = Campaign(
+        organization_id=halcyon,
+        number=1,
+        name="Nightly checks of the HR helpdesk",
+        target_id=target.id,
+        suites=["prompt-injection"],
+        threat_model_id=one.id,
+        attempt_budget=200,
+        request_rate=30,
+        repetitions=1,
+        time_zone="Asia/Dhaka",
+    )
+    db.add(campaign)
+    db.flush()
+    db.add(  # what a launch writes: the second run of C-001, based on version 1
+        CampaignRun(
+            organization_id=halcyon,
+            campaign_id=campaign.id,
+            target_id=target.id,
+            number=2,
+            threat_model_id=one.id,
+            versions={"suites": [], "tests": [], "threat_model": 1},
+            attempt_budget=200,
+            request_rate=30,
+        )
+    )
+    db.commit()
+
+    body = client.get(f"{API}/{target.id}/compare?base=1&compare=2").json()
+
+    # The code leads to the run's monitor (Screen 36): /campaigns/C-001/runs/2.
+    rows = [(r["code"], r["campaign"], r["number"]) for r in body["base_runs"]]
+    assert rows == [("R-001-2", "C-001", 2)]
+    assert (body["base"]["runs"], body["compare"]["runs"]) == (1, 0)
+    assert body["compare_runs"] == []
+    page = client.get(f"{API}/{target.id}").json()
+    assert [(v["version"], v["runs"]) for v in page["versions"]] == [(2, 0), (1, 1)]
 
 
 def test_an_earlier_version_is_restored_as_a_new_draft(client, db, halcyon):

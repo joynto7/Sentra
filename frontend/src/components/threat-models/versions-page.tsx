@@ -69,11 +69,18 @@ function Runs({ version, runs }: { version: number; runs: RunRef[] }) {
       <h3 id={`runs-${version}`} className="text-sm font-semibold">
         Campaign runs based on v{version}
       </h3>
-      {/* The run monitor (Screen 36) comes with FR-5.4 (M5); until then the codes stand alone. */}
+      {/* Each code leads to that run's monitor (Screen 36, FR-5.4); a retest or benchmark run
+       * belongs to no campaign and has no page of its own yet, so it stays plain text. */}
       <ul className="mt-2 flex flex-wrap gap-1.5">
         {runs.map((run) => (
           <li key={run.id} className={cn(CHIP, "border-border font-mono text-text-secondary")}>
-            {run.code}
+            {run.campaign ? (
+              <Link href={`/campaigns/${run.campaign}/runs/${run.number}`} className="text-link hover:underline">
+                {run.code}
+              </Link>
+            ) : (
+              run.code
+            )}
             {run.started_at && <span className="font-sans text-muted-foreground">{shortDate(run.started_at)}</span>}
           </li>
         ))}

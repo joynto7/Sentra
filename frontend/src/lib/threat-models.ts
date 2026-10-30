@@ -162,7 +162,13 @@ export type VersionComparison = {
 }
 
 /** A campaign run that used a version (Screen 28). Empty until FR-5.4 (M5) records them. */
-export type RunRef = { id: string; code: string; started_at: string | null }
+export type RunRef = {
+  id: string
+  code: string
+  campaign: string | null // the campaign's code; a retest or benchmark run belongs to none
+  number: number
+  started_at: string | null
+}
 
 /** A threat a test suite addresses (Screen 27). */
 export type ThreatRef = { number: number; title: string; risk: number }
