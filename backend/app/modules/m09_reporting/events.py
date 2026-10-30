@@ -24,6 +24,8 @@ EVENTS = [
     Event("target_profile_ready", "Target profile ready for review"),
     # UC-3.1 step 6: a new draft of a threat model awaits a Security Analyst
     Event("threat_model_ready", "Threat model ready for review"),
+    # UC-8.2 step 6: the remediation proposal of a finding is ready for its review
+    Event("remediation_ready", "Remediation proposal ready for review"),
     Event(
         "account_security",
         "Account security alerts (password changes, new logins)",
