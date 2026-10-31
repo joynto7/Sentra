@@ -17,10 +17,14 @@ from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
 from app.modules.m02_targets.models import Target
-from app.modules.m08_remediation import gateways
-from app.modules.m08_remediation.models import ShieldGateway
+from app.modules.m06_findings.service import finding_row
+from app.modules.m08_remediation import gateways, policies
+from app.modules.m08_remediation.models import RuleKind, ShieldGateway, ShieldPolicy
 from app.modules.m08_remediation.schemas import (
+    DeployIn,
+    DeployOut,
     GatewayCheckOut,
+    GatewayConfirmIn,
     GatewayConnectIn,
     GatewayHeartbeatIn,
     GatewayList,
@@ -29,6 +33,9 @@ from app.modules.m08_remediation.schemas import (
     GatewayRegisterIn,
     GatewaySecretOut,
     GatewayStateOut,
+    PolicyList,
+    PolicyRuleOut,
+    PolicyVersionOut,
 )
 
 router = APIRouter(prefix="/shield", tags=["M8 Sentra Shield"])
@@ -54,6 +61,10 @@ def _out(db: Session, gateway: ShieldGateway, target: Target | None = None) -> G
         gateway_version=gateway.gateway_version,
         added_latency_ms=gateway.added_latency_ms,
         requests_seen=gateway.requests_seen,
+        requests_blocked=gateway.requests_blocked,
+        requests_changed=gateway.requests_changed,
+        retrieval_sightings=gateway.retrieval_sightings or {},
+        policy_version=gateway.reported_policy_version,
         in_traffic_path=gateway.check_seen_at is not None,
         connected_at=gateway.connected_at,
         last_contact_at=gateway.last_contact_at,
@@ -145,6 +156,115 @@ def revoke(
     return _out(db, gateways.revoke(db, membership.organization_id, user, target_id))
 
 
+# ---------------------------------------------------------------- the policy versions (UC-8.4)
+
+
+def _version_out(db: Session, policy: ShieldPolicy) -> PolicyVersionOut:
+    approver = db.get(User, policy.approved_by_id) if policy.approved_by_id else None
+    deployer = db.get(User, policy.deployed_by_id) if policy.deployed_by_id else None
+    return PolicyVersionOut(
+        version=policy.version,
+        state=policy.state,
+        state_label=policies.STATE_LABELS[policy.state],
+        source=policy.source,
+        rule_count=policy.rule_count,
+        carried_over=policy.carried_over,
+        rules=[
+            PolicyRuleOut(
+                id=rule.get("id", ""),
+                kind=rule.get("kind", ""),
+                label=policies.RULE_LABELS[RuleKind(rule["kind"])],
+                title=rule.get("title", ""),
+                says=policies.says(rule),
+                note=rule.get("note") or None,
+                finding=(rule.get("from") or {}).get("finding"),
+                fix=(rule.get("from") or {}).get("fix"),
+            )
+            for rule in (policy.document or {}).get("rules") or []
+        ],
+        trigger_finding=policy.trigger_finding,
+        trigger_version=policy.trigger_version,
+        based_on_version=policy.based_on_version,
+        approved_by=approver.name if approver else None,
+        deployed_by=deployer.name if deployer else None,
+        deploy_at=policy.deploy_at,
+        offered_at=policy.offered_at,
+        confirmed_at=policy.confirmed_at,
+        failure_reason=policy.failure_reason,
+        created_at=policy.created_at,
+    )
+
+
+@router.get("/targets/{target_id}/policy")
+def policy_versions(
+    target_id: uuid.UUID,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> PolicyList:
+    """Screens 48 and 49: the policy of a target, every version it has had, and the approved
+    remediations that are not in it yet."""
+    target = db.scalar(
+        scoped_select(Target, membership.organization_id).where(Target.id == target_id)
+    )
+    if target is None:
+        raise NotFoundError("That target doesn't exist.")
+    gateway = gateways.of_target(db, membership.organization_id, target_id)
+    active = policies.current(db, target_id)
+    waiting = policies.waiting(db, target_id)
+    return PolicyList(
+        target_id=target.id,
+        target_name=target.name,
+        gateway=_out(db, gateway, target) if gateway else None,
+        active=_version_out(db, active) if active else None,
+        waiting=_version_out(db, waiting) if waiting else None,
+        versions=[
+            _version_out(db, one)
+            for one in policies.versions(db, membership.organization_id, target_id)
+        ],
+        deployable=policies.deployable(db, membership.organization_id, target),
+    )
+
+
+@router.post("/targets/{target_id}/policy", status_code=status.HTTP_201_CREATED)
+def deploy_policy(
+    target_id: uuid.UUID,
+    data: DeployIn,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> DeployOut:
+    """UC-8.4 steps 1-3 by hand: the developer deploys the approved fixes of a finding, with the
+    terms of every guardrail among them, now or in a maintenance window (1a)."""
+    user = db.get_one(User, membership.user_id)
+    finding = finding_row(db, membership.organization_id, data.finding_code)
+    if finding.target_id != target_id:
+        raise NotFoundError("That finding doesn't belong to this target.")
+    remediation = (
+        policies.version_of(db, finding, data.version)
+        if data.version
+        else policies.newest_approved(db, finding.id) or policies.newest(db, finding.id)
+    )
+    if remediation is None:
+        raise NotFoundError("This finding has no remediation proposal to deploy.")
+    policy, left = policies.deploy(
+        db,
+        membership.organization_id,
+        user,
+        finding=finding,
+        remediation=remediation,
+        guardrails={
+            one.fix: {
+                "applies_to": one.applies_to,
+                "action": one.action,
+                "terms": one.terms,
+                "message": one.message,
+            }
+            for one in data.guardrails
+        },
+        at=data.at,
+    )
+    return DeployOut(policy=_version_out(db, policy), open_in_application=left)
+
+
 # ---------------------------------------------------------------- the gateway's own endpoints
 
 
@@ -170,7 +290,7 @@ def connect(
     gateways.connected(db, gateway, version=data.version, position=data.position)
     return GatewayStateOut(
         gateway_id=gateway.id,
-        policy_version=0,  # no policy exists until FR-8.3 deploys one (task A-S4-03)
+        policy_version=policies.offer(db, gateway),
         heartbeat_seconds=HEARTBEAT_SECONDS,
     )
 
@@ -189,10 +309,17 @@ def heartbeat(
         requests=data.requests,
         added_latency_ms=data.added_latency_ms,
         markers=data.markers,
+        blocked=data.blocked,
+        changed=data.changed,
+        sightings=data.sightings,
+        policy_version=data.policy_version,
     )
+    # A gateway that reports the version it was offered has activated it (step 4).
+    if data.policy_version:
+        policies.confirm(db, gateway, data.policy_version)
     return GatewayStateOut(
         gateway_id=gateway.id,
-        policy_version=0,
+        policy_version=policies.offer(db, gateway),
         heartbeat_seconds=HEARTBEAT_SECONDS,
     )
 
@@ -200,7 +327,28 @@ def heartbeat(
 @router.get("/policy")
 def policy(
     gateway: ShieldGateway = Depends(current_gateway),
+    db: Session = Depends(get_db),
 ) -> GatewayPolicyOut:
-    """The policy the gateway enforces. Until FR-8.3 deploys the first version (task A-S4-03) it
-    is the empty policy: the gateway forwards every request unchanged and reports what it sees."""
-    return GatewayPolicyOut(version=0, document={"rules": []})
+    """The policy the gateway enforces: the version it has been offered, or the active one. Until
+    a version is deployed it is the empty policy and the gateway only forwards and measures."""
+    version, document = policies.document_for(db, gateway)
+    return GatewayPolicyOut(version=version, document=document)
+
+
+@router.post("/confirm")
+def confirm_policy(
+    data: GatewayConfirmIn,
+    gateway: ShieldGateway = Depends(current_gateway),
+    db: Session = Depends(get_db),
+) -> GatewayStateOut:
+    """Step 4: the gateway has activated the version it downloaded. Sentra records the deployment
+    with its approver (step 5) and starts what follows it (step 6)."""
+    gateways.heartbeat(
+        db, gateway, requests=0, added_latency_ms=None, markers=[], policy_version=data.version
+    )
+    policies.confirm(db, gateway, data.version, rules=data.rules)
+    return GatewayStateOut(
+        gateway_id=gateway.id,
+        policy_version=policies.offer(db, gateway),
+        heartbeat_seconds=HEARTBEAT_SECONDS,
+    )

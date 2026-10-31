@@ -122,7 +122,9 @@ def cannot_approve(remediation: Remediation, user_id: uuid.UUID, allowed: bool) 
 
 
 def _clean_details(kind: str, details: dict) -> dict:
-    """The body of a fix, by kind: a prompt is text, the other four are a list of lines."""
+    """The body of a fix, by kind: a prompt is text, tools and sources are rows of a name and its
+    rule, and the other two are a list of lines. The shape has to survive a person's edit: FR-8.3
+    builds a policy rule from the name in a row, so a row may never become a line of text."""
     key = fix_rules.DETAIL_KEYS[FixKind(kind)]
     value = details.get(key)
     if key == "prompt":
@@ -130,6 +132,21 @@ def _clean_details(kind: str, details: dict) -> dict:
         if not text:
             raise FieldValidationError("fixes", "A system prompt fix needs its prompt.")
         return {"prompt": text[:4000]}
+    if key in ("tools", "sources"):
+        name = "tool" if key == "tools" else "source"
+        rows = [
+            {
+                name: str(one.get(name, "")).strip()[:120],
+                "rule": str(one.get("rule", "")).strip()[:300],
+            }
+            for one in (value or [])
+            if isinstance(one, dict) and str(one.get(name, "")).strip()
+        ]
+        if not rows:
+            raise FieldValidationError(
+                "fixes", f"Every row of this fix needs the {name} it is about."
+            )
+        return {key: rows[:20]}
     lines = [str(one).strip()[:400] for one in (value or []) if str(one).strip()]
     if not lines:
         raise FieldValidationError("fixes", "A fix needs at least one line.")
@@ -292,6 +309,13 @@ def _decide(
     db.commit()
     db.refresh(remediation)
     _tell_about_the_decision(db, finding, remediation, user, approved=approved)
+    if approved:
+        # Step 6: the fixes a gateway can carry become the target's next Shield Policy version
+        # (UC-8.4), and the others stay the developer's work (UC-8.5). A deployment that cannot
+        # start says so and leaves the approval as it is.
+        from app.modules.m08_remediation import policies
+
+        policies.after_approval(db, finding, remediation, user)
     return remediation
 
 
