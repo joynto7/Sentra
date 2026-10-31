@@ -37,6 +37,8 @@ EVENTS = [
     Event("remediation_decided", "Remediation approved or rejected", tab="approvals"),
     # UC-8.4 steps 5-6 and 4a1: the target's Shield Policy version is active, or it is not
     Event("shield_policy", "Sentra Shield policy deployed or failed"),
+    # UC-10.9, 4a1: the target's Sentra Shield gateway stopped reporting (FR-10.6, FR-8.3)
+    Event("shield_gateway_silent", "Sentra Shield gateway stopped reporting"),
     # UC-9.6, 3a1: an API key is about to expire, so it can be replaced in time
     Event("api_key_expiring", "API key about to expire"),
     Event(

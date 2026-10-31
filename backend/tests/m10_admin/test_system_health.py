@@ -97,6 +97,7 @@ def test_every_component_of_sentra_is_on_the_page(lena, db):
         "database",
         "object_storage",
         "llm",
+        "shield",  # Module 8's own component (m08_remediation/health.py)
     ]
     assert body["status"] == "operational" and body["headline"] == "All systems operational"
     assert component(body, "workers")["lines"] == ["2 workers", "load 10 % (1 of 10)"]

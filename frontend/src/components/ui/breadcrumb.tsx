@@ -49,7 +49,12 @@ function BreadcrumbLink({
   return (
     <Comp
       data-slot="breadcrumb-link"
-      className={cn("transition-colors hover:text-foreground", className)}
+      className={cn(
+        // At least 24 px tall: a breadcrumb step is a pointer target of its own (WCAG 2.2 AA,
+        // 2.5.8 Target Size (Minimum)).
+        "inline-flex min-h-6 items-center transition-colors hover:text-foreground",
+        className,
+      )}
       {...props}
     />
   )

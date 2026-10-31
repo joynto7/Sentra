@@ -6,7 +6,8 @@ them as implemented (UC-8.5, 6a1). Both of those are FR-8.4 and FR-8.5, the next
 sprint; `after_deployment()` and `open_application_fixes()` are the two functions they replace.
 
 Until then a remediation stays `applying` after its policy is active, which is exactly what it is:
-the fixes are in effect and the proof is still missing.
+the fixes are in effect and the proof is still missing. A rollback (UC-8.8) takes them out again,
+and `after_rollback()` is where FR-8.4 cancels the retest that was waiting for them.
 """
 
 from sqlalchemy.orm import Session
@@ -23,6 +24,17 @@ def open_application_fixes(remediation: Remediation) -> list[str]:
     """6a1: the fixes of the proposal that a person still has to carry out in the application.
     FR-8.5 will mark them as implemented one by one; today the list is what Screen 46 reads."""
     return [fix.title for fix in remediation.fixes if fix.enforcement == Enforcement.APPLICATION]
+
+
+def after_rollback(db: Session, *, finding: Finding, remediation: Remediation) -> None:
+    """UC-8.8 step 5: the fixes of this proposal are out of the traffic again, so a retest that
+    was waiting for them has nothing left to prove.
+
+    FR-8.4 replaces this function with the cancellation of the pending retest run and, when the
+    finding was already verified, with the before-and-after comparison that is now out of date.
+    Today there is no retest to cancel: the proposal is back to `approved` and its finding is open.
+    """
+    return None
 
 
 def after_deployment(

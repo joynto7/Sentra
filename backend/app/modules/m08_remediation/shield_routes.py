@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import NotAuthenticatedError, NotFoundError
 from app.core.tenancy import scoped_select
-from app.modules.m01_users.deps import current_membership
-from app.modules.m01_users.models import Membership, User
+from app.modules.m01_users.deps import current_membership, recent_password_confirmation
+from app.modules.m01_users.models import Membership, User, UserSession
 from app.modules.m01_users.permissions import Action, require
 from app.modules.m02_targets.models import Target
 from app.modules.m06_findings.service import finding_row
@@ -36,18 +36,24 @@ from app.modules.m08_remediation.schemas import (
     PolicyList,
     PolicyRuleOut,
     PolicyVersionOut,
+    RollbackConsequences,
+    RollbackIn,
+    RollbackOut,
 )
 
 router = APIRouter(prefix="/shield", tags=["M8 Sentra Shield"])
 
 # UC-8.1's actor: the developer of the application, who can change its deployment.
 can_manage = require(Action.MANAGE_SHIELD)
+# UC-8.8's actors: the developer of the application and a Security Analyst (FR-1.6).
+can_roll_back = require(Action.ROLL_BACK_SHIELD_POLICIES)
 HEARTBEAT_SECONDS = gateways.HEARTBEAT_SECONDS
 
 
 def _out(db: Session, gateway: ShieldGateway, target: Target | None = None) -> GatewayOut:
     target = target or db.get(Target, gateway.target_id)
     state = gateways.state_now(gateway)
+    active = policies.current(db, gateway.target_id)
     return GatewayOut(
         id=gateway.id,
         target_id=gateway.target_id,
@@ -65,6 +71,8 @@ def _out(db: Session, gateway: ShieldGateway, target: Target | None = None) -> G
         requests_changed=gateway.requests_changed,
         retrieval_sightings=gateway.retrieval_sightings or {},
         policy_version=gateway.reported_policy_version,
+        active_policy_version=active.version if active else None,
+        active_policy_since=(active.confirmed_at or active.created_at) if active else None,
         in_traffic_path=gateway.check_seen_at is not None,
         connected_at=gateway.connected_at,
         last_contact_at=gateway.last_contact_at,
@@ -159,7 +167,11 @@ def revoke(
 # ---------------------------------------------------------------- the policy versions (UC-8.4)
 
 
-def _version_out(db: Session, policy: ShieldPolicy) -> PolicyVersionOut:
+def _version_out(
+    db: Session, policy: ShieldPolicy, reasons: dict[int, str] | None = None
+) -> PolicyVersionOut:
+    """One version as Screens 48 and 49 read it. `reasons` says, for a version a rollback took out
+    of the traffic, what the person who did it wrote (UC-8.8 step 2)."""
     approver = db.get(User, policy.approved_by_id) if policy.approved_by_id else None
     deployer = db.get(User, policy.deployed_by_id) if policy.deployed_by_id else None
     return PolicyVersionOut(
@@ -191,6 +203,11 @@ def _version_out(db: Session, policy: ShieldPolicy) -> PolicyVersionOut:
         offered_at=policy.offered_at,
         confirmed_at=policy.confirmed_at,
         failure_reason=policy.failure_reason,
+        reason=policy.reason,
+        rolled_back_from=policy.rolled_back_from,
+        rolled_back_reason=(reasons or {}).get(policy.version),
+        rule_counts=policies.rule_counts(policy.document),
+        remediations=policies.included(db, policy),
         created_at=policy.created_at,
     )
 
@@ -211,16 +228,18 @@ def policy_versions(
     gateway = gateways.of_target(db, membership.organization_id, target_id)
     active = policies.current(db, target_id)
     waiting = policies.waiting(db, target_id)
+    every = policies.versions(db, membership.organization_id, target_id)
+    # The sentence of a rollback belongs to the version it removed, where a reader looks for it.
+    reasons = {
+        one.rolled_back_from: one.reason for one in every if one.rolled_back_from and one.reason
+    }
     return PolicyList(
         target_id=target.id,
         target_name=target.name,
         gateway=_out(db, gateway, target) if gateway else None,
-        active=_version_out(db, active) if active else None,
-        waiting=_version_out(db, waiting) if waiting else None,
-        versions=[
-            _version_out(db, one)
-            for one in policies.versions(db, membership.organization_id, target_id)
-        ],
+        active=_version_out(db, active, reasons) if active else None,
+        waiting=_version_out(db, waiting, reasons) if waiting else None,
+        versions=[_version_out(db, one, reasons) for one in every],
         deployable=policies.deployable(db, membership.organization_id, target),
     )
 
@@ -263,6 +282,51 @@ def deploy_policy(
         at=data.at,
     )
     return DeployOut(policy=_version_out(db, policy), open_in_application=left)
+
+
+def _target(db: Session, organization_id: uuid.UUID, target_id: uuid.UUID) -> Target:
+    target = db.scalar(scoped_select(Target, organization_id).where(Target.id == target_id))
+    if target is None:
+        raise NotFoundError("That target doesn't exist.")
+    return target
+
+
+@router.get("/targets/{target_id}/rollback")
+def rollback_consequences(
+    target_id: uuid.UUID,
+    to_version: int = 0,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> RollbackConsequences:
+    """UC-8.8 step 2: what rolling back to this version — or switching the policy off, with
+    `to_version=0` (2a) — would do, worked out now and stated before anybody confirms it."""
+    target = _target(db, membership.organization_id, target_id)
+    return RollbackConsequences(
+        **policies.consequences(db, membership.organization_id, target, to_version)
+    )
+
+
+@router.post("/targets/{target_id}/rollback")
+def roll_back(
+    target_id: uuid.UUID,
+    data: RollbackIn,
+    membership: Membership = Depends(can_roll_back),
+    session: UserSession = Depends(recent_password_confirmation),
+    db: Session = Depends(get_db),
+) -> RollbackOut:
+    """UC-8.8 steps 4-6: the earlier version is deployed again, or the policy switched off (2a).
+    Step 3 is the password this session confirmed in the last ten minutes (NFR-3.5)."""
+    target = _target(db, membership.organization_id, target_id)
+    user = db.get_one(User, membership.user_id)
+    policy, told = policies.rollback(
+        db,
+        membership.organization_id,
+        user,
+        target=target,
+        to_version=data.to_version,
+        reason=data.reason,
+    )
+    return RollbackOut(policy=_version_out(db, policy), consequences=RollbackConsequences(**told))
 
 
 # ---------------------------------------------------------------- the gateway's own endpoints

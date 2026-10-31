@@ -33,8 +33,8 @@ from app.core.errors import ConflictError, FieldValidationError, NotFoundError
 from app.core.tenancy import scoped_select
 from app.modules.m01_users.models import User
 from app.modules.m02_targets.models import Target
-from app.modules.m06_findings.models import Finding
-from app.modules.m08_remediation import gateways
+from app.modules.m06_findings.models import Finding, FindingStatus
+from app.modules.m08_remediation import gateways, retest
 from app.modules.m08_remediation.models import (
     FixKind,
     PolicySource,
@@ -538,7 +538,12 @@ def confirm(
         return None
     before = current(db, gateway.target_id)
     if before is not None:
-        before.state = PolicyState.SUPERSEDED
+        # 4a: a rollback that waited for the gateway still takes its version out of the traffic.
+        before.state = (
+            PolicyState.ROLLED_BACK
+            if pending.source in (PolicySource.ROLLBACK, PolicySource.DISABLED)
+            else PolicyState.SUPERSEDED
+        )
     pending.state = PolicyState.ACTIVE
     pending.confirmed_at = _now()
     gateway.reported_policy_version = version
@@ -617,8 +622,8 @@ def _failed(db: Session, gateway: ShieldGateway, policy: ShieldPolicy) -> None:
 
 
 def due(db: Session, at: datetime | None = None) -> list[ShieldPolicy]:
-    """1a: the versions whose maintenance window has come. The scheduler of FR-5.3 calls this;
-    until it is merged it is called by hand and by its tests."""
+    """1a: the versions whose maintenance window has come. Sentra's clock (FR-5.3) calls this
+    every minute through this module's schedules.py."""
     now = at or _now()
     started = []
     for policy in db.scalars(
@@ -651,6 +656,319 @@ def due(db: Session, at: datetime | None = None) -> list[ShieldPolicy]:
     return started
 
 
+# ---------------------------------------------------------------- UC-8.8: rolling it back
+
+
+MIN_REASON = 10
+SHORT_REASON = (
+    "Say in a sentence why you are rolling the policy back: it stays with the version in the "
+    "audit log, and the next person reads it before they deploy again."
+)
+CANCELLED_BY_ROLLBACK = "A rollback replaced it before the gateway activated it."
+RULE_GROUPS = (
+    ("Input guardrails", RuleKind.TEXT_GUARDRAIL, "input"),
+    ("Output guardrails", RuleKind.TEXT_GUARDRAIL, "output"),
+    ("Tool permissions", RuleKind.TOOL_APPROVAL, None),
+    ("Retrieval isolation", RuleKind.RETRIEVAL_REPORT, None),
+    ("System prompt hardening", RuleKind.SYSTEM_PROMPT, None),
+)
+
+
+def rule_counts(document: dict | None) -> list[dict]:
+    """The five numbers of Screen 49's policy card, in the words of the fixes they came from."""
+    rules = (document or {}).get("rules") or []
+    return [
+        {
+            "label": label,
+            "count": sum(
+                1
+                for rule in rules
+                if rule.get("kind") == kind
+                and (applies_to is None or rule.get("applies_to") == applies_to)
+            ),
+        }
+        for label, kind, applies_to in RULE_GROUPS
+    ]
+
+
+def included(db: Session, policy: ShieldPolicy) -> list[dict]:
+    """The remediations a version carries, as the pages name them: the finding and the version of
+    its proposal (Screen 49, "included remediations")."""
+    from app.modules.m06_findings.service import finding_row
+
+    rows = []
+    for one in policy.sources or []:
+        code = str(one.get("finding") or "")
+        try:
+            finding = finding_row(db, policy.organization_id, code)
+        except NotFoundError:
+            finding = None
+        rows.append(
+            {
+                "finding": code,
+                "finding_title": finding.title if finding else None,
+                "version": one.get("version"),
+                "fixes": one.get("fixes") or [],
+            }
+        )
+    return rows
+
+
+def _key(rule: dict) -> str:
+    return json.dumps({k: v for k, v in rule.items() if k != "id"}, sort_keys=True)
+
+
+def consequences(db: Session, organization_id: uuid.UUID, target: Target, to_version: int) -> dict:
+    """What the rollback dialog says before anybody rolls anything back (UC-8.8 step 2).
+
+    `to_version` 0 disables the policy (2a). Everything here is worked out when it is read, so the
+    dialog shows what would happen now, not what would have happened yesterday.
+    """
+    active = current(db, target.id)
+    if active is None:
+        raise ConflictError(
+            "This target has no active Shield Policy to roll back.", code="no_active_policy"
+        )
+    if to_version:
+        earlier = version_row(db, organization_id, target.id, to_version)
+        if earlier.version == active.version:
+            raise ConflictError("That version is the active one.", code="already_active")
+        after = earlier.document or {"rules": []}
+    else:
+        earlier, after = None, {"rules": []}
+    keep = {_key(rule) for rule in after.get("rules") or []}
+    removed = [
+        rule for rule in (active.document or {}).get("rules") or [] if _key(rule) not in keep
+    ]
+    stopping: dict[tuple[str, int], list[int]] = {}
+    for rule in removed:
+        where = rule.get("from") or {}
+        key = (str(where.get("finding")), int(where.get("version") or 0))
+        stopping.setdefault(key, [])
+        if where.get("fix") not in stopping[key]:
+            stopping[key].append(where.get("fix"))
+    reopening = [code for code, _ in _verified_by(db, organization_id, list(stopping))]
+    gateway = gateways.of_target(db, organization_id, target.id)
+    return {
+        "from_version": active.version,
+        "to_version": to_version or None,
+        "disables": not to_version,
+        "rules_now": active.rule_count,
+        "rules_after": len(after.get("rules") or []),
+        "rules_removed": len(removed),
+        "remediations_stopping": [
+            {"finding": finding, "version": version, "fixes": sorted(fixes)}
+            for (finding, version), fixes in stopping.items()
+        ],
+        "findings_reopening": reopening,
+        # 4a: a gateway that is not reporting gets the rollback when it comes back
+        "gateway_reachable": gateway is not None
+        and gateways.state_now(gateway)
+        in (gateways.GatewayStatus.ACTIVE, gateways.GatewayStatus.NOT_IN_PATH),
+        "window_seconds": gateways.HEARTBEAT_SECONDS,
+    }
+
+
+def _verified_by(
+    db: Session, organization_id: uuid.UUID, pairs: list[tuple[str, int]]
+) -> list[tuple[str, Finding]]:
+    """The findings of these remediations that only a retest of the removed version proved fixed
+    (UC-8.8 step 5). FR-8.5 is what sets `fixed_and_verified`, so today this is usually empty."""
+    from app.modules.m06_findings.service import finding_row
+
+    found = []
+    for code, _ in pairs:
+        try:
+            finding = finding_row(db, organization_id, code)
+        except NotFoundError:
+            continue
+        if finding.status == FindingStatus.FIXED_AND_VERIFIED:
+            found.append((code, finding))
+    return found
+
+
+def rollback(
+    db: Session,
+    organization_id: uuid.UUID,
+    user: User,
+    *,
+    target: Target,
+    to_version: int,
+    reason: str,
+) -> tuple[ShieldPolicy, dict]:
+    """UC-8.8 steps 4-6, and 2a when `to_version` is 0: the earlier document is deployed again as
+    a new version, the findings that depended on the removed one are reopened, the rollback is in
+    the audit log with its reason, and the people who work with the target hear about it.
+
+    The person has authenticated again before this (step 3, NFR-3.5): the route asks for it.
+    """
+    said = (reason or "").strip()
+    if len(said) < MIN_REASON:
+        raise FieldValidationError("reason", SHORT_REASON)
+    told = consequences(db, organization_id, target, to_version)
+    active = current(db, target.id)
+    earlier = version_row(db, organization_id, target.id, to_version) if to_version else None
+    document = (earlier.document if earlier else {"rules": []}) or {"rules": []}
+    pending = waiting(db, target.id)
+    if pending is not None:
+        # A version still on its way is not what anybody wants back: it never reached the traffic.
+        pending.state = PolicyState.FAILED
+        pending.failure_reason = CANCELLED_BY_ROLLBACK
+    rules = [dict(rule) for rule in document.get("rules") or []]
+    for number, rule in enumerate(rules, start=1):
+        rule["id"] = f"r{number}"
+    policy = ShieldPolicy(
+        organization_id=organization_id,
+        target_id=target.id,
+        version=_next_version(db, target.id),
+        # 4a: a gateway nobody can reach gets it as soon as it reports again; until then the
+        # version that is really in the traffic stays the active one.
+        state=PolicyState.ACTIVE if told["gateway_reachable"] else PolicyState.PENDING,
+        source=PolicySource.ROLLBACK if to_version else PolicySource.DISABLED,
+        document={"rules": rules},
+        rule_count=len(rules),
+        carried_over=len(rules),
+        sources=_sources_of(rules),
+        based_on_version=to_version or None,
+        rolled_back_from=active.version,
+        reason=said,
+        deployed_by_id=user.id,
+        approved_by_id=earlier.approved_by_id if earlier else None,
+        offered_at=_now(),
+        confirmed_at=_now() if told["gateway_reachable"] else None,
+    )
+    if told["gateway_reachable"]:
+        active.state = PolicyState.ROLLED_BACK
+    db.add(policy)
+    db.flush()
+    _stop_enforcing(db, organization_id, told, reason=said)
+    what = "disabled" if not to_version else "rolled_back"
+    audit.record(
+        db,
+        organization_id=organization_id,
+        actor=user,
+        action=f"shield_policy.{what}",
+        summary=(
+            f"The Sentra Shield policy of {target.name} was switched off "
+            if not to_version
+            else f"The Sentra Shield policy of {target.name} was rolled back to version "
+            f"{to_version} "
+        )
+        + f"(version {policy.version}, from version {active.version}): {said}",
+        item=audit.Item("shield_policy", policy.id, f"{target.name}, version {policy.version}"),
+        details={
+            "version": policy.version,
+            "from_version": active.version,
+            "to_version": to_version or None,
+            "reason": said,
+            "rules": policy.rule_count,
+            "rules_removed": told["rules_removed"],
+            "remediations_stopping": told["remediations_stopping"],
+            "findings_reopened": told["findings_reopening"],
+            "password_confirmed": True,  # NFR-3.5, the route's own dependency
+            "waiting_for_the_gateway": not told["gateway_reachable"],
+        },
+    )
+    # NFR-2.4: the version, the findings, the remediations and the audit entry are one transaction.
+    db.commit()
+    db.refresh(policy)
+    _tell_everybody(db, organization_id, target, policy, told, reason=said)
+    return policy, told
+
+
+def _stop_enforcing(db: Session, organization_id: uuid.UUID, told: dict, *, reason: str) -> None:
+    """Step 5: the fixes of the removed rules are not in effect any more. Their findings go back
+    to open if only a retest of the removed version had closed them, and their proposals go back
+    to approved, so they can be deployed again once somebody has looked at them."""
+    from app.modules.m06_findings.service import finding_row
+
+    pairs = [
+        (one["finding"], one["version"]) for one in told["remediations_stopping"] if one["finding"]
+    ]
+    for code, finding in _verified_by(db, organization_id, pairs):
+        finding.status = FindingStatus.REOPENED
+        audit.record(
+            db,
+            organization_id=organization_id,
+            actor=None,
+            action="finding.reopened",
+            summary=(
+                f"{code} is open again: the Shield Policy version that proved it fixed was "
+                f"rolled back ({reason})"
+            ),
+            item=audit.Item("finding", finding.id, code),
+            details={"finding": code, "reason": reason},
+            source_address=None,
+        )
+    for code, version in pairs:
+        try:
+            finding = finding_row(db, organization_id, code)
+        except NotFoundError:
+            continue
+        remediation = db.scalar(
+            select(Remediation).where(
+                Remediation.finding_id == finding.id, Remediation.version == version
+            )
+        )
+        if remediation is None or remediation.status not in (
+            RemediationStatus.APPLYING,
+            RemediationStatus.EFFECTIVE,
+            RemediationStatus.INEFFECTIVE,
+        ):
+            continue
+        remediation.status = RemediationStatus.APPROVED
+        retest.after_rollback(db, finding=finding, remediation=remediation)
+
+
+def _tell_everybody(
+    db: Session,
+    organization_id: uuid.UUID,
+    target: Target,
+    policy: ShieldPolicy,
+    told: dict,
+    *,
+    reason: str,
+) -> None:
+    """Step 6: the developers and the Security Analysts of the organization are told what changed
+    and why — a policy leaving the traffic is not something anybody should find out later."""
+    from app.modules.m01_users.models import Membership, MembershipStatus, Role
+    from app.modules.m09_reporting.notifications import notify
+
+    people = list(
+        db.scalars(
+            select(Membership.user_id).where(
+                Membership.organization_id == organization_id,
+                Membership.status == MembershipStatus.ACTIVE,
+                Membership.role.in_((Role.TARGET_OWNER, Role.SECURITY_ANALYST)),
+            )
+        )
+    )
+    if not people:
+        return
+    what = (
+        "was switched off"
+        if policy.source == PolicySource.DISABLED
+        else f"was rolled back to version {policy.based_on_version}"
+    )
+    waiting_line = (
+        ""
+        if told["gateway_reachable"]
+        else " The gateway isn't reporting, so it applies the change as soon as it reconnects."
+    )
+    notify(
+        db,
+        event="shield_policy",
+        user_ids=people,
+        organization_id=organization_id,
+        text=(
+            f"The Sentra Shield policy of {target.name} {what} (now version {policy.version}, "
+            f"{policy.rule_count} rules): {reason}{waiting_line}"
+        ),
+        subject=f"Sentra Shield policy of {target.name}",
+        link=f"/targets/{target.id}/shield",
+    )
+
+
 # ---------------------------------------------------------------- what comes after it
 
 
@@ -658,8 +976,6 @@ def _after_deployment(db: Session, policy: ShieldPolicy) -> None:
     """Step 6: the retest of the finding starts once every fix of its proposal is in effect. The
     retest itself is FR-8.4 (UC-8.6), and `retest.after_deployment()` is the one function that
     task replaces; today the remediation stays `applying` until it runs."""
-    from app.modules.m08_remediation import retest
-
     finding, remediation = _behind(db, policy)
     if finding is not None and remediation is not None:
         retest.after_deployment(db, finding=finding, remediation=remediation, policy=policy)
@@ -710,6 +1026,7 @@ STATE_LABELS = {
     PolicyState.PENDING: "On its way to the gateway",
     PolicyState.ACTIVE: "Active",
     PolicyState.SUPERSEDED: "Replaced",
+    PolicyState.ROLLED_BACK: "Rolled back",
     PolicyState.FAILED: "Not activated",
 }
 RULE_LABELS = {
