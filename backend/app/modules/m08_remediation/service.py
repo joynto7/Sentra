@@ -1,6 +1,7 @@
 """Reading remediations for the pages (Screens 45 and 46)."""
 
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import case, select
 from sqlalchemy.orm import Session, selectinload
@@ -12,6 +13,7 @@ from app.modules.m02_targets.models import Target
 from app.modules.m06_findings.models import Finding, FindingStatus, component_label
 from app.modules.m06_findings.service import SEVERITY_RANK, finding_row
 from app.modules.m08_remediation import fixes as fix_rules
+from app.modules.m08_remediation import review
 from app.modules.m08_remediation.generation import blocker
 from app.modules.m08_remediation.models import (
     FixKind,
@@ -21,6 +23,7 @@ from app.modules.m08_remediation.models import (
     RemediationStatus,
 )
 from app.modules.m08_remediation.schemas import (
+    CommentOut,
     FindingRef,
     FixOut,
     FixSummary,
@@ -28,16 +31,30 @@ from app.modules.m08_remediation.schemas import (
     RemediationList,
     RemediationPage,
     RemediationRow,
+    ReviewOut,
     VersionOut,
     VersionSummary,
 )
 
 
-def _names(db: Session, ids) -> dict[uuid.UUID, str]:
+@dataclass(frozen=True)
+class Reader:
+    """Who is reading Screen 46: what the page may offer them (UC-8.3)."""
+
+    user_id: uuid.UUID
+    can_request: bool  # adapt a proposal and send it for approval
+    can_approve: bool
+
+
+def names_of(db: Session, ids) -> dict[uuid.UUID, str]:
+    """The names behind a list of user ids, for the "by whom" of every row."""
     wanted = {i for i in ids if i}
     if not wanted:
         return {}
     return dict(db.execute(select(User.id, User.name).where(User.id.in_(wanted))).all())
+
+
+_names = names_of
 
 
 def finding_ref(finding: Finding, target_name: str) -> FindingRef:
@@ -64,6 +81,10 @@ def summary(remediation: Remediation, names: dict) -> VersionSummary:
         ai_generated=remediation.ai_generated,
         created_at=remediation.created_at,
         requested_by=names.get(remediation.requested_by_id),
+        edited_by=names.get(remediation.edited_by_id),
+        decided_by=names.get(remediation.decided_by_id),
+        decided_at=remediation.decided_at,
+        decision_reason=remediation.decision_reason,
         fix_count=len(remediation.fixes),
         fixes_in_short=[
             FixSummary(
@@ -157,7 +178,11 @@ def _versions(db: Session, finding_id: uuid.UUID) -> list[Remediation]:
 
 
 def page(
-    db: Session, organization_id: uuid.UUID, code: str, version: int | None = None
+    db: Session,
+    organization_id: uuid.UUID,
+    code: str,
+    version: int | None = None,
+    reader: "Reader | None" = None,
 ) -> RemediationPage:
     """Screen 46: one version of a finding's proposal, the newest by default."""
     finding = finding_row(db, organization_id, code)
@@ -169,8 +194,14 @@ def page(
         if current is None:
             raise NotFoundError(f"Version {version} of this remediation doesn't exist.")
     job = _shown_job(db, [finding.id]).get(finding.id)
+    thread = review.comments(db, finding.id)
     names = _names(
-        db, [r.requested_by_id for r in versions] + [job.requested_by_id if job else None]
+        db,
+        [r.requested_by_id for r in versions]
+        + [r.edited_by_id for r in versions]
+        + [r.decided_by_id for r in versions]
+        + [c.author_id for c in thread]
+        + [job.requested_by_id if job else None],
     )
     problem = blocker(finding)
     return RemediationPage(
@@ -180,6 +211,52 @@ def page(
         job=job_out(job, names) if job else None,
         versions=[summary(r, names) for r in versions],
         current=version_out(current, names) if current else None,
+        review=review_out(db, organization_id, versions, reader),
+        comments=[
+            CommentOut(
+                id=one.id,
+                version=one.version,
+                author=names.get(one.author_id),
+                text=one.text,
+                created_at=one.created_at,
+            )
+            for one in thread
+        ],
+    )
+
+
+def review_out(
+    db: Session,
+    organization_id: uuid.UUID,
+    versions: list[Remediation],
+    reader: Reader | None,
+) -> ReviewOut:
+    """UC-8.3 for the person reading the page: what they may do with the newest version, who may
+    approve it, and what an approval starts (step 6)."""
+    newest = versions[0] if versions else None
+    people = review.approvers(db, organization_id)
+    if newest is None or reader is None:
+        return ReviewOut(
+            can_edit=False,
+            can_submit=False,
+            can_approve=False,
+            cannot_approve=None,
+            approvers=sorted(people.values()),
+            on_approval=[],
+        )
+    open_version = newest.status in review.OPEN
+    may_approve = (
+        reader.can_approve
+        and newest.status == RemediationStatus.AWAITING_APPROVAL
+        and newest.edited_by_id != reader.user_id
+    )
+    return ReviewOut(
+        can_edit=reader.can_request and open_version,
+        can_submit=reader.can_request and newest.status == RemediationStatus.DRAFT,
+        can_approve=may_approve,
+        cannot_approve=review.cannot_approve(newest, reader.user_id, reader.can_approve),
+        approvers=sorted(people.values()),
+        on_approval=review.on_approval(newest),
     )
 
 

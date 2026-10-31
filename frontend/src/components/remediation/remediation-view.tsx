@@ -7,8 +7,12 @@ import { toast } from "sonner"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
+import { ApprovalPanel } from "@/components/remediation/approval-panel"
 import { StatusChip } from "@/components/remediation/badges"
+import { CommentThread } from "@/components/remediation/comment-thread"
 import { FixCard } from "@/components/remediation/fix-card"
+import { ProposalEditor } from "@/components/remediation/fix-editor"
+import { VersionCompare } from "@/components/remediation/version-compare"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
 import { AiGeneratedLabel } from "@/components/threat-models/badges"
@@ -28,10 +32,12 @@ import { formatDateTime } from "@/lib/targets"
 const POLL = 2000
 
 /**
- * Screen 46: one version of the proposal for a finding (UC-8.2). It shows the root cause, the
- * fixes with their kind and where each takes effect, and which version is being read. Every
- * version is a draft: approving one, adapting it and rejecting it come with FR-8.2, and the
- * retest with FR-8.5.
+ * Screen 46: one version of the proposal for a finding (UC-8.2 and UC-8.3). It shows the root
+ * cause, the fixes with their kind and where each takes effect, and which version is being read;
+ * beside them the approval, which is the only way anything here takes effect (NFR-9.3). A
+ * developer adapts the proposal as the next version (UC-8.3 steps 2-3), and an analyst or a
+ * manager approves or rejects it — never the person who adapted it (4a). The retest that follows
+ * an approved remediation comes with FR-8.4.
  */
 export function RemediationView({ code }: { code: string }) {
   const canRequest = useCan("request_remediations")
@@ -40,8 +46,12 @@ export function RemediationView({ code }: { code: string }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [comparing, setComparing] = useState(false)
 
   usePageCrumbs([{ label: code }])
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -52,7 +62,9 @@ export function RemediationView({ code }: { code: string }) {
       })
       .catch((problem) => {
         if (controller.signal.aborted) return
-        setError(problem instanceof ApiError ? problem.message : "The proposal could not be loaded.")
+        setError(
+          problem instanceof ApiError ? problem.message : "The proposal could not be loaded.",
+        )
       })
     return () => controller.abort()
   }, [code, version, attempt])
@@ -83,7 +95,9 @@ export function RemediationView({ code }: { code: string }) {
       setVersion(null)
       setAttempt((n) => n + 1)
     } catch (problem) {
-      toast.error(problem instanceof ApiError ? problem.message : "The proposal could not be asked for.")
+      toast.error(
+        problem instanceof ApiError ? problem.message : "The proposal could not be asked for.",
+      )
     } finally {
       setBusy(false)
     }
@@ -125,8 +139,13 @@ export function RemediationView({ code }: { code: string }) {
         action={
           canRequest &&
           !data.blocker &&
+          !editing &&
           data.current !== null && (
-            <Button className="h-9 hover:bg-primary-hover" onClick={ask} disabled={busy || Boolean(running)}>
+            <Button
+              className="h-9 hover:bg-primary-hover"
+              onClick={ask}
+              disabled={busy || Boolean(running)}
+            >
               {running ? "Writing…" : busy ? "Asking…" : askLabel}
             </Button>
           )
@@ -139,7 +158,10 @@ export function RemediationView({ code }: { code: string }) {
           Open the finding
         </Link>
         <span className="text-muted-foreground">·</span>
-        <Link href={`/targets/${data.finding.target_id}`} className="py-1 text-link hover:underline">
+        <Link
+          href={`/targets/${data.finding.target_id}`}
+          className="py-1 text-link hover:underline"
+        >
           {data.finding.target_name}
         </Link>
         <span className="text-muted-foreground">· {data.finding.component}</span>
@@ -154,8 +176,8 @@ export function RemediationView({ code }: { code: string }) {
       {running && (
         <Alert role="status" className="mb-4">
           <AlertDescription>
-            Sentra is writing the proposal. It reads the finding, its evidence and the Target Profile,
-            and this page shows the version as soon as it is there.
+            Sentra is writing the proposal. It reads the finding, its evidence and the Target
+            Profile, and this page shows the version as soon as it is there.
           </AlertDescription>
         </Alert>
       )}
@@ -184,65 +206,129 @@ export function RemediationView({ code }: { code: string }) {
           }
         />
       ) : (
-        <div className="space-y-4">
-          <section aria-labelledby="version" className="rounded-[10px] border bg-card p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 id="version" className="text-[15px] font-semibold">
-                  Version {current.version}
-                </h2>
-                <StatusChip status={current.status} />
-                {current.ai_generated && <AiGeneratedLabel note={current.model ?? undefined} />}
-                {current.origin === "revised" && (
-                  <span className="text-xs text-muted-foreground">
-                    revision of version {current.based_on_version}
-                  </span>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="min-w-0 space-y-4">
+            <section aria-labelledby="version" className="rounded-[10px] border bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 id="version" className="text-[15px] font-semibold">
+                    Version {current.version}
+                  </h2>
+                  <StatusChip status={current.status} />
+                  {current.ai_generated && <AiGeneratedLabel note={current.model ?? undefined} />}
+                  {current.origin === "revised" && (
+                    <span className="text-xs text-muted-foreground">
+                      revision of version {current.based_on_version}
+                    </span>
+                  )}
+                  {current.origin === "edited" && (
+                    <span className="text-xs text-muted-foreground">
+                      adapted from version {current.based_on_version} by{" "}
+                      {current.edited_by ?? "a developer"}
+                    </span>
+                  )}
+                </div>
+                {data.versions.length > 1 && (
+                  <FilterSelect
+                    label="Version"
+                    value={String(current.version)}
+                    onChange={(value) => setVersion(Number(value))}
+                    options={data.versions.map((one) => ({
+                      value: String(one.version),
+                      label: `Version ${one.version}${one.version === data.versions[0].version ? " (newest)" : ""}`,
+                    }))}
+                    allLabel={null}
+                    changed={current.version !== data.versions[0].version}
+                  />
                 )}
               </div>
-              {data.versions.length > 1 && (
-                <FilterSelect
-                  label="Version"
-                  value={String(current.version)}
-                  onChange={(value) => setVersion(Number(value))}
-                  options={data.versions.map((one) => ({
-                    value: String(one.version),
-                    label: `Version ${one.version}${one.version === data.versions[0].version ? " (newest)" : ""}`,
-                  }))}
-                  allLabel={null}
-                  changed={current.version !== data.versions[0].version}
-                />
-              )}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Asked for by {current.requested_by ?? "someone"} on {formatDateTime(current.created_at)}
-              {current.dropped > 0 &&
-                ` · ${current.dropped} ${current.dropped === 1 ? "fix was" : "fixes were"} left out because Sentra could not use ${current.dropped === 1 ? "it" : "them"}`}
-            </p>
-            <h3 className="mt-4 text-[13px] font-medium text-muted-foreground">Root cause</h3>
-            <p className="mt-1 text-sm">{current.root_cause}</p>
-            <h3 className="mt-3 text-[13px] font-medium text-muted-foreground">What the fixes do</h3>
-            <p className="mt-1 text-sm">{current.summary}</p>
-            {current.mitigation_only && (
-              <p className="mt-3 rounded-[7px] border border-warning/40 bg-warning/5 p-3 text-sm text-warning">
-                {current.mitigation_only}
+              <p className="mt-1 text-xs text-muted-foreground">
+                Asked for by {current.requested_by ?? "someone"} on{" "}
+                {formatDateTime(current.created_at)}
+                {current.dropped > 0 &&
+                  ` · ${current.dropped} ${current.dropped === 1 ? "fix was" : "fixes were"} left out because Sentra could not use ${current.dropped === 1 ? "it" : "them"}`}
               </p>
-            )}
-            <p className="mt-3 border-t pt-3 text-[13px] text-muted-foreground">
-              This is a draft. Nothing it recommends takes effect until a person approves it, which
-              comes with the review of FR-8.2.
-            </p>
-          </section>
+              {current.based_on_version !== null && (
+                <Button
+                  variant="link"
+                  className="mt-1 h-6 p-0 text-[13px]"
+                  aria-expanded={comparing}
+                  onClick={() => setComparing((on) => !on)}
+                >
+                  {comparing
+                    ? "Hide the comparison"
+                    : `Compare with version ${current.based_on_version}`}
+                </Button>
+              )}
+              {comparing && current.based_on_version !== null && (
+                <div className="mt-3 rounded-[7px] border bg-muted/30 p-3">
+                  <VersionCompare
+                    code={code}
+                    current={current}
+                    earlier={current.based_on_version}
+                  />
+                </div>
+              )}
+              <h3 className="mt-4 text-[13px] font-medium text-muted-foreground">Root cause</h3>
+              <p className="mt-1 text-sm">{current.root_cause}</p>
+              <h3 className="mt-3 text-[13px] font-medium text-muted-foreground">
+                What the fixes do
+              </h3>
+              <p className="mt-1 text-sm">{current.summary}</p>
+              {current.mitigation_only && (
+                <p className="mt-3 rounded-[7px] border border-warning/40 bg-warning/5 p-3 text-sm text-warning">
+                  {current.mitigation_only}
+                </p>
+              )}
+              <p className="mt-3 border-t pt-3 text-[13px] text-muted-foreground">
+                {current.status === "approved"
+                  ? "Approved. Its gateway fixes become a Sentra Shield policy version and its application changes become tasks, which come with FR-8.3."
+                  : "Nothing this proposal recommends takes effect until a person approves it."}
+              </p>
+            </section>
 
-          <section aria-labelledby="fixes">
-            <h2 id="fixes" className="mb-2 text-[15px] font-semibold">
-              Recommended fixes ({current.fixes.length})
-            </h2>
-            <ol className="space-y-3">
-              {current.fixes.map((fix) => (
-                <FixCard key={fix.position} fix={fix} />
-              ))}
-            </ol>
-          </section>
+            {editing ? (
+              <ProposalEditor
+                code={code}
+                current={current}
+                onCancel={() => setEditing(false)}
+                onSaved={() => {
+                  setEditing(false)
+                  setVersion(null)
+                  reload()
+                }}
+              />
+            ) : (
+              <section aria-labelledby="fixes">
+                <h2 id="fixes" className="mb-2 text-[15px] font-semibold">
+                  Recommended fixes ({current.fixes.length})
+                </h2>
+                <ol className="space-y-3">
+                  {current.fixes.map((fix) => (
+                    <FixCard key={fix.position} fix={fix} />
+                  ))}
+                </ol>
+              </section>
+            )}
+
+            <CommentThread
+              code={code}
+              version={current.version}
+              comments={data.comments}
+              onPosted={reload}
+            />
+          </div>
+
+          <ApprovalPanel
+            code={code}
+            page={data}
+            current={current}
+            onEdit={editing ? undefined : () => setEditing(true)}
+            onDone={() => {
+              setVersion(null)
+              reload()
+            }}
+          />
         </div>
       )}
     </>

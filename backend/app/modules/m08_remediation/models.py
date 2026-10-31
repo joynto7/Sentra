@@ -4,7 +4,8 @@ finding, the fixes of each proposal, and the jobs that generate them (UC-8.2).
 Each Remediation row is one version of the proposal for one finding (FR-8.2): the first proposal
 and every revision. A version starts as a draft, and nothing it proposes takes effect before a
 person approves it (NFR-9.3). Reviewing, approving, deploying and retesting come with FR-8.2 to
-FR-8.6; this task stores the draft and its fixes.
+FR-8.6. FR-8.2 added what a person does with a version: adapting it writes the next version,
+and a version can be sent for approval, approved or rejected with a reason.
 """
 
 import uuid
@@ -42,6 +43,7 @@ class Origin(StrEnum):
 
     GENERATED = "generated"  # the first proposal for the finding (UC-8.2)
     REVISED = "revised"  # asked for again after a rejection or a failed retest (UC-8.2, 1b)
+    EDITED = "edited"  # a person adapted the version before it (UC-8.3 steps 2-3)
 
 
 class FixKind(StrEnum):
@@ -97,6 +99,17 @@ class Remediation(UUIDPrimaryKey, OrganizationScoped, Base):
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Who adapted this version (UC-8.3 step 2). They may not approve it themselves (4a).
+    edited_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The approval or the rejection of UC-8.3 steps 5-6, with its reason (5a1)
+    decided_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, server_default=func.now()
     )
@@ -130,6 +143,24 @@ class RemediationFix(UUIDPrimaryKey, Base):
     enforcement_note: Mapped[str | None] = mapped_column(String(200))
 
     remediation: Mapped[Remediation] = relationship(back_populates="fixes")
+
+
+class RemediationComment(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One message of the thread a proposal is discussed in (UC-8.3). It belongs to the finding,
+    not to one version, and records the version it was written on, so the thread reads in order
+    and a reader sees what each comment was about."""
+
+    __tablename__ = "remediation_comments"
+
+    finding_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int]
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
 
 
 class RemediationJob(UUIDPrimaryKey, OrganizationScoped, Base):

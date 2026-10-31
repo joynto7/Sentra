@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FindingRef(BaseModel):
@@ -40,12 +40,16 @@ class FixSummary(BaseModel):
 
 class VersionSummary(BaseModel):
     version: int
-    status: str  # draft until FR-8.2 reviews and approves it
-    origin: str  # generated or revised
+    status: str  # draft, awaiting approval, approved or rejected (UC-8.3)
+    origin: str  # generated, revised or edited by a person (UC-8.3 steps 2-3)
     based_on_version: int | None
-    ai_generated: bool  # labelled as such until a person approves it (NFR-9.4)
+    ai_generated: bool  # labelled as such even after a person adapted it (NFR-9.4)
     created_at: datetime
     requested_by: str | None
+    edited_by: str | None  # who adapted it; they may not approve it (4a)
+    decided_by: str | None
+    decided_at: datetime | None
+    decision_reason: str | None  # why it was rejected (5a1)
     fix_count: int
     fixes_in_short: list[FixSummary]
 
@@ -71,6 +75,28 @@ class JobOut(BaseModel):
     message: str | None
 
 
+class CommentOut(BaseModel):
+    """One message of the review thread (UC-8.3), with the version it was written on."""
+
+    id: uuid.UUID
+    version: int
+    author: str | None
+    text: str
+    created_at: datetime
+
+
+class ReviewOut(BaseModel):
+    """What the person reading Screen 46 may do with the newest version, and what an approval
+    starts (UC-8.3 step 6)."""
+
+    can_edit: bool
+    can_submit: bool  # a draft nobody has changed can go to the approvers as it is
+    can_approve: bool
+    cannot_approve: str | None  # the rule of 4a, or the reader's role, in one sentence
+    approvers: list[str]  # the Security Analysts and Managers of the organization
+    on_approval: list[str]
+
+
 class RemediationPage(BaseModel):
     """Screen 46: the newest version of a finding's proposal, with its earlier versions."""
 
@@ -80,6 +106,33 @@ class RemediationPage(BaseModel):
     job: JobOut | None  # the generation the page follows
     versions: list[VersionSummary]  # newest first
     current: VersionOut | None
+    review: ReviewOut
+    comments: list[CommentOut]
+
+
+class FixIn(BaseModel):
+    """A fix the person keeps, with what they changed about it (UC-8.3 step 2). Its kind and where
+    it is enforced are Sentra's and are not taken from the request."""
+
+    position: int  # its position in the version being adapted
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    details: dict
+
+
+class EditIn(BaseModel):
+    root_cause: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    fixes: list[FixIn] = Field(min_length=1)
+
+
+class RejectIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class CommentIn(BaseModel):
+    version: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class RemediationRow(BaseModel):
