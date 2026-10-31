@@ -145,6 +145,61 @@ class RemediationFix(UUIDPrimaryKey, Base):
     remediation: Mapped[Remediation] = relationship(back_populates="fixes")
 
 
+class GatewayPosition(StrEnum):
+    """Where the gateway sits in the target's traffic (UC-8.1 step 1)."""
+
+    IN_FRONT = "in_front"  # users → Sentra Shield → the application
+    BEFORE_MODEL = "before_model"  # the application → Sentra Shield → its LLM provider
+
+
+class GatewayStatus(StrEnum):
+    """What Sentra knows about a gateway (UC-8.1 steps 4-6 with 4a and 5a)."""
+
+    PENDING = "pending"  # the credential is issued; the gateway has never connected
+    NOT_IN_PATH = "not_in_path"  # it connected, but the test request didn't pass through it (5a)
+    ACTIVE = "active"
+    NOT_REPORTING = "not_reporting"  # no heartbeat for three windows (FR-10.6)
+    REVOKED = "revoked"
+
+
+class ShieldGateway(UUIDPrimaryKey, OrganizationScoped, Base):
+    """A Sentra Shield gateway in front of one target (FR-8.3, UC-8.1).
+
+    The gateway runs in the target owner's own environment and connects outbound to Sentra: it
+    announces itself, reports what it sees and reads its policy. Sentra never opens a connection
+    into that environment. Of the credential only the first characters and a SHA-256 are kept, as
+    for an API key (NFR-3.1).
+    """
+
+    __tablename__ = "shield_gateways"
+    __table_args__ = (UniqueConstraint("target_id"),)
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[str] = mapped_column(String(15))
+    status: Mapped[str] = mapped_column(String(15), default=GatewayStatus.PENDING)
+    credential_prefix: Mapped[str] = mapped_column(String(16))  # sgw_ and six characters
+    credential_hash: Mapped[str] = mapped_column(String(64))
+    gateway_version: Mapped[str | None] = mapped_column(String(20))  # what it reports (step 4)
+    # What it adds to a request, as the gateway measures it (NFR-1.5, median of its window)
+    added_latency_ms: Mapped[int | None]
+    requests_seen: Mapped[int] = mapped_column(default=0)
+    # Step 5: the marker of the harmless test request, and when the gateway reported it
+    check_marker: Mapped[str | None] = mapped_column(String(32))
+    check_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    check_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class RemediationComment(UUIDPrimaryKey, OrganizationScoped, Base):
     """One message of the thread a proposal is discussed in (UC-8.3). It belongs to the finding,
     not to one version, and records the version it was written on, so the thread reads in order
