@@ -39,6 +39,8 @@ EVENTS = [
     Event("shield_policy", "Sentra Shield policy deployed or failed"),
     # UC-10.9, 4a1: the target's Sentra Shield gateway stopped reporting (FR-10.6, FR-8.3)
     Event("shield_gateway_silent", "Sentra Shield gateway stopped reporting"),
+    # UC-9.5, 5a1: a release was blocked, or the gate could not check it at all
+    Event("gate_failed", "Security gate did not pass"),
     # UC-9.6, 3a1: an API key is about to expire, so it can be replaced in time
     Event("api_key_expiring", "API key about to expire"),
     Event(

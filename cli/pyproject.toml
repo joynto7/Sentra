@@ -1,0 +1,19 @@
+[project]
+name = "sentra-cli"
+version = "0.1.0"
+description = "Call a Sentra security gate from a CI/CD pipeline (FR-9.4)."
+requires-python = ">=3.12"
+dependencies = []  # the standard library only: a pipeline needs nothing but Python
+
+[project.scripts]
+sentra = "sentra_cli.gate:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

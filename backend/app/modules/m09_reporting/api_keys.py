@@ -275,8 +275,8 @@ def expiring(db: Session, at: datetime | None = None) -> list[ApiKey]:
 
 def notify_expiring(db: Session, at: datetime | None = None) -> int:
     """UC-9.6, 3a1: tells the organization's administrators once that a key is about to expire, so
-    the integration can be given a new one before it stops working. The scheduler of FR-5.3 calls
-    it daily once J-S3-01 is merged; until then it is called by hand and by its test."""
+    the integration can be given a new one before it stops working. Sentra's clock calls it once
+    a day (`daily()` in schedules.py)."""
     now = at or _now()
     told = 0
     for key in expiring(db, now):

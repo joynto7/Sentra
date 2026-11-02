@@ -44,12 +44,21 @@ ENDED_ALREADY = "This run has already ended."
 
 
 def launch(
-    db: Session, membership: Membership, code: str, trigger: RunTrigger = RunTrigger.MANUAL
+    db: Session,
+    membership: Membership,
+    code: str,
+    trigger: RunTrigger = RunTrigger.MANUAL,
+    link: Callable[[CampaignRun], None] | None = None,
 ) -> CampaignRun:
     """Steps 2-5: the approval, the target, the runs in progress and the monthly limits are
     checked; the run records the versions it uses and its start job is queued. The role is checked
     by the route; a schedule (FR-5.3) or a pipeline (FR-9.5) calls this with the permissions of the
-    campaign's creator or of the API key (1a1)."""
+    campaign's creator or of the API key (1a1).
+
+    `link` is called with the run in its own transaction, before the job is queued, for a caller
+    that has a row of its own to write beside it — the security gate of FR-9.4 does, because a
+    worker that takes the run at once has to find the gate run it belongs to (as `start_retest`).
+    """
     organization_id = membership.organization_id
     campaign = campaign_row(db, organization_id, code)
     user = db.get_one(User, membership.user_id)
@@ -142,6 +151,8 @@ def launch(
             "tests": len(tests),
         },
     )
+    if link is not None:
+        link(run)
     db.commit()
     # UC-10.6 step 5, with the run counted: the organization hears once a month that a limit is
     # coming close. It is after the commit, so the launch never waits for a notification.
