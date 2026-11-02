@@ -1,16 +1,18 @@
 """Reading the detection results of a campaign run's attempts (FR-6.1; UC-5.6, UC-6.1), and the
-findings with their evidence (FR-6.2, FR-6.3; UC-6.4, UC-6.5). Every member of the organization may
-read them, like the runs themselves; another organization gets "not found" (NFR-3.3)."""
+findings with their evidence, triage and history (FR-6.2, FR-6.3, FR-6.5; UC-6.4, UC-6.5). Every
+member of the organization may read them, like the runs themselves; another organization gets
+"not found" (NFR-3.3). Changing a finding is triage.py."""
 
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.core.tenancy import scoped_select
+from app.modules.m01_users.models import User
 from app.modules.m02_targets.models import Target
 from app.modules.m04_tests.models import TestDefinition
 from app.modules.m04_tests.schema import CATEGORY_NAMES, DETECTION_LABELS, DetectionMethod, Severity
@@ -25,6 +27,8 @@ from app.modules.m06_findings.models import (
     Evidence,
     EvidenceKind,
     Finding,
+    FindingEvent,
+    FindingEventKind,
     FindingStatus,
     Outcome,
     component_label,
@@ -134,12 +138,15 @@ def run_detection(
 
 # ---------------------------------------------------------------- findings (FR-6.2, FR-6.3)
 
-# The quick views of the findings list (Screen 38); "Assigned to me" comes with FR-6.5
+# The quick views of the findings list (Screen 38). "assigned" is "Assigned to me": the open
+# findings whose owner is the member who is reading (FR-6.5).
 VIEWS = {
     "open": OPEN,
+    "assigned": OPEN,
     "requires_confirmation": (FindingStatus.REQUIRES_CONFIRMATION,),
     "closed": CLOSED,
 }
+MINE = "assigned"
 SEVERITY_RANK = {severity.value: rank for rank, severity in enumerate(Severity)}  # critical first
 _CODE = re.compile(r"F-(\d{1,9})", re.IGNORECASE)
 
@@ -154,7 +161,10 @@ class FindingFilters:
     status: str = ""
     target_id: uuid.UUID | None = None
     run_id: uuid.UUID | None = None  # the findings that this campaign run found or saw again
+    owner_id: uuid.UUID | None = None  # FR-6.5: the Owner filter of Screen 38
     search: str = ""  # in the title, or a finding's code such as F-012
+    # Who is reading, for the quick view "Assigned to me"; the route fills it in
+    user_id: uuid.UUID | None = None
 
 
 def finding_row(db: Session, organization_id: uuid.UUID, code: str) -> Finding:
@@ -174,6 +184,10 @@ def _filtered(
     query = scoped_select(Finding, organization_id)
     if view and filters.view:
         query = query.where(Finding.status.in_(VIEWS[filters.view]))
+        if filters.view == MINE:
+            query = query.where(Finding.owner_id == filters.user_id)
+    if filters.owner_id:
+        query = query.where(Finding.owner_id == filters.owner_id)
     if filters.severity:
         query = query.where(Finding.severity == filters.severity)
     if filters.category:
@@ -206,7 +220,16 @@ def _run_refs(db: Session, run_ids: set[uuid.UUID]) -> dict[uuid.UUID, dict]:
     return {run.id: {"id": run.id, "code": lifecycle.code(run, campaign)} for run, campaign in rows}
 
 
-def _item(finding: Finding, target_names: dict, run_refs: dict) -> dict:
+def _owners(db: Session, findings: list[Finding]) -> dict[uuid.UUID, dict]:
+    """The owner of each finding (FR-6.5), by user id."""
+    ids = {f.owner_id for f in findings if f.owner_id}
+    if not ids:
+        return {}
+    rows = db.execute(select(User.id, User.name).where(User.id.in_(ids))).all()
+    return {user_id: {"id": user_id, "name": name} for user_id, name in rows}
+
+
+def _item(finding: Finding, target_names: dict, run_refs: dict, owners: dict | None = None) -> dict:
     return {
         "code": finding.code,
         "title": finding.title,
@@ -221,6 +244,7 @@ def _item(finding: Finding, target_names: dict, run_refs: dict) -> dict:
             "label": component_label(finding.component_kind, finding.component_name),
         },
         "evidence_count": finding.evidence_count,
+        "owner": (owners or {}).get(finding.owner_id),  # FR-6.5: who will fix it
         # Successful attempts / attempts that tried this weakness (FR-6.4; rated by FR-7.1)
         "reproducibility": (
             None if finding.reproducibility is None else str(finding.reproducibility)
@@ -230,6 +254,32 @@ def _item(finding: Finding, target_names: dict, run_refs: dict) -> dict:
         "first_seen_at": finding.first_seen_at,
         "last_seen_at": finding.last_seen_at,
     }
+
+
+def _names(db: Session, user_ids: set[uuid.UUID | None]) -> dict[uuid.UUID, str]:
+    ids = {one for one in user_ids if one}
+    if not ids:
+        return {}
+    return dict(db.execute(select(User.id, User.name).where(User.id.in_(ids))).all())
+
+
+def _codes(
+    db: Session, organization_id: uuid.UUID, ids: set[uuid.UUID | None]
+) -> dict[uuid.UUID, str]:
+    wanted = {one for one in ids if one}
+    if not wanted:
+        return {}
+    rows = db.scalars(scoped_select(Finding, organization_id).where(Finding.id.in_(wanted)))
+    return {row.id: row.code for row in rows}
+
+
+def _evidence_counts(db: Session, codes: dict[uuid.UUID, str]) -> list[tuple[uuid.UUID, int]]:
+    rows = db.execute(
+        select(Evidence.finding_id, func.count())
+        .where(Evidence.finding_id.in_(codes))
+        .group_by(Evidence.finding_id)
+    ).all()
+    return [(finding_id, count) for finding_id, count in rows]
 
 
 def _target_names(db: Session, target_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -255,16 +305,74 @@ def list_findings(
     )
     names = _target_names(db, {f.target_id for f in found})
     refs = _run_refs(db, {run for f in found for run in (f.first_run_id, f.last_run_id)})
+    owners = _owners(db, list(found))
+    counts = {
+        view: sum(statuses.get(status, 0) for status in included)
+        for view, included in VIEWS.items()
+    }
+    counts[MINE] = db.scalar(
+        select(func.count()).select_from(
+            _filtered(organization_id, replace(filters, view=MINE)).subquery()
+        )
+    )
+    in_run = _in_run(db, organization_id, filters.run_id, list(found)) if filters.run_id else {}
     return {
-        "items": [_item(finding, names, refs) for finding in found],
+        "items": [
+            _item(finding, names, refs, owners) | ({"in_run": in_run[finding.id]} if in_run else {})
+            for finding in found
+        ],
         "total": total,
         "page": page,
         "page_size": page_size,
-        "counts": {
-            view: sum(statuses.get(status, 0) for status in included)
-            for view, included in VIEWS.items()
-        },
+        "counts": counts,
+        # UC-6.6 and Screen 37: of the findings of one campaign run, how many were new, seen
+        # again with the same root cause (FR-6.6) or reopened as a regression
+        "in_run_counts": _in_run_counts(db, organization_id, filters) if filters.run_id else None,
     }
+
+
+def _reopened_in(db: Session, organization_id: uuid.UUID, run_id: uuid.UUID) -> set[uuid.UUID]:
+    return set(
+        db.scalars(
+            select(FindingEvent.finding_id).where(
+                FindingEvent.organization_id == organization_id,
+                FindingEvent.campaign_run_id == run_id,
+                FindingEvent.kind == FindingEventKind.REOPENED,
+            )
+        )
+    )
+
+
+def _in_run(
+    db: Session, organization_id: uuid.UUID, run_id: uuid.UUID, findings: list[Finding]
+) -> dict[uuid.UUID, str]:
+    """What each finding was in this campaign run: new, reopened as a regression, or seen again
+    with the same root cause as before (FR-6.6; UC-6.2, 2a)."""
+    reopened = _reopened_in(db, organization_id, run_id)
+    return {
+        finding.id: (
+            "reopened"
+            if finding.id in reopened
+            else "new"
+            if finding.first_run_id == run_id
+            else "seen_again"
+        )
+        for finding in findings
+    }
+
+
+def _in_run_counts(db: Session, organization_id: uuid.UUID, filters: FindingFilters) -> dict:
+    """The same three groups as `_in_run`, over every finding of the run, not only this page."""
+    matching = _filtered(organization_id, filters).subquery()
+    reopened_ids = _reopened_in(db, organization_id, filters.run_id)
+
+    def count(*where) -> int:
+        return db.scalar(select(func.count()).select_from(matching).where(*where))
+
+    total = count()
+    reopened = count(matching.c.id.in_(reopened_ids)) if reopened_ids else 0
+    new = count(matching.c.first_run_id == filters.run_id, matching.c.id.notin_(reopened_ids))
+    return {"new": new, "seen_again": total - new - reopened, "reopened": reopened}
 
 
 def finding_filter_options(db: Session, organization_id: uuid.UUID) -> dict:
@@ -285,8 +393,15 @@ def finding_filter_options(db: Session, organization_id: uuid.UUID) -> dict:
         .distinct()
         .order_by(Finding.category)
     ).all()
+    assigned = select(Finding.owner_id).where(
+        Finding.organization_id == organization_id, Finding.owner_id.is_not(None)
+    )
+    owners = db.execute(
+        select(User.id, User.name).where(User.id.in_(assigned)).order_by(User.name)
+    ).all()
     return {
         "targets": [{"id": target_id, "name": name} for target_id, name in targets],
+        "owners": [{"id": user_id, "name": name} for user_id, name in owners],
         "runs": [
             {"id": run.id, "code": lifecycle.code(run, campaign)} for run, campaign in run_rows
         ],
@@ -294,14 +409,30 @@ def finding_filter_options(db: Session, organization_id: uuid.UUID) -> dict:
     }
 
 
+def group(db: Session, organization_id: uuid.UUID, finding: Finding) -> dict[uuid.UUID, str]:
+    """The finding itself and every duplicate that was merged into it, by id with its code
+    (FR-6.6; UC-6.6, 2b1). Evidence is written once and never moved (NFR-2.4), so a merge is a
+    link and the group's evidence and history are read together."""
+    codes = {finding.id: finding.code}
+    for merged in db.scalars(
+        scoped_select(Finding, organization_id)
+        .where(Finding.merged_into_id == finding.id)
+        .order_by(Finding.number)
+    ):
+        codes[merged.id] = merged.code
+    return codes
+
+
 def finding_detail(db: Session, organization_id: uuid.UUID, code: str) -> dict:
-    """UC-6.5 steps 1-3 and 6: the finding with its details (FR-6.2), the version of the test
-    that found it, the campaign runs it was found in, and how it was detected."""
+    """UC-6.5 steps 1-3 and 6: the finding with its details (FR-6.2), its triage (FR-6.5), the
+    version of the test that found it, the campaign runs it was found in, and how it was
+    detected. The evidence of a duplicate merged into it counts as its own (FR-6.6)."""
     finding = finding_row(db, organization_id, code)
     definition = db.get_one(TestDefinition, finding.test_definition_id)
+    codes = group(db, organization_id, finding)
     per_run = db.execute(
         select(Evidence.campaign_run_id, func.count(), func.min(Evidence.recorded_at))
-        .where(Evidence.finding_id == finding.id, Evidence.kind == EvidenceKind.ATTEMPT)
+        .where(Evidence.finding_id.in_(codes), Evidence.kind == EvidenceKind.ATTEMPT)
         .group_by(Evidence.campaign_run_id)
     ).all()
     first = db.scalar(
@@ -312,9 +443,26 @@ def finding_detail(db: Session, organization_id: uuid.UUID, code: str) -> dict:
     )
     run_ids = {finding.first_run_id, finding.last_run_id, *(run_id for run_id, _, _ in per_run)}
     refs = _run_refs(db, run_ids)
-    return _item(finding, _target_names(db, {finding.target_id}), refs) | {
+    names = _names(db, {finding.owner_id, finding.confirmed_by_id, finding.closed_by_id})
+    merged_into = _codes(db, organization_id, {finding.merged_into_id})
+    return _item(finding, _target_names(db, {finding.target_id}), refs, _owners(db, [finding])) | {
         "description": finding.description,
         "atlas": finding.atlas,
+        # The triage of FR-6.5, and the duplicates whose evidence and history count as this
+        # finding's (FR-6.6)
+        "confirmed_by": names.get(finding.confirmed_by_id),
+        "confirmed_at": finding.confirmed_at,
+        "assigned_at": finding.assigned_at,
+        "closed_by": names.get(finding.closed_by_id),
+        "closed_at": finding.closed_at,
+        "close_reason": finding.close_reason,
+        "merged_into": merged_into.get(finding.merged_into_id),
+        "merged_in": [code for finding_id, code in codes.items() if finding_id != finding.id],
+        "calculated_severity": finding.calculated_severity,
+        "severity_provisional": finding.severity_provisional,
+        "severity_adjusted": finding.severity_adjusted,
+        "severity_justification": finding.severity_justification,
+        "evidence_count": sum(count for _, count in _evidence_counts(db, codes)),
         "test": {
             "code": definition.code,
             "version": definition.version,
@@ -365,18 +513,19 @@ def _detection(db: Session, first: Evidence, refs: dict) -> dict | None:
     }
 
 
-def _evidence_rows(organization_id: uuid.UUID, finding: Finding) -> Select:
+def _evidence_rows(organization_id: uuid.UUID, finding_ids) -> Select:
     return (
         select(Evidence, Attempt.attempt_no)
         .join(Attempt, Attempt.id == Evidence.attempt_id)
-        .where(Evidence.organization_id == organization_id, Evidence.finding_id == finding.id)
+        .where(Evidence.organization_id == organization_id, Evidence.finding_id.in_(finding_ids))
     )
 
 
-def _evidence_item(row: Evidence, attempt_no: int, refs: dict) -> dict:
+def _evidence_item(row: Evidence, attempt_no: int, refs: dict, codes: dict) -> dict:
     return {
         "number": row.evidence_no,
         "kind": row.kind,
+        "finding": codes[row.finding_id],  # its own finding: a merged duplicate numbers its own
         "attempt_no": attempt_no,
         "run": refs[row.campaign_run_id],
         "recorded_at": row.recorded_at,
@@ -387,11 +536,15 @@ def _evidence_item(row: Evidence, attempt_no: int, refs: dict) -> dict:
 
 
 def list_evidence(db: Session, organization_id: uuid.UUID, code: str) -> list[dict]:
-    """UC-6.5 step 4: the finding's evidence in the order it was recorded (Screen 40)."""
+    """UC-6.5 step 4: the finding's evidence in the order it was recorded (Screen 40), together
+    with the evidence of every duplicate merged into it (FR-6.6; UC-6.6, 2b1)."""
     finding = finding_row(db, organization_id, code)
-    rows = db.execute(_evidence_rows(organization_id, finding).order_by(Evidence.evidence_no)).all()
+    codes = group(db, organization_id, finding)
+    rows = db.execute(
+        _evidence_rows(organization_id, codes).order_by(Evidence.recorded_at, Evidence.evidence_no)
+    ).all()
     refs = _run_refs(db, {row.campaign_run_id for row, _ in rows})
-    return [_evidence_item(row, attempt_no, refs) for row, attempt_no in rows]
+    return [_evidence_item(row, attempt_no, refs, codes) for row, attempt_no in rows]
 
 
 def evidence_detail(db: Session, organization_id: uuid.UUID, code: str, number: int) -> dict:
@@ -399,14 +552,14 @@ def evidence_detail(db: Session, organization_id: uuid.UUID, code: str, number: 
     still exactly what was recorded (NFR-2.4)."""
     finding = finding_row(db, organization_id, code)
     found = db.execute(
-        _evidence_rows(organization_id, finding).where(Evidence.evidence_no == number)
+        _evidence_rows(organization_id, [finding.id]).where(Evidence.evidence_no == number)
     ).first()
     if found is None:
         raise NotFoundError("Evidence not found.")
     row, attempt_no = found
     content = evidence.read(row)
     refs = _run_refs(db, {row.campaign_run_id})
-    return _evidence_item(row, attempt_no, refs) | {
+    return _evidence_item(row, attempt_no, refs, {finding.id: finding.code}) | {
         "integrity": {
             "status": content.integrity,
             "checksum": row.checksum,
