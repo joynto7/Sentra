@@ -161,6 +161,10 @@ export function EditTargetForm({ id }: { id: string }) {
 
   const archived = target.status === "archived"
   const readOnly = !canManage || archived
+  // UC-2.5, 3b1: the endpoint and the credentials decide where and how Sentra sends, so a run
+  // that is in progress keeps them as they are until it ends or is stopped.
+  const running = target.active_run
+  const sendingLocked = readOnly || !!running
   const endpointChanged = form.endpoint.trim() !== target.endpoint_url
   const set = (patch: Partial<Form>) => setForm({ ...form, ...patch })
 
@@ -249,6 +253,21 @@ export function EditTargetForm({ id }: { id: string }) {
         <OwnershipBadge status={target.status} />
       </div>
 
+      {running && !archived && (
+        <Alert className="mb-4" role="status">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              Campaign run {running.code} is running on this target. The endpoint and the credentials can&apos;t
+              change until it ends or is stopped.
+            </span>
+            {running.campaign && (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/campaigns/${running.campaign}/runs/${running.number}`}>Open live monitor</Link>
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
       {archived && (
         <Alert className="mb-4" role="status">
           <AlertDescription>This target is archived. Restore it before changing it.</AlertDescription>
@@ -321,6 +340,7 @@ export function EditTargetForm({ id }: { id: string }) {
                 inputMode="url"
                 value={form.endpoint}
                 onChange={(e) => set({ endpoint: e.target.value })}
+                disabled={sendingLocked || busy}
                 spellCheck={false}
                 autoComplete="off"
                 aria-invalid={!!errors.endpoint_url || undefined}
@@ -394,7 +414,7 @@ export function EditTargetForm({ id }: { id: string }) {
             <p className="text-sm">No credentials: Sentra calls the endpoint without any.</p>
           )}
           <p className="text-xs text-muted-foreground">Stored credentials are never shown. Replacing them deletes the old ones.</p>
-          {!readOnly &&
+          {!sendingLocked &&
             (replacing ? (
               <div className="space-y-4 rounded-md border p-4">
                 <CredentialFields mode={mode} rows={rows} onModeChange={setMode} onRowsChange={setRows} errors={credErrors} />

@@ -23,7 +23,7 @@ const TABS: Tab[] = [
   { id: "campaigns", label: "Campaigns", comesWith: "the campaign runs (M5)" },
   { id: "findings", label: "Findings", comesWith: "the findings pages (M6)" },
   { id: "shield", label: "Sentra Shield", comesWith: "Sentra Shield (M8)" },
-  { id: "history", label: "History", comesWith: "the target history (FR-2.6)" },
+  { id: "history", label: "History", path: "/history" },
 ]
 
 const SHARED = "flex h-10 items-center border-b-2 px-0.5 text-sm whitespace-nowrap"

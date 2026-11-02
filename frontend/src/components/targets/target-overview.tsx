@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { MoreHorizontal, Pencil, Rocket, ShieldCheck, Waypoints } from "lucide-react"
+import { Archive, MoreHorizontal, Pencil, Rocket, ShieldCheck, Waypoints } from "lucide-react"
 import { toast } from "sonner"
 
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
+import { ArchiveDialog, RestoreButton } from "@/components/targets/archive-dialog"
 import { ConnectionSummary, TestConnectionButton, useConnectionTest } from "@/components/targets/connection-test"
 import { EnvironmentBadge, OwnershipBadge } from "@/components/targets/target-badges"
 import { TargetTabs } from "@/components/targets/target-tabs"
@@ -94,6 +95,7 @@ export function TargetOverview({ id }: { id: string }) {
   const [verification, setVerification] = useState<Verification | null>(null)
   const [runs, setRuns] = useState<RunOverviewItem[] | null>(null)
   const [mapping, setMapping] = useState(false)
+  const [archiving, setArchiving] = useState(false)
 
   usePageCrumbs([{ label: target?.name ?? "Target" }])
 
@@ -151,6 +153,7 @@ export function TargetOverview({ id }: { id: string }) {
   }
 
   const verified = target.status === "verified"
+  const archived = target.status === "archived"
   const recheck = verification?.recent_checks.find((check) => check.trigger === "campaign_run" && check.status === "passed")
 
   return (
@@ -177,7 +180,7 @@ export function TargetOverview({ id }: { id: string }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {verified
+          {archived ? null : verified
             ? canCampaign && (
                 <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
                   <Link href={`/campaigns/new?target=${target.id}`}>
@@ -201,31 +204,67 @@ export function TargetOverview({ id }: { id: string }) {
               {canManage ? "Edit" : "View settings"}
             </Link>
           </Button>
-          {canMap && verified && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-9" aria-label={`More actions for ${target.name}`}>
-                  <MoreHorizontal aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  disabled={mapping || target.profile_status === "mapping"}
-                  onSelect={(event) => {
-                    event.preventDefault()
-                    void updateProfile()
-                  }}
-                >
-                  <Waypoints aria-hidden="true" />
-                  Update profile
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          {archived
+            ? canManage && <RestoreButton target={target} onDone={setTarget} className="h-9" />
+            : (canMap || canManage) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9"
+                      aria-label={`More actions for ${target.name}`}
+                    >
+                      <MoreHorizontal aria-hidden="true" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canMap && verified && (
+                      <DropdownMenuItem
+                        disabled={mapping || target.profile_status === "mapping"}
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          void updateProfile()
+                        }}
+                      >
+                        <Waypoints aria-hidden="true" />
+                        Update profile
+                      </DropdownMenuItem>
+                    )}
+                    {canManage && (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          setArchiving(true)
+                        }}
+                      >
+                        <Archive aria-hidden="true" />
+                        Archive target
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
         </div>
       </div>
 
+      {archived && (
+        <div role="status" className="mb-5 rounded-[10px] border border-warning/40 bg-warning/5 p-4 text-sm">
+          <p className="font-medium text-warning">This target is archived</p>
+          <p className="mt-1 text-muted-foreground">
+            No campaign can run against it and its credentials were deleted
+            {target.archived_at ? ` on ${formatDate(target.archived_at)}` : ""}
+            {target.archived_by ? ` by ${target.archived_by.name}` : ""}. Its history, findings and reports stay
+            until their retention period ends. Restoring it brings it back as unverified, with new credentials
+            and a new ownership check.
+          </p>
+        </div>
+      )}
+
       <TargetTabs targetId={target.id} active="overview" />
+
+      <ArchiveDialog target={target} open={archiving} onOpenChange={setArchiving} onDone={setTarget} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card title="Risk score">

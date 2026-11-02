@@ -19,13 +19,14 @@ import {
   RUNNING_STATUSES,
   RUN_STATUS_LABEL,
   type RunOverviewItem,
+  SCHEDULE_STATUS_LABEL,
   formatCount,
   listCampaigns,
   listOrganizationRuns,
 } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 import { formatDate } from "@/lib/test-library"
-import type { Environment } from "@/lib/targets"
+import { type Environment, formatDateTime } from "@/lib/targets"
 
 /** "Create campaign" in the page header, for Security Analysts (FR-1.6). */
 export function CreateCampaignButton() {
@@ -159,6 +160,7 @@ export function CampaignsList() {
               <TableHead className="hidden text-xs @2xl:table-cell">Target</TableHead>
               <TableHead className="text-right text-xs">Test suites</TableHead>
               <TableHead className="hidden text-xs @3xl:table-cell">Limits</TableHead>
+              <TableHead className="text-xs">Schedule</TableHead>
               <TableHead className="text-xs">Status</TableHead>
               <TableHead className="hidden text-xs @4xl:table-cell">Created by</TableHead>
             </TableRow>
@@ -180,6 +182,20 @@ export function CampaignsList() {
                 <TableCell className="tabular text-right text-[13px]">{campaign.suite_count}</TableCell>
                 <TableCell className="tabular hidden text-[13px] @3xl:table-cell">
                   {formatCount(campaign.attempt_budget)} attempts · {campaign.request_rate} per minute
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  {campaign.schedule ? (
+                    <>
+                      <div className="text-[13px]">{campaign.schedule.summary}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {campaign.schedule.status === "active" && campaign.schedule.next_run_at
+                          ? `Next run ${formatDateTime(campaign.schedule.next_run_at)}`
+                          : SCHEDULE_STATUS_LABEL[campaign.schedule.status]}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-[13px] text-muted-foreground">When launched</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {(() => {
