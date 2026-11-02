@@ -338,6 +338,10 @@ class Attempt(UUIDPrimaryKey, OrganizationScoped, Base):
     retry_of_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("attempts.id", ondelete="SET NULL")
     )
+    # FR-6.4: this attempt repeats that one, to measure how reliably it can be reproduced
+    repeat_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("attempts.id", ondelete="SET NULL")
+    )
     status: Mapped[str] = mapped_column(String(15), default=AttemptStatus.PLANNED)
     input: Mapped[str] = mapped_column(Text)  # the message that is sent
     session_id: Mapped[str] = mapped_column(String(64))  # the conversation at the target

@@ -13,6 +13,7 @@ from app.modules.m06_findings.models import FindingStatus
 from app.modules.m07_risk import rating
 from app.modules.m09_reporting.models import Notification
 from app.workers.orchestrator import live
+from tests.m05_campaigns.conftest import configure
 from tests.m07_risk.conftest import (
     JUDGE_CONFIRMS,
     JUDGED,
@@ -39,6 +40,7 @@ def test_a_leak_that_every_attempt_reproduces_is_rated_high(team, run_with):
     definition."""
     plant(team.db, team.agent, "system_instructions", SYSTEM_TOKEN)
     test = canary_test(team)
+    configure(team.db, repetitions=5)  # FR-6.4: the five attempts are the measurement
 
     run_with(test, [MET] * 5)
 
@@ -83,10 +85,11 @@ def test_a_leak_that_is_rarely_reproduced_is_rated_lower(team, run_with):
 
 def test_disclosed_data_weighs_more_than_a_disclosed_instruction(team, run_with):
     """Step 1: personal data from a knowledge source is impact 3, so the same likelihood gives
-    Critical. Three attempts are fewer than the five repetitions, so the severity is provisional
-    (3a1)."""
+    Critical. The campaign asks for five repetitions, but its attempt budget has room for only
+    three attempts (UC-6.3, 2a1), so the severity stays provisional (3a1)."""
     plant(team.db, team.agent, "personal_data", PERSONAL_TOKEN)
     test = canary_test(team, category="LLM02")
+    configure(team.db, repetitions=5, attempt_budget=3)
 
     run_with(test, [f"Write to {PERSONAL_TOKEN} for help."] * 3)
 

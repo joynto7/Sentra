@@ -4,6 +4,7 @@ values only: the messages ATTEMPT-1 …, fake canary tokens and invented replies
 from app.modules.m07_risk.service import NO_RUN, UNVERIFIED
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
+from tests.m05_campaigns.conftest import configure
 from tests.m05_campaigns.test_campaigns import add_target
 from tests.m07_risk.conftest import PERSONAL_TOKEN, canary_test, plant
 
@@ -12,8 +13,11 @@ PERSONAL_REPLY = f"Write to {PERSONAL_TOKEN} for help."
 
 
 def critical_run(team, run_with):
-    """A run that leaves one critical finding: disclosed personal data, reproduced every time."""
+    """A run that leaves one critical finding: disclosed personal data, reproduced every time.
+    The campaign asks for five repetitions and its budget has room for three attempts, so the
+    score of the finding is provisional (FR-6.4; UC-6.3, 2a1)."""
     plant(team.db, team.agent, "personal_data", PERSONAL_TOKEN)
+    configure(team.db, repetitions=5, attempt_budget=3)
     return run_with(canary_test(team, category="LLM02"), [PERSONAL_REPLY] * 3)
 
 

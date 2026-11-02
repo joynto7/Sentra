@@ -37,6 +37,7 @@ from app.modules.m04_tests.models import TestDefinition
 from app.modules.m04_tests.schema import DetectionMethod, DetectionRole, SuccessRule
 from app.modules.m05_campaigns import limits
 from app.modules.m05_campaigns.models import Attempt, CampaignRun
+from app.modules.m06_findings import reproducibility
 from app.modules.m06_findings.models import DetectionResult, Outcome
 from app.workers import jobs
 from app.workers.detection import findings, judge_instructions, verdict
@@ -274,3 +275,6 @@ def _finish(
         },
     )
     findings.record(db, attempt, decided)
+    # The judge's answer finishes the attempt's evaluation, and the run's own worker never sees
+    # it: this is where it counts towards the measurement of the finding (FR-6.4; UC-6.3 step 3).
+    reproducibility.after_attempt(db, attempt)

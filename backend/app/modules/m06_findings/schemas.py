@@ -108,6 +108,18 @@ class PersonRef(BaseModel):
     name: str
 
 
+class RepetitionsOut(BaseModel):
+    """What a finding's reproducibility is based on (FR-6.4; UC-6.3): the last measurement, its
+    attempts and how it ended."""
+
+    attempts: int
+    successes: int
+    wanted: int  # the repetitions the campaign asked for
+    status: str  # measuring, complete, or incomplete with the reason
+    reason: str
+    label: str  # "4 of 5 attempts"
+
+
 class FindingItem(BaseModel):
     """One finding in the list (Screen 38)."""
 
@@ -122,6 +134,7 @@ class FindingItem(BaseModel):
     evidence_count: int
     owner: PersonRef | None  # who will fix it (FR-6.5)
     reproducibility: str | None  # None until the finding has been rated (FR-7.1)
+    repetitions: RepetitionsOut | None  # what the score is based on (FR-6.4)
     first_run: RunRef  # the run it was found in; "new" in that run, "seen again" in later ones
     last_run: RunRef
     first_seen_at: datetime

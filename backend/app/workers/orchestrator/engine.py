@@ -493,6 +493,7 @@ def attempt_data(attempt: Attempt) -> dict:
         "variant": attempt.variant,
         "status": attempt.status,
         "retry_of": attempt.retry_of_id,
+        "repeat_of": attempt.repeat_of_id,  # FR-6.4: a repetition of that attempt
         "sent_at": attempt.sent_at,
         "finished_at": attempt.finished_at,
         "status_code": attempt.status_code,
