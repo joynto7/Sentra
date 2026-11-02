@@ -73,7 +73,7 @@ def instructions() -> tuple[str, str, str]:
 
 
 def first_result(
-    attempt: Attempt, role: DetectionRole, rules: list[SuccessRule]
+    db: Session, attempt: Attempt, role: DetectionRole, rules: list[SuccessRule]
 ) -> DetectionResult:
     """The judge's result for a new attempt: pending, or not evaluated with the reason when the
     judge can't be used at all. Its checks are the statements it must confirm, if the test has
@@ -81,7 +81,7 @@ def first_result(
     problem = None
     if not instructions()[0]:
         problem = NO_INSTRUCTIONS
-    elif model_for(LLMTask.LLM_JUDGE) is None:
+    elif model_for(db, LLMTask.LLM_JUDGE) is None:
         problem = NO_MODEL
     return DetectionResult(
         organization_id=attempt.organization_id,

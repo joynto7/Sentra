@@ -3,8 +3,8 @@ AI, which provider and model processes the organization's data, whether it runs 
 platform, what it receives and how often it was used this month; and the setting "Local models
 only", which the LLM layer enforces at every request (app/llm/layer.py), so no module can bypass it.
 
-Until FR-10.3 lets Platform Administrators configure providers, each task has the one model the
-settings name (app/llm/config.py), so a task whose model is external has no local model.
+The model of each task is the one a Platform Administrator assigned on Screen 62 (FR-10.3),
+or, while a task has none, the one the settings name (app/llm/config.py).
 """
 
 import uuid
@@ -105,9 +105,9 @@ def requests_this_month(db: Session, organization_id: uuid.UUID) -> dict[str, in
     return dict(rows.all())
 
 
-def unavailable_with_local_only() -> list[LLMTask]:
+def unavailable_with_local_only(db: Session) -> list[LLMTask]:
     """UC-10.5 step 4: the tasks without a local model."""
-    return [task for task in LLMTask if model_for(task, local_only=True) is None]
+    return [task for task in LLMTask if model_for(db, task, local_only=True) is None]
 
 
 def overview(db: Session, organization: Organization) -> Overview:
@@ -115,15 +115,17 @@ def overview(db: Session, organization: Organization) -> Overview:
     counts = requests_this_month(db, organization.id)
     rows = []
     for task in LLMTask:
-        choice = model_for(task)
-        local = model_for(task, local_only=True) is not None
+        choice = model_for(db, task)
+        local = model_for(db, task, local_only=True) is not None
         provider = choice.provider if choice else None
         rows.append(
             TaskRow(
                 task=task,
                 function=FUNCTIONS[task],
                 model=choice.model.split("/", 1)[-1] if choice else None,
-                provider=PROVIDERS.get(provider, provider) if provider else None,
+                provider=(choice.provider_label or PROVIDERS.get(provider, provider))
+                if provider
+                else None,
                 deployment=choice.deployment if choice else None,
                 receives=RECEIVES[task],
                 requests_this_month=counts.get(task, 0),
@@ -164,7 +166,7 @@ def set_local_models_only(
     organization = db.get_one(Organization, admin.organization_id)
     if organization.local_models_only == enabled:
         return organization
-    missing = [FUNCTIONS[task] for task in unavailable_with_local_only()] if enabled else []
+    missing = [FUNCTIONS[task] for task in unavailable_with_local_only(db)] if enabled else []
     organization.local_models_only = enabled
     audit.record(
         db,
