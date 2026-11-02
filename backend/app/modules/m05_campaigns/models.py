@@ -91,6 +91,7 @@ class ScheduleStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     FINISHED = "finished"  # a one-off that has had its moment
+    CANCELLED = "cancelled"  # its target was archived (FR-2.6; UC-2.6 step 4)
 
 
 class ScheduleResult(StrEnum):

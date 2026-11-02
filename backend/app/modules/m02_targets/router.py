@@ -11,7 +11,15 @@ from app.core.errors import ConflictError
 from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m02_targets import canaries, connection, formats, profile, service, verification
+from app.modules.m02_targets import (
+    canaries,
+    connection,
+    formats,
+    lifecycle,
+    profile,
+    service,
+    verification,
+)
 from app.modules.m02_targets.models import (
     ConnectionTest,
     OwnershipVerification,
@@ -20,6 +28,8 @@ from app.modules.m02_targets.models import (
     TargetStatus,
 )
 from app.modules.m02_targets.schemas import (
+    ArchiveConsequencesOut,
+    ArchiveIn,
     CanaryIn,
     CanaryOut,
     ConnectionSummary,
@@ -37,6 +47,7 @@ from app.modules.m02_targets.schemas import (
     ProfileKnowledgeOut,
     ProfileOut,
     ProfileToolOut,
+    TargetHistoryOut,
     TargetIn,
     TargetListOut,
     TargetOut,
@@ -205,6 +216,60 @@ def replace_credentials(
 
 
 # ---------------------------------------------------------------- connection test (FR-2.4)
+
+
+# ---------------------------------------------------------------- lifecycle (FR-2.6)
+
+
+@router.get("/{target_id}/history")
+def target_history(
+    target_id: uuid.UUID,
+    period_days: int = Query(default=lifecycle.DEFAULT_PERIOD_DAYS, ge=1, le=3650),
+    kind: str = Query(default="", max_length=20),
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> TargetHistoryOut:
+    """UC-2.7 View Target History (Screen 23): what happened to the target and how its risk score
+    developed. Every member of the organization may read it (NFR-3.3)."""
+    data = lifecycle.history(
+        db, membership.organization_id, target_id, period_days=period_days, kind=kind
+    )
+    return TargetHistoryOut.model_validate(data)
+
+
+@router.get("/{target_id}/archive")
+def archive_consequences(
+    target_id: uuid.UUID,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> ArchiveConsequencesOut:
+    """UC-2.6 step 2 (Screen 24): what archiving this target would do, before it is confirmed."""
+    data = lifecycle.consequences(db, membership.organization_id, target_id)
+    return ArchiveConsequencesOut.model_validate(data)
+
+
+@router.post("/{target_id}/archive")
+def archive_target(
+    target_id: uuid.UUID,
+    data: ArchiveIn,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> TargetOut:
+    """UC-2.6 Archive Target: the scheduled campaigns are cancelled, the credentials are deleted
+    and nothing can run against the target any more. Its history stays (FR-10.5)."""
+    lifecycle.archive(db, membership, target_id, data.password)
+    return _one(db, service.get_target(db, membership.organization_id, target_id))
+
+
+@router.post("/{target_id}/restore")
+def restore_target(
+    target_id: uuid.UUID,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> TargetOut:
+    """UC-2.6, 1a1: the target comes back unverified and without credentials."""
+    lifecycle.restore(db, membership, target_id)
+    return _one(db, service.get_target(db, membership.organization_id, target_id))
 
 
 def connection_out(test: ConnectionTest) -> ConnectionTestOut:
