@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
-import { FixChip, StatusChip } from "@/components/remediation/badges"
+import { FixChip, RetestChip, StatusChip } from "@/components/remediation/badges"
+import { type RemediationTab, RemediationTabs } from "@/components/remediation/remediation-tabs"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
 import { AiGeneratedLabel } from "@/components/threat-models/badges"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -39,12 +41,63 @@ function Proposal({ row }: { row: RemediationRow }) {
 }
 
 /**
- * Screen 45: the findings that wait for a fix and the proposals they have (UC-8.2). Everything
- * after the draft — approval, the Shield policy and the retest — comes with FR-8.2 to FR-8.5, so
- * the page shows what exists today: which findings have a proposal, what it recommends, and which
- * ones still wait for one.
+ * How far the fix has come after the approval (UC-8.5, UC-8.6): the changes the developer still
+ * has to make, and what the retest said. Each one is a link to the page that can do something
+ * about it, so Screen 45 stays the entry to the whole of M8.
+ */
+function Progress({ row }: { row: RemediationRow }) {
+  if (!row.latest) return <span className="text-[13px] text-muted-foreground">—</span>
+  return (
+    <div className="space-y-1">
+      {row.open_changes > 0 && (
+        <Link href="/remediation/changes" className="block py-0.5 text-[13px] text-link hover:underline">
+          {row.open_changes} application {row.open_changes === 1 ? "change" : "changes"} open
+        </Link>
+      )}
+      {row.retest && (
+        <Link
+          href={`/remediation/${row.finding.code}/retest`}
+          className="inline-flex py-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          aria-label={`Retest ${row.retest.number} of ${row.finding.code}: ${row.retest.verdict_label ?? row.retest.status_label}`}
+        >
+          <RetestChip retest={row.retest} />
+        </Link>
+      )}
+      {row.open_changes === 0 && !row.retest && (
+        <span className="text-[13px] text-muted-foreground">—</span>
+      )}
+    </div>
+  )
+}
+
+const EMPTY: Record<RemediationTab, { title: string; description: string }> = {
+  all: {
+    title: "No confirmed finding waits for a fix",
+    description:
+      "A finding gets a proposal once a security analyst has confirmed it. Until then it stays under Findings.",
+  },
+  approval: {
+    title: "Nothing waits for your approval",
+    description:
+      "A proposal appears here when a developer sends it for approval and you are allowed to decide it — never the person who last edited it (UC-8.3, 4a).",
+  },
+  retesting: {
+    title: "No retest is running",
+    description:
+      "Sentra retests a finding by itself as soon as every fix of its approved proposal is in effect, and the comparison appears on the finding.",
+  },
+  changes: { title: "", description: "" }, // its own page (Screen 50)
+}
+
+/**
+ * Screen 45: the findings that wait for a fix and how far each one has come (UC-8.2 to UC-8.8).
+ * It is the entry to the whole of M8 — the proposal and its approval, the changes the application
+ * needs, and the retest that decides whether the weakness is closed — so each row leads to the
+ * page where the next step happens.
  */
 export function RemediationList() {
+  const show = useSearchParams().get("show")
+  const tab: RemediationTab = show === "approval" || show === "retesting" ? show : "all"
   const [data, setData] = useState<List | null>(null)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -62,11 +115,32 @@ export function RemediationList() {
 
   const again = useCallback(() => setAttempt((n) => n + 1), [])
 
+  const rows = !data
+    ? []
+    : tab === "approval"
+      ? data.rows.filter((row) => row.can_approve)
+      : tab === "retesting"
+        ? data.rows.filter((row) => row.retest?.running)
+        : data.rows
+
   return (
     <>
       <PageHeader
         title="Remediation"
-        description="Fixes for confirmed findings. Sentra proposes them; a person reviews every one before anything changes."
+        description="Fixes for confirmed findings, from proposal to verified. Sentra proposes them; a person reviews every one before anything changes."
+      />
+      <RemediationTabs
+        active={tab}
+        counts={
+          data
+            ? {
+                all: data.rows.length,
+                awaiting_me: data.awaiting_me,
+                open_changes: data.open_changes,
+                retesting: data.retesting,
+              }
+            : {}
+        }
       />
 
       {error && (
@@ -87,27 +161,42 @@ export function RemediationList() {
         </div>
       )}
 
-      {data && data.rows.length === 0 && (
+      {data && rows.length === 0 && (
         <EmptyState
-          title="No confirmed finding waits for a fix"
-          description="A finding gets a proposal once a security analyst has confirmed it. Until then it stays under Findings."
+          title={EMPTY[tab].title}
+          description={EMPTY[tab].description}
           action={
             <Button asChild variant="outline" className="h-9">
-              <Link href="/findings">Go to findings</Link>
+              <Link href={tab === "all" ? "/findings" : "/remediation"}>
+                {tab === "all" ? "Go to findings" : "All proposals"}
+              </Link>
             </Button>
           }
         />
       )}
 
-      {data && data.rows.length > 0 && (
+      {data && rows.length > 0 && (
         <section aria-labelledby="proposals" className="min-w-0 rounded-[10px] border bg-card">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
             <h2 id="proposals" className="text-[15px] font-semibold">
-              Confirmed findings
+              {tab === "approval"
+                ? "Awaiting my approval"
+                : tab === "retesting"
+                  ? "Being retested"
+                  : "Confirmed findings"}
             </h2>
             <p className="tabular text-sm text-muted-foreground">
-              {data.drafts} {data.drafts === 1 ? "proposal awaits" : "proposals await"} a person ·{" "}
-              {data.without_proposal} without a proposal
+              {tab === "all" ? (
+                <>
+                  {data.drafts} {data.drafts === 1 ? "proposal awaits" : "proposals await"} a person
+                  · {data.without_proposal} without a proposal
+                </>
+              ) : (
+                <>
+                  {rows.length} of {data.rows.length}{" "}
+                  {data.rows.length === 1 ? "finding" : "findings"}
+                </>
+              )}
             </p>
           </div>
           <Table
@@ -136,12 +225,15 @@ export function RemediationList() {
                   Proposal
                 </TableHead>
                 <TableHead scope="col" className="text-xs">
-                  Asked for by
+                  Verification
+                </TableHead>
+                <TableHead scope="col" className="text-xs">
+                  Approver
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.rows.map((row) => (
+              {rows.map((row) => (
                 <TableRow key={row.finding.code}>
                   <TableCell className="max-w-sm whitespace-normal">
                     <Link
@@ -179,16 +271,37 @@ export function RemediationList() {
                       </span>
                     )}
                   </TableCell>
+                  <TableCell>
+                    <Progress row={row} />
+                  </TableCell>
                   <TableCell className="text-[13px]">
-                    {row.latest?.requested_by ?? <span className="text-muted-foreground">—</span>}
+                    {row.latest?.decided_by ? (
+                      <>
+                        {row.latest.decided_by}
+                        {row.latest.decided_at && (
+                          <span className="block text-xs text-muted-foreground">
+                            {formatDate(row.latest.decided_at)}
+                          </span>
+                        )}
+                      </>
+                    ) : row.can_approve ? (
+                      <Link
+                        href={`/remediation/${row.finding.code}`}
+                        className="py-1 text-link hover:underline"
+                      >
+                        Review it
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
           <p className="border-t p-3 text-[13px] text-muted-foreground">
-            Every proposal is a draft: nothing it recommends takes effect until a person approves it,
-            which comes with the review of FR-8.2.
+            Nothing a proposal recommends takes effect until a person approves it, and no finding is
+            closed until a retest finds nothing.
           </p>
         </section>
       )}

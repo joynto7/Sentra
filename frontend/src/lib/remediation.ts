@@ -137,6 +137,136 @@ export type RemediationPage = {
   current: RemediationVersion | null
   review: Review
   comments: RemediationComment[]
+  /** The verification of the version being read (UC-8.5, UC-8.6). */
+  changes: ApplicationChange[]
+  retests: RetestSummary[]
+  /** What the proposal still waits for before a retest can start, in one sentence. */
+  in_effect: string | null
+}
+
+/** One fix of an approved proposal that no gateway can carry (UC-8.5 step 1). */
+export type ChangeStatus = "open" | "implemented"
+
+export type ApplicationChange = {
+  id: string
+  finding: FindingRef
+  /** The version of the proposal the fix belongs to, and its position in it. */
+  version: number
+  position: number
+  title: string
+  description: string
+  status: ChangeStatus
+  /** What the developer changed, and where it can be seen (step 3). */
+  note: string | null
+  link: string | null
+  implemented_by: string | null
+  implemented_at: string | null
+  approved_by: string | null
+  approved_at: string | null
+  /** "1 of 2 fixes in effect (Shield Policy v5 active) · the retest can start". */
+  progress: string
+}
+
+export type ChangeList = {
+  rows: ApplicationChange[]
+  open_changes: number
+}
+
+/** How far the retest of UC-8.6 has come. */
+export type RetestStatus = "testing" | "checking" | "completed" | "failed" | "cancelled"
+/** What the repeated attempts showed (step 5 and 5a). */
+export type RetestVerdict = "closed" | "still_open" | "inconclusive"
+
+export type RetestSummary = {
+  id: string
+  number: number
+  version: number
+  status: RetestStatus
+  status_label: string
+  verdict: RetestVerdict | null
+  verdict_label: string | null
+  running: boolean
+  /** A rollback has taken what it proved out of the traffic again (UC-8.8). */
+  out_of_date: boolean
+  started_at: string
+  finished_at: string | null
+}
+
+/** What became of one request of normal use (UC-8.6 step 4). */
+export type BenignOutcome = "answered" | "blocked" | "changed" | "failed"
+export type BenignReview = "pending" | "fine" | "needs_revision"
+
+export type BenignCheck = {
+  id: string
+  position: number
+  text: string
+  outcome: BenignOutcome
+  outcome_label: string
+  what_happened: string | null
+  reply: string | null
+  status_code: number | null
+  review: BenignReview
+  review_label: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+}
+
+/** One side of a comparison: how many of the repeated attempts succeeded, in counts and in words. */
+export type AttackSuccess = {
+  before_successes: number
+  before_attempts: number
+  before_rate: number | null
+  before_words: string
+  after_successes: number
+  after_attempts: number
+  after_rate: number | null
+  after_words: string
+}
+
+export type NormalUse = {
+  total: number
+  blocked: number
+  changed: number
+  failed: number
+  affected: number
+  affected_rate: number | null
+  affected_words: string
+  /** 1a1: the target has no Benign Request Set of its own, so the comparison is less reliable. */
+  generic_set: boolean
+}
+
+export type RiskChange = {
+  before: number | null
+  band_before: string | null
+  after: number | null
+  band_after: string | null
+  change: number | null
+}
+
+/** The three comparison cards of Screen 51 (FR-8.5), each with its figures in words (NFR-4.3). */
+export type Figures = {
+  attack_success: AttackSuccess
+  normal_use: NormalUse
+  risk_score: RiskChange
+}
+
+export type Retest = RetestSummary & {
+  finding: FindingRef
+  /** What the comparison means, in plain language (NFR-4.2). */
+  conclusion: string | null
+  /** Why it couldn't run, or what a rollback did to it. */
+  message: string | null
+  /** The retest run it was measured in. It belongs to no campaign, so it has no page of its own. */
+  run_code: string | null
+  run_status: string | null
+  test_code: string
+  repetitions: number
+  attempts_repeated: number
+  policy_version: number | null
+  changes_marked: number
+  figures: Figures
+  benign_checks: BenignCheck[]
+  benign_generic: boolean
 }
 
 /** A fix the person keeps, with what they changed about it (UC-8.3 step 2). */
@@ -153,6 +283,12 @@ export type RemediationRow = {
   job: RemediationJob | null
   blocker: string | null
   blocker_code: string | null
+  /** Open application changes of the newest version (UC-8.5). */
+  open_changes: number
+  /** The newest retest of the finding (UC-8.6). */
+  retest: RetestSummary | null
+  /** Whether the person reading the page may decide this version (UC-8.3 step 4, and 4a). */
+  can_approve: boolean
 }
 
 export type RemediationList = {
@@ -160,6 +296,10 @@ export type RemediationList = {
   /** Proposals that await a person, and confirmed findings that have none yet. */
   drafts: number
   without_proposal: number
+  /** The counts of the tabs of Screen 45, for the person reading it. */
+  awaiting_me: number
+  open_changes: number
+  retesting: number
 }
 
 const base = "/v1/remediations"
@@ -216,4 +356,41 @@ export const commentOnRemediation = (code: string, version: number, text: string
   apiFetch<RemediationComment>(`${base}/${encodeURIComponent(code)}/comments`, {
     method: "POST",
     body: JSON.stringify({ version, text }),
+  })
+
+/** Screen 50: every change inside an application that a developer still has to make (UC-8.5). */
+export const listOpenChanges = (signal?: AbortSignal) =>
+  apiFetch<ChangeList>(`${base}/changes/open`, { signal })
+
+/** UC-8.5 steps 3-5: what the developer changed. The retest follows when nothing is open (2b1). */
+export const markImplemented = (
+  code: string,
+  changeId: string,
+  data: { note: string; link?: string | null },
+) =>
+  apiFetch<ApplicationChange>(
+    `${base}/${encodeURIComponent(code)}/changes/${changeId}/implemented`,
+    { method: "POST", body: JSON.stringify(data) },
+  )
+
+/** Screen 51: the before-and-after comparison of a retest, the newest by default (UC-8.7). */
+export const getRetest = (code: string, number?: number, signal?: AbortSignal) =>
+  apiFetch<Retest>(
+    `${base}/${encodeURIComponent(code)}/retest${number ? `?number=${number}` : ""}`,
+    { signal },
+  )
+
+/** The failed end condition of UC-8.6: a retest that couldn't run is started again. */
+export const startRetest = (code: string) =>
+  apiFetch<Retest>(`${base}/${encodeURIComponent(code)}/retest`, { method: "POST" })
+
+/** UC-8.7 step 3: "Looks fine" or "Needs revision" on a request of normal use the fix affected. */
+export const reviewBenignCheck = (
+  code: string,
+  checkId: string,
+  judgement: Exclude<BenignReview, "pending">,
+) =>
+  apiFetch<Retest>(`${base}/${encodeURIComponent(code)}/retest/benign/${checkId}`, {
+    method: "POST",
+    body: JSON.stringify({ judgement }),
   })

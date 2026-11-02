@@ -3,11 +3,20 @@ Dummy values only: the findings come from the fixtures of M6, with invented repl
 canary tokens."""
 
 import json
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from app.core.audit import AuditLogEntry
 from app.modules.m06_findings.models import FindingStatus
+from app.modules.m08_remediation.models import (
+    Origin,
+    Remediation,
+    RemediationStatus,
+    Retest,
+    RetestStatus,
+    RetestVerdict,
+)
 from app.modules.m09_reporting.models import Report, ReportStatus
 from tests.m01_users.test_organizations import log_in
 from tests.m06_findings.conftest import PERSONAL_TOKEN, plant
@@ -167,3 +176,98 @@ def test_another_organization_sees_no_report(team, run_with):  # noqa: F811
 
     assert team.client.get(URL).json()["rows"] == []
     assert team.client.get(f"{URL}/RP-001").status_code == 404
+
+
+def verified(team, finding, **changes) -> Retest:  # noqa: F811
+    """A finished retest of the finding, with the figures FR-8.5 freezes in it. The retest itself
+    is UC-8.6 and is measured in tests/m08_remediation; here it is the input of the report."""
+    remediation = Remediation(
+        organization_id=finding.organization_id,
+        finding_id=finding.id,
+        version=1,
+        status=RemediationStatus.EFFECTIVE,
+        origin=Origin.GENERATED,
+        root_cause="The answers quote what the retrieved documents say.",
+        summary="One guardrail rule and one retrieval rule.",
+        ai_generated=True,
+    )
+    team.db.add(remediation)
+    team.db.flush()
+    retest = Retest(
+        organization_id=finding.organization_id,
+        finding_id=finding.id,
+        remediation_id=remediation.id,
+        number=1,
+        status=RetestStatus.COMPLETED,
+        verdict=RetestVerdict.CLOSED,
+        policy_version=4,
+        changes_marked=1,
+        test_code=finding.test_code,
+        repetitions=5,
+        replayed=[],
+        before_attempts=5,
+        before_successes=4,
+        after_attempts=5,
+        after_successes=0,
+        risk_before=91,
+        risk_band_before="critical",
+        risk_after=87,
+        risk_band_after="critical",
+        benign_total=4,
+        benign_changed=1,
+        conclusion="The fix closes the weakness: no repeated attempt succeeded after it (0 of 5), "
+        "against 4 of 5 before.",
+        finished_at=datetime.now(UTC),
+        **changes,
+    )
+    team.db.add(retest)
+    team.db.commit()
+    return retest
+
+
+def test_a_technical_report_holds_the_verification_of_a_retested_finding(team, run_with):  # noqa: F811
+    """UC-8.7, 5c1: the manager puts the before-and-after comparison in a report (FR-9.1). The
+    figures are the retest's own, frozen when it ran, and every rate carries its counts."""
+    finding = with_findings(team, run_with)
+    verified(team, finding)
+
+    ask(team, type="technical", scope="target", target_id=str(team.agent.id))
+
+    document = json.loads(team.client.get(f"{URL}/RP-001/download").content)
+    (shown,) = document["findings"]
+    checked = shown["verification"]
+    assert checked["retest"] == 1 and checked["verdict_label"] == "Fixed and Verified"
+    assert checked["attack_success_before"] == "4 of 5 attempts (80 %)"
+    assert checked["attack_success_after"] == "0 of 5 attempts (0 %)"
+    assert checked["normal_use_affected"] == "1 of 4 requests (25 %)"
+    assert (checked["risk_before"], checked["risk_after"]) == (91, 87)
+    assert checked["policy_version"] == 4 and checked["changes_marked"] == 1
+    assert checked["conclusion"].startswith("The fix closes the weakness")
+    assert checked["out_of_date"] is False
+
+
+def test_a_report_of_a_finding_without_a_retest_says_nothing_about_one(team, run_with):  # noqa: F811
+    """A finding nobody has retested yet carries no verification, and the report leaves it out
+    instead of showing empty figures."""
+    with_findings(team, run_with)
+
+    ask(team, type="technical", scope="target", target_id=str(team.agent.id))
+
+    document = json.loads(team.client.get(f"{URL}/RP-001/download").content)
+    assert document["findings"][0]["verification"] is None
+
+
+def test_a_rolled_back_verification_says_so_in_the_report(team, run_with):  # noqa: F811
+    """UC-8.8: what the retest proved is not in the traffic any more, so a reader of the report is
+    told, instead of taking it for the application as it runs today. The PDF carries the same
+    block, so it is written as well here."""
+    finding = with_findings(team, run_with)
+    verified(team, finding, out_of_date=True)
+
+    ask(team, type="technical", scope="target", target_id=str(team.agent.id))
+    ask(team, type="technical", scope="target", target_id=str(team.agent.id), format="pdf")
+
+    document = json.loads(team.client.get(f"{URL}/RP-001/download").content)
+    assert document["findings"][0]["verification"]["out_of_date"] is True
+    printed = team.client.get(f"{URL}/RP-002/download")
+    assert printed.status_code == 200 and printed.content.startswith(b"%PDF")

@@ -379,7 +379,11 @@ def test_the_comparison_page_shows_before_and_after_with_every_figure_in_words(
     assert body["figures"]["risk_score"]["before"] is not None
     assert body["policy_version"] == 1 and body["repetitions"] == 5
     assert body["attempts_repeated"] == 1 and body["test_code"] == confirmed.test_code
-    assert body["run_code"].startswith("R-")
+    # A retest run belongs to no campaign (UC-8.6 starts it on its own), so it is named by the
+    # run's own short code and Screen 51 shows it as plain text: there is no campaign page for it.
+    run = run_of(team, retest_of(team))
+    assert run.campaign_id is None
+    assert body["run_code"] == lifecycle.code(run, None) == f"R-{str(run.id)[:8]}"
     assert len(body["benign_checks"]) == 3
     assert body["conclusion"] == retest_of(team).conclusion
 

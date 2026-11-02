@@ -57,7 +57,7 @@ def list_remediations(
     membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
 ) -> RemediationList:
     """Screen 45: the findings that wait for a fix and their proposals."""
-    return service.overview(db, membership.organization_id)
+    return service.overview(db, membership.organization_id, _reader(membership))
 
 
 @remediations.get("/{finding_code}")
