@@ -20,6 +20,8 @@ EVENTS = [
     Event("retest_finished", "Retest finished"),
     Event("report_ready", "Report ready"),
     Event("usage_limit_warning", "Usage limit warning"),
+    # UC-5.3, 3a1 and 4a1: a campaign's schedule came, and no run could start (FR-5.3)
+    Event("campaign_schedule_problem", "Scheduled campaign couldn't start"),
     # UC-2.4 step 4: the mapping of a target profile has finished
     Event("target_profile_ready", "Target profile ready for review"),
     # UC-3.1 step 6: a new draft of a threat model awaits a Security Analyst

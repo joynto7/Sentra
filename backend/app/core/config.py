@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # monthly LLM cost limit is reached) tries again after these delays in seconds; after the last
     # one the attempt is marked as not evaluated by the judge.
     detection_judge_retry_delays: list[int] = [60, 300, 900]
+    # Sentra's own clock (FR-5.3, app/workers/scheduler.py): how often it looks for work that is
+    # due. A campaign scheduled for 02:00 therefore starts within a minute of 02:00.
+    scheduler_tick_seconds: int = 60
+
     # Live events of campaign runs (FR-5.6): "redis" (a stream per run), or "memory" in the tests.
     live_events_backend: str = "redis"
     # The live stream of a run closes after this many seconds and the browser reconnects with the

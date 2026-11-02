@@ -1,13 +1,12 @@
 """Campaign creation (FR-5.1, UC-5.1): the checks of step 6, the estimate, saving.
 
-Creating a campaign sends nothing to the target (UC-5.1, quality requirement). Launching, runs
-and schedules come with FR-5.4 and FR-5.3.
+Creating a campaign sends nothing to the target (UC-5.1, quality requirement). Launching and
+runs are runs.py; the schedule of step 5 is scheduling.py.
 """
 
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, or_, select
@@ -20,7 +19,9 @@ from app.modules.m01_users.models import Membership, User
 from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m04_tests.models import TestDefinition, TestSuite
 from app.modules.m04_tests.suites import ATTEMPTS_PER_TEST
+from app.modules.m05_campaigns import scheduling
 from app.modules.m05_campaigns.models import Campaign
+from app.modules.m05_campaigns.window import clock_time
 
 MAX_BUDGET = 100_000
 MAX_REPETITIONS = 10
@@ -43,6 +44,9 @@ class CampaignInput:
     window_start: str | None = None
     window_end: str | None = None
     time_zone: str = "UTC"
+    # UC-5.1 step 5, for a campaign that runs at a time or on a recurring schedule (FR-5.3).
+    # A campaign that runs immediately has no schedule: its first run is launched instead.
+    schedule: scheduling.ScheduleInput | None = None
 
 
 # ---------------------------------------------------------------- reading
@@ -144,7 +148,11 @@ def list_campaigns(
             select(User.id, User.name).where(User.id.in_({c.created_by_id for c in campaigns}))
         ).all()
     )
-    return [_row(c, targets.get(c.target_id), creators.get(c.created_by_id)) for c in campaigns]
+    schedules = scheduling.views(db, list(campaigns))
+    return [
+        _row(c, targets.get(c.target_id), creators.get(c.created_by_id), schedules.get(c.id))
+        for c in campaigns
+    ]
 
 
 def get_campaign(db: Session, organization_id: uuid.UUID, code: str) -> dict:
@@ -162,7 +170,7 @@ def get_campaign(db: Session, organization_id: uuid.UUID, code: str) -> dict:
     creator = db.get(User, campaign.created_by_id) if campaign.created_by_id else None
     suites = _suites(db, organization_id, campaign.suites)
     return {
-        **_row(campaign, target, creator.name if creator else None),
+        **_row(campaign, target, creator.name if creator else None, scheduling.view(db, campaign)),
         "adaptive_agent": campaign.adaptive_agent,
         "repetitions": campaign.repetitions,
         "window_start": campaign.window_start,
@@ -194,7 +202,12 @@ def _version(db: Session, threat_model_id: uuid.UUID | None) -> int | None:
     return model.version if model else None
 
 
-def _row(campaign: Campaign, target: Target | None, creator: str | None) -> dict:
+def _row(
+    campaign: Campaign,
+    target: Target | None,
+    creator: str | None,
+    schedule: dict | None = None,
+) -> dict:
     return {
         "code": campaign.code,
         "name": campaign.name,
@@ -212,21 +225,13 @@ def _row(campaign: Campaign, target: Target | None, creator: str | None) -> dict
         "attempt_budget": campaign.attempt_budget,
         "request_rate": campaign.request_rate,
         "approval_status": campaign.approval_status,
+        "schedule": schedule,  # FR-5.3: when it runs by itself, and what came of the last moment
         "created_by": creator,
         "created_at": campaign.created_at,
     }
 
 
 # ---------------------------------------------------------------- creating
-
-
-def _clock(value: str | None) -> time | None:
-    if not value:
-        return None
-    match = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", value.strip())
-    if not match:
-        raise ValueError
-    return time(int(match.group(1)), int(match.group(2)))
 
 
 def check(db: Session, organization_id: uuid.UUID, data: CampaignInput) -> dict:
@@ -283,7 +288,7 @@ def check(db: Session, organization_id: uuid.UUID, data: CampaignInput) -> dict:
 
     start = end = None
     try:
-        start, end = _clock(data.window_start), _clock(data.window_end)
+        start, end = clock_time(data.window_start), clock_time(data.window_end)
     except ValueError:
         problem("window", "Enter the times as hours and minutes, such as 02:00.")
     else:
@@ -315,8 +320,14 @@ def check(db: Session, organization_id: uuid.UUID, data: CampaignInput) -> dict:
 
 
 def create(db: Session, membership: Membership, data: CampaignInput) -> Campaign:
-    """UC-5.1 step 7: saved, ready to be launched (launching comes with FR-5.4)."""
+    """UC-5.1 step 7: saved with its schedule, ready to run. The schedule is checked before
+    anything is saved, so an impossible one saves no campaign either."""
     checked = check(db, membership.organization_id, data)
+    planned = (
+        scheduling.check(ZoneInfo(checked["time_zone"]), data.schedule)
+        if data.schedule is not None
+        else None
+    )
     number = (
         db.scalar(
             select(func.max(Campaign.number)).where(
@@ -338,6 +349,9 @@ def create(db: Session, membership: Membership, data: CampaignInput) -> Campaign
     )
     db.add(campaign)
     try:
+        db.flush()
+        if planned is not None:
+            scheduling.write(db, membership, campaign, planned)
         db.commit()
     except IntegrityError as exc:  # someone saved a campaign at the same moment
         db.rollback()

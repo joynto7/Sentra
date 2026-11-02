@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import get_settings
 
@@ -17,10 +18,20 @@ celery_app = Celery(
         "app.workers.threat_models",
         "app.workers.remediation",
         "app.workers.reporting.generate",
+        "app.workers.scheduler",
     ],
 )
 celery_app.conf.update(
     timezone="UTC",
+    # Sentra's own clock (FR-5.3), placed in the queue by the beat process of compose.yaml:
+    # the campaigns whose schedule has come, and the work other modules do at a time.
+    beat_schedule={
+        "scheduler-tick": {
+            "task": "scheduler.tick",
+            "schedule": float(settings.scheduler_tick_seconds),
+        },
+        "scheduler-daily": {"task": "scheduler.daily", "schedule": crontab(hour="1", minute="0")},
+    },
     # The LLM judge's evaluations (FR-6.1) wait on a model, so they have their own queue and
     # worker (compose.yaml, analysis-worker) and never hold up the attempts of a run (NFR-1.4).
     task_routes={"detection.*": {"queue": "analysis"}},

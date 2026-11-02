@@ -76,6 +76,12 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=10
     networks: [default, lab]  # the Target Connector runs here, so the worker reaches the lab
 
+  scheduler:
+    <<: *backend
+    # Sentra's own clock (FR-5.3): one process that places the tick jobs in the Task Queue, which
+    # the workers then run. Its own schedule file stays outside the mounted code.
+    command: celery -A app.workers.celery_app beat --loglevel=info --schedule=/tmp/celerybeat
+
   analysis-worker:
     <<: *backend
     # The LLM judge (FR-6.1) on its own queue, so its waits for a model never hold up the attempts
