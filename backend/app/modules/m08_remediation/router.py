@@ -4,20 +4,26 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.errors import ConflictError
 from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, allowed, require
 from app.modules.m06_findings.service import finding_row
-from app.modules.m08_remediation import generation, review, service
-from app.modules.m08_remediation.models import Remediation
+from app.modules.m08_remediation import changes, generation, retest, review, service
+from app.modules.m08_remediation.models import Remediation, RetestStatus
 from app.modules.m08_remediation.schemas import (
+    BenignReviewIn,
+    ChangeList,
+    ChangeOut,
     CommentIn,
     CommentOut,
     EditIn,
+    ImplementedIn,
     JobOut,
     RejectIn,
     RemediationList,
     RemediationPage,
+    RetestOut,
     VersionSummary,
 )
 from app.modules.m08_remediation.shield_routes import router as shield_router
@@ -156,6 +162,89 @@ def reject(
     finding = finding_row(db, membership.organization_id, finding_code)
     user = db.get_one(User, membership.user_id)
     return _version_out(db, review.reject(db, finding, user, version, data.reason))
+
+
+# ---------------------------------------------------------------- verification (UC-8.5 to UC-8.7)
+
+
+@remediations.get("/changes/open")
+def open_changes(
+    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> ChangeList:
+    """Screen 50: the changes inside the applications that developers still have to make."""
+    return service.changes_page(db, membership.organization_id)
+
+
+@remediations.post("/{finding_code}/changes/{change_id}/implemented")
+def mark_implemented(
+    finding_code: str,
+    change_id: uuid.UUID,
+    data: ImplementedIn,
+    membership: Membership = Depends(can_request),
+    db: Session = Depends(get_db),
+) -> ChangeOut:
+    """UC-8.5 steps 3-5: "Mark as implemented". The retest starts when it was the last fix the
+    proposal was waiting for (2b1); a change counts for nothing until the retest confirms it."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    change = changes.mark_implemented(db, finding, user, change_id, note=data.note, link=data.link)
+    return service.change_out(db, change, service.names_of(db, [change.implemented_by_id]))
+
+
+@remediations.get("/{finding_code}/retest")
+def get_retest(
+    finding_code: str,
+    number: int | None = Query(default=None, ge=1),
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> RetestOut:
+    """Screen 51: the before-and-after comparison of a finding's retest (UC-8.7)."""
+    return service.retest_page(db, membership.organization_id, finding_code, number)
+
+
+@remediations.post("/{finding_code}/retest", status_code=status.HTTP_202_ACCEPTED)
+def start_retest(
+    finding_code: str,
+    membership: Membership = Depends(can_request),
+    db: Session = Depends(get_db),
+) -> RetestOut:
+    """The failed end condition of UC-8.6: a retest that couldn't run is started again. Sentra
+    starts every other retest by itself, when the fixes take effect — there is no "request
+    retest"."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    last = retest.newest(db, finding.id)
+    if last is None or last.status not in (RetestStatus.FAILED, RetestStatus.CANCELLED):
+        raise ConflictError(
+            "Sentra starts the retest of a finding by itself as soon as every fix of its "
+            "approved remediation is in effect.",
+            code="retest_not_waiting",
+        )
+    remediation = db.get_one(Remediation, last.remediation_id)
+    made = retest.start(db, finding=finding, remediation=remediation, user=user, force=False)
+    if made is None:
+        raise ConflictError(
+            "This finding can't be retested now: its proposal is not approved, or not every fix "
+            "of it is in effect.",
+            code="retest_not_possible",
+        )
+    return service.retest_page(db, membership.organization_id, finding_code, made.number)
+
+
+@remediations.post("/{finding_code}/retest/benign/{check_id}")
+def review_benign_check(
+    finding_code: str,
+    check_id: uuid.UUID,
+    data: BenignReviewIn,
+    membership: Membership = Depends(can_request),
+    db: Session = Depends(get_db),
+) -> RetestOut:
+    """UC-8.7 step 3: "Looks fine" or "Needs revision" on a request of normal use the fix
+    affected. A revision itself is UC-8.2, which the page offers beside it (5a1)."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    number = service.review_benign(db, finding, user, check_id, data.judgement)
+    return service.retest_page(db, membership.organization_id, finding_code, number)
 
 
 @remediations.post("/{finding_code}/comments", status_code=status.HTTP_201_CREATED)

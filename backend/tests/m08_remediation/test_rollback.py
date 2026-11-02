@@ -268,8 +268,8 @@ def test_a_finding_that_only_the_removed_version_proved_fixed_is_open_again(
 
 
 def test_the_proposal_whose_fixes_stop_goes_back_to_approved(team, confirmed, model, monkeypatch):
-    """The fixes are out of the traffic, so the proposal is approved and not applying — and FR-8.4
-    hears that its retest has nothing left to prove."""
+    """The fixes are out of the traffic, so the proposal is approved whatever the retest of FR-8.4
+    made of it — and that retest hears that it has nothing left to prove."""
     cancelled: list[int] = []
     monkeypatch.setattr(
         retest,
@@ -277,7 +277,9 @@ def test_the_proposal_whose_fixes_stop_goes_back_to_approved(team, confirmed, mo
         lambda db, *, finding, remediation: cancelled.append(remediation.version),
     )
     two_versions(team, confirmed, model, monkeypatch)
-    assert team.db.scalar(select(Remediation)).status == RemediationStatus.APPLYING
+    # The target still reveals what the finding is about, so the retest of the deployed version
+    # found the weakness still open (UC-8.6, 5a).
+    assert team.db.scalar(select(Remediation)).status == RemediationStatus.INEFFECTIVE
     confirm_password(team)
 
     roll_back(team, to_version=0, reason=REASON)

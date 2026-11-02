@@ -31,6 +31,7 @@ from app.modules.m02_targets.schemas import (
     ActiveRunOut,
     ArchiveConsequencesOut,
     ArchiveIn,
+    BenignRequestOut,
     CanaryIn,
     CanaryOut,
     ConnectionSummary,
@@ -415,8 +416,13 @@ def canary_out(canary: TargetCanary) -> CanaryOut:
     )
 
 
+def benign_out(row) -> BenignRequestOut:
+    return BenignRequestOut(id=row.id, position=row.position, text=row.text)
+
+
 def profile_out(db: Session, target: Target) -> ProfileOut:
     found = profile.find(db, target.id)
+    examples = [benign_out(one) for one in profile.benign_requests(db, target.id)]
     order = {slot.key: i for i, slot in enumerate(canaries.SLOTS)}
     tokens = sorted(
         (c for c in canaries.current(db, target.id) if c.slot in order),
@@ -435,6 +441,8 @@ def profile_out(db: Session, target: Target) -> ProfileOut:
             reviewed_at=None,
             reviewed_by=None,
             canaries=[canary_out(c) for c in tokens],
+            benign_requests=examples,
+            benign_requests_help=profile.BENIGN_HELP,
         )
     entries = found.entries or {}
     reviewer = _names(db, [found.reviewed_by_id])
@@ -459,6 +467,8 @@ def profile_out(db: Session, target: Target) -> ProfileOut:
         reviewed_at=found.reviewed_at,
         reviewed_by=reviewer.get(found.reviewed_by_id) if found.reviewed_by_id else None,
         canaries=[canary_out(c) for c in tokens],
+        benign_requests=examples,
+        benign_requests_help=profile.BENIGN_HELP,
     )
 
 
@@ -515,3 +525,19 @@ def set_canary(
         raise ConflictError(service.ARCHIVED, code="target_archived")
     user = db.get_one(User, membership.user_id)
     return canary_out(profile.set_planted(db, target, user, slot, data.planted, data.topic))
+
+
+@router.put("/{target_id}/profile/benign-requests")
+def save_benign_requests(
+    target_id: uuid.UUID,
+    data: profile.BenignRequestsIn,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> list[BenignRequestOut]:
+    """Screen 22, "Edit examples": the target's Benign Request Set, which every retest of one of
+    its findings sends beside the attempts that found the weakness (FR-8.4, UC-8.6 step 1)."""
+    target = service.get_target(db, membership.organization_id, target_id)
+    if target.status == TargetStatus.ARCHIVED:
+        raise ConflictError(service.ARCHIVED, code="target_archived")
+    user = db.get_one(User, membership.user_id)
+    return [benign_out(one) for one in profile.save_benign_requests(db, target, user, data)]

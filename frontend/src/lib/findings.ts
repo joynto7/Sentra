@@ -163,6 +163,7 @@ export type HistoryKind =
   | "commented"
   | "merged"
   | "merged_in"
+  | "change_implemented"
 
 export const HISTORY_LABEL: Record<HistoryKind, string> = {
   detected: "Detected",
@@ -174,6 +175,7 @@ export const HISTORY_LABEL: Record<HistoryKind, string> = {
   commented: "Comment",
   merged: "Merged into another finding",
   merged_in: "A duplicate was merged in",
+  change_implemented: "Application change implemented",
 }
 
 /** One entry of a finding's history (UC-6.6 step 5), append-only. */

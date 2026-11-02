@@ -97,6 +97,99 @@ class ReviewOut(BaseModel):
     on_approval: list[str]
 
 
+# ---------------------------------------------------------------- verification (FR-8.4, FR-8.5)
+
+
+class ChangeOut(BaseModel):
+    """One change inside the application, as Screen 50 lists it (UC-8.5)."""
+
+    id: uuid.UUID
+    finding: FindingRef
+    version: int  # the version of the proposal it belongs to
+    position: int  # the fix's position in that version
+    title: str
+    description: str  # what to change, from the approved fix
+    status: str  # open or implemented
+    note: str | None  # what the developer changed (step 3)
+    link: str | None
+    implemented_by: str | None
+    implemented_at: datetime | None
+    approved_by: str | None  # who approved the proposal, and when (step 1)
+    approved_at: datetime | None
+    progress: str  # "1 of 2 fixes in effect (Shield Policy v5 active)"
+
+
+class ChangeList(BaseModel):
+    """Screen 50: the open changes of the organization, oldest first."""
+
+    rows: list[ChangeOut]
+    open_changes: int
+
+
+class ImplementedIn(BaseModel):
+    """Step 3: "Mark as implemented"."""
+
+    note: str = Field(min_length=1, max_length=2000)
+    link: str | None = Field(default=None, max_length=2048)
+
+
+class BenignCheckOut(BaseModel):
+    """One request of normal use and what the fix did to it (UC-8.7 step 3)."""
+
+    id: uuid.UUID
+    position: int
+    text: str
+    outcome: str  # answered, blocked, changed or failed
+    outcome_label: str
+    what_happened: str | None
+    reply: str | None  # masked, and only as far as it is needed as an example
+    status_code: int | None
+    review: str  # pending, fine or needs_revision
+    review_label: str
+    reviewed_by: str | None
+    reviewed_at: datetime | None
+
+
+class BenignReviewIn(BaseModel):
+    """Screen 51: "Looks fine" or "Needs revision" on a request the fix affected."""
+
+    judgement: str  # fine or needs_revision
+
+
+class RetestSummary(BaseModel):
+    """A retest as Screens 45 and 46 mention it."""
+
+    id: uuid.UUID
+    number: int
+    version: int  # the version of the proposal it verifies
+    status: str  # testing, checking, completed, failed or cancelled
+    status_label: str
+    verdict: str | None  # closed, still_open or inconclusive
+    verdict_label: str | None
+    running: bool
+    out_of_date: bool  # a rollback took what it proved out of the traffic (UC-8.8)
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class RetestOut(RetestSummary):
+    """Screen 51: the whole comparison of one retest (FR-8.5; UC-8.6, UC-8.7)."""
+
+    finding: FindingRef
+    conclusion: str | None  # what it means, in plain language (NFR-4.2)
+    message: str | None  # why it couldn't run, or what a rollback did to it
+    run_code: str | None  # the retest run it was measured in
+    run_status: str | None
+    test_code: str
+    repetitions: int  # as in the reproducibility measurement (UC-8.6 step 3)
+    attempts_repeated: int  # the messages it repeated, each `repetitions` times
+    policy_version: int | None  # the Shield Policy version it verified (UC-8.7 step 4)
+    changes_marked: int
+    figures: dict  # the three comparison cards, each with its figures in words (NFR-4.3)
+    benign_checks: list[BenignCheckOut]
+    benign_generic: bool  # 1a1: a generic set was used, so it is less reliable
+
+
 class RemediationPage(BaseModel):
     """Screen 46: the newest version of a finding's proposal, with its earlier versions."""
 
@@ -108,6 +201,11 @@ class RemediationPage(BaseModel):
     current: VersionOut | None
     review: ReviewOut
     comments: list[CommentOut]
+    # UC-8.5 and UC-8.6 for the version being shown: what the developer still has to do, and what
+    # the retests of this finding found
+    changes: list[ChangeOut]
+    retests: list[RetestSummary]
+    in_effect: str | None  # what the proposal is still waiting for, in one sentence
 
 
 class FixIn(BaseModel):
@@ -141,6 +239,8 @@ class RemediationRow(BaseModel):
     job: JobOut | None
     blocker: str | None
     blocker_code: str | None
+    open_changes: int  # of the newest version (UC-8.5)
+    retest: RetestSummary | None  # the newest retest of the finding (UC-8.6)
 
 
 class RemediationList(BaseModel):
@@ -149,6 +249,8 @@ class RemediationList(BaseModel):
     rows: list[RemediationRow]
     drafts: int  # proposals that await a person
     without_proposal: int  # confirmed findings with no proposal yet
+    open_changes: int  # Screen 45's "Application changes (3 open)" tab (UC-8.5)
+    retesting: int  # its "Retesting (1)" tab (UC-8.6)
 
 
 # ---------------------------------------------------------------- Sentra Shield (FR-8.3)

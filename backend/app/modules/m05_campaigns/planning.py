@@ -9,6 +9,11 @@ skipped when
 - the entry relies on a canary token that isn't planted on the target, or on a topic that isn't
   entered for it.
 
+A run can also carry the attempts it repeats instead of a campaign's suites: `settings["replay"]`
+names the attempts of earlier runs and how often each is sent again. A retest uses it (FR-8.4,
+UC-8.6 step 3), because before and after have to be measured with the same requests, not merely
+with the same template; the messages come from the stored attempts, so nothing is built here.
+
 Each message of a template entry becomes one attempt, sent in a new conversation with the target.
 The placeholders are filled from the target's own registration and profile, never from its
 replies (templates.PLACEHOLDERS). The attempts of all tests are interleaved (the first message of
@@ -45,6 +50,9 @@ class Plan:
 def plan(db: Session, run: CampaignRun, target: Target) -> Plan:
     """The tests and attempts of `run`. The attempts are added to the session; the caller
     commits."""
+    replay = (run.settings or {}).get("replay")
+    if replay:
+        return _replay(db, run, replay)
     templates = template_file.load()
     planted = canaries.planted(db, target.id)
     recorded = run.versions.get("tests", [])
@@ -109,6 +117,93 @@ def plan(db: Session, run: CampaignRun, target: Target) -> Plan:
             db.add(attempt)
             result.attempts.append(attempt)
     return result
+
+
+def _replay(db: Session, run: CampaignRun, replay: dict) -> Plan:
+    """The attempts of a run that repeats earlier ones (FR-8.4): each attempt named in
+    `settings["replay"]` is sent again `times` times, in its own new conversation with the target.
+
+    The message, the test definition and the attempt template are the ones of the stored attempt,
+    so the request is the same as the one that was answered before. An attempt that can't be found
+    any more, or that belongs to another target, is left out and the plan says so.
+    """
+    times = max(1, int(replay.get("times") or 1))
+    wanted = [uuid.UUID(str(one)) for one in replay.get("attempt_ids") or []]
+    earlier = {
+        attempt.id: attempt
+        for attempt in db.scalars(
+            select(Attempt)
+            .join(CampaignRun, CampaignRun.id == Attempt.campaign_run_id)
+            .where(
+                Attempt.id.in_(wanted),
+                Attempt.organization_id == run.organization_id,
+                CampaignRun.target_id == run.target_id,
+            )
+        )
+    }
+    found = [earlier[one] for one in wanted if one in earlier]
+    missing = len(wanted) - len(found)
+    result = Plan(
+        templates={"file": "replay", "entries": {}, "replayed": [str(a.id) for a in found]}
+    )
+    by_test: dict[str, dict] = {}
+    for attempt in found:
+        row = by_test.setdefault(
+            attempt.test_code,
+            {
+                "code": attempt.test_code,
+                "version": _version_of(run, attempt.test_code),
+                "name": attempt.test_code,
+                "suites": [attempt.suite_code] if attempt.suite_code else [],
+                "template": attempt.template,
+                "status": "planned",
+                "reason": None,
+                "attempts": 0,
+            },
+        )
+        row["attempts"] += times
+    result.tests = list(by_test.values())
+    if missing:
+        result.tests.append(
+            {
+                "code": "",
+                "version": 0,
+                "name": "Attempts that are no longer there",
+                "suites": [],
+                "template": None,
+                "status": "skipped",
+                "reason": f"{missing} of the attempts to repeat couldn't be found any more.",
+                "attempts": 0,
+            }
+        )
+    number = 0
+    for _ in range(times):  # the first attempt of every message, then the second, …
+        for attempt in found:
+            number += 1
+            again = Attempt(
+                organization_id=run.organization_id,
+                campaign_run_id=run.id,
+                attempt_no=number,
+                test_definition_id=attempt.test_definition_id,
+                test_code=attempt.test_code,
+                suite_code=attempt.suite_code,
+                template=attempt.template,
+                variant=attempt.variant,
+                priority=AttemptPriority.PLANNED,
+                input=attempt.input,
+                session_id=uuid.uuid4().hex,
+            )
+            db.add(again)
+            result.attempts.append(again)
+    return result
+
+
+def _version_of(run: CampaignRun, code: str) -> int:
+    """The version of the test the run recorded for its own traceability (FR-4.5)."""
+    for test in (run.versions or {}).get("tests", []):
+        if test.get("code") == code:
+            return int(test.get("version") or 0)
+    return 0
 
 
 def _usable_entry(
