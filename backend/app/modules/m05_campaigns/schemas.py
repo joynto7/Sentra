@@ -106,6 +106,9 @@ class EstimateOut(BaseModel):
 
     tests: int
     skipped: int
+    # FR-5.2: the organization requires a Security Manager to approve a campaign's scope, so the
+    # builder's button says "Submit for approval" (Screen 34)
+    requires_scope_approval: bool = False
     estimated_attempts: int
     target_safe_rate: int | None
     threat_model: ThreatModelBrief | None  # None: no approved threat model yet (2a)
@@ -153,9 +156,48 @@ class CampaignDetail(CampaignListItem):
     suites: list[CampaignSuiteOut]
     estimate: EstimateOut
     based_on_threat_model: int | None  # the version it was created with (FR-3.3)
+    # FR-5.2: who approved or rejected the scope, and when; None while nobody has decided
+    approval_decision: "ApprovalStep | None" = None
     # Only in the answer to "create", and only when the campaign runs immediately (UC-5.1 step 7)
     launched_run: "RunListItem | None" = None
     launch_error: str | None = None
+
+
+# ---------------------------------------------------------------- scope approval (FR-5.2)
+
+
+class ApprovalStep(BaseModel):
+    """One step of a campaign's approval, for the timeline of Screen 35 (UC-5.2 step 2)."""
+
+    action: str  # created, submitted, approved, rejected, scope_changed
+    actor: str | None  # the person; None if their account is gone
+    note: str | None  # the analyst's comment, or the reason for a rejection (3a1)
+    at: datetime
+
+
+class ApprovalView(BaseModel):
+    """Screen 35: the scope to decide on, how it got there, and whether this user may decide."""
+
+    campaign: CampaignDetail
+    required: bool  # whether this organization requires approval at all
+    timeline: list[ApprovalStep]
+    can_decide: bool
+    cannot_decide_reason: str | None  # e.g. "You can't approve campaigns you created."
+
+
+class SubmitForApprovalIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class ApprovalDecisionIn(BaseModel):
+    """UC-5.2 step 3 and 3a: a rejection needs a reason."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    approve: bool
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 # ---------------------------------------------------------------- campaign runs (FR-5.4, FR-5.6)
