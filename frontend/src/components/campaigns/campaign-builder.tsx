@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { FormField } from "@/components/auth/form-field"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
+import { useSession } from "@/components/session-provider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -39,6 +40,10 @@ import { useCan } from "@/lib/permissions"
 import { ENVIRONMENT_LABEL, TYPE_LABEL, type Target, listTargets } from "@/lib/targets"
 import { type SuiteItem, listSuites } from "@/lib/test-library"
 import { cn } from "@/lib/utils"
+
+/** "$492.00" — the LLM cost amounts of the summary card (FR-10.4). */
+const money = (usd: string | null) =>
+  `$${Number(usd ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const FIELD_ORDER = ["name", "target_id", "suites", "attempt_budget", "request_rate", "window", "repetitions"]
 const FIELD_IDS: Record<string, string> = {
@@ -80,6 +85,7 @@ function Section({ number, id, title, children }: { number: number; id: string; 
 export function CampaignBuilder({ target: preselected, suite }: { target?: string; suite?: string }) {
   const router = useRouter()
   const canCreate = useCan("manage_campaigns")
+  const organizationName = useSession().organization?.name ?? ""
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", [])
   const [targets, setTargets] = useState<Target[] | null>(null)
   const [suites, setSuites] = useState<SuiteItem[] | null>(null)
@@ -579,8 +585,66 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
                   {estimate.skipped ? ` (${estimate.skipped} skipped)` : ""}
                 </dd>
               </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Estimated LLM cost</dt>
+                <dd className="tabular">
+                  {estimate.llm_cost.low_usd
+                    ? `${money(estimate.llm_cost.low_usd)}–${money(estimate.llm_cost.high_usd)}`
+                    : "Not known yet"}
+                </dd>
+                <dd className="text-xs text-muted-foreground">
+                  {estimate.llm_cost.low_usd
+                    ? `${formatCount(estimate.llm_cost.judged_attempts)} judged attempts, at what they have cost this organization.`
+                    : "Measured from this organization's own judged attempts, once it has some."}
+                </dd>
+              </div>
             </dl>
           )}
+
+          {/* FR-10.4 (UC-10.6 step 1): what the organization has left of its month. */}
+          <div className="border-t pt-3">
+            <h3 className="text-xs font-medium text-muted-foreground">
+              {organizationName ? `${organizationName} this month` : "This month"}
+            </h3>
+            <dl className="mt-2 space-y-2.5 text-sm">
+              {estimate?.monthly.limits.map((limit) => (
+                <div key={limit.kind}>
+                  <dt className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="capitalize">{limit.label}</span>
+                    <span className="tabular">
+                      {limit.kind === "llm_cost"
+                        ? `${money(limit.used)} of ${money(limit.limit)}`
+                        : `${formatCount(Number(limit.used))} of ${formatCount(Number(limit.limit))}`}
+                    </span>
+                  </dt>
+                  <dd>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                      <div
+                        className={cn(
+                          "h-full rounded-full",
+                          limit.reached ? "bg-destructive" : limit.warning ? "bg-warning" : "bg-primary",
+                        )}
+                        style={{ width: `${Math.min(100, limit.percent)}%` }}
+                      />
+                    </div>
+                    {(limit.warning || limit.reached) && (
+                      <p
+                        className={cn(
+                          "mt-1 flex items-start gap-1.5 text-xs font-medium",
+                          limit.reached ? "text-destructive" : "text-warning",
+                        )}
+                      >
+                        <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        {limit.reached
+                          ? "The monthly limit is reached, so no new run starts. A Platform Administrator can raise it."
+                          : `${limit.percent}% of the monthly limit is used.`}
+                      </p>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
           {chosen.length > 0 &&
             estimate?.warnings.map((warning) => (
               <p key={warning} className="flex items-start gap-2 text-sm text-warning">

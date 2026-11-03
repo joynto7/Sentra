@@ -14,16 +14,20 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.m01_users.deps import platform_admin, recent_password_confirmation
 from app.modules.m01_users.models import User
-from app.modules.m10_admin import llm_providers
+from app.modules.m10_admin import llm_providers, usage_limits
 from app.modules.m10_admin.operations_schemas import (
     AssignmentIn,
     AssignmentOut,
+    LimitOut,
+    LimitsIn,
     LLMConfigurationOut,
     ModelOut,
     NewModelIn,
+    OrganizationUsageOut,
     ProviderIn,
     ProviderOut,
     TestResultOut,
+    UsageOverviewOut,
 )
 
 router = APIRouter(prefix="/admin/platform", tags=["M10 Platform operations"])
@@ -138,3 +142,54 @@ def assign_model(
     LLM judge the row carries the recommendation of 4a1."""
     row = llm_providers.assign(db, admin, llm_providers.task_of(task), data.provider_model_id)
     return AssignmentOut(**row.__dict__)
+
+
+# ---------------------------------------------------------------- usage and cost limits (UC-10.6)
+
+
+def _usage_out(row: usage_limits.OrganizationRow) -> OrganizationUsageOut:
+    return OrganizationUsageOut(
+        **{**row.__dict__, "limits": [LimitOut(**limit.__dict__) for limit in row.limits]}
+    )
+
+
+@router.get("/organizations")
+def organizations(
+    admin: User = Depends(platform_admin), db: Session = Depends(get_db)
+) -> UsageOverviewOut:
+    """Screen 61 (UC-10.6 step 1): every organization's usage this month against its limits, with
+    the platform's defaults for the limits nobody has set."""
+    found = usage_limits.overview(db)
+    return UsageOverviewOut(
+        organizations=[_usage_out(row) for row in found.organizations],
+        defaults=found.defaults,
+        warn_percent_default=found.warn_percent_default,
+        notice=found.notice,
+        warn_at=found.warn_at,
+    )
+
+
+@router.put("/organizations/{organization_id}/limits")
+def set_limits(
+    organization_id: uuid.UUID,
+    data: LimitsIn,
+    admin: User = Depends(platform_admin),
+    _session=confirmed,
+    db: Session = Depends(get_db),
+) -> OrganizationUsageOut:
+    """UC-10.6 steps 2-4: the monthly limits of one organization, in force from the next launch
+    and the next attempt. A limit at or below this month's usage answers `409
+    below_this_months_usage` with what that means, until `confirmed` says it was read (2a1)."""
+    row = usage_limits.save(
+        db,
+        admin,
+        organization_id,
+        usage_limits.NewLimits(
+            campaign_runs=data.campaign_runs,
+            attempts=data.attempts,
+            llm_cost_usd=data.llm_cost_usd,
+            warn_percent=data.warn_percent,
+        ),
+        confirmed=data.confirmed,
+    )
+    return _usage_out(row)

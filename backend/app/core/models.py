@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, String, func, text
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, func, text
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.core.database import Base
@@ -32,6 +33,14 @@ class Organization(UUIDPrimaryKey, Timestamps, Base):
     # UC-10.5: none of the organization's data goes to an external LLM provider. The LLM layer
     # reads it at every request, so a change applies at once, also to running campaign runs.
     local_models_only: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # The organization's monthly limits (FR-10.4, UC-10.6), set by a Platform Administrator on
+    # Screen 61. None means the platform's default from the settings (1a1), so a new organization
+    # needs nothing set and raising a default lifts every organization without a limit of its own.
+    # Who changed a limit and when is in the audit log (FR-10.2).
+    limit_campaign_runs: Mapped[int | None]
+    limit_attempts: Mapped[int | None]
+    limit_llm_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    limit_warn_percent: Mapped[int | None]  # the organization is warned at this share of a limit
 
 
 class OrganizationScoped:
