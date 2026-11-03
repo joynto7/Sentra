@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { Bug, CircleCheck, CircleHelp, FlaskConical, Info, KeyRound, Loader2, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
@@ -12,7 +13,17 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError } from "@/lib/api"
-import { type Lab, type LabCard, deployLabTarget, memory, resetLabTarget, securityLab } from "@/lib/lab"
+import {
+  BENCHMARK_STATUS_LABEL,
+  type BenchmarkItem,
+  type Lab,
+  type LabCard,
+  deployLabTarget,
+  listBenchmarks,
+  memory,
+  resetLabTarget,
+  securityLab,
+} from "@/lib/lab"
 import { useCan } from "@/lib/permissions"
 import { TYPE_LABEL } from "@/lib/targets"
 import { cn } from "@/lib/utils"
@@ -178,6 +189,7 @@ export function SecurityLabPage() {
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [showing, setShowing] = useState<LabCard | null>(null)
+  const [runs, setRuns] = useState<BenchmarkItem[] | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -187,6 +199,14 @@ export function SecurityLabPage() {
         setError(false)
       })
       .catch(() => !controller.signal.aborted && setError(true))
+    return () => controller.abort()
+  }, [reloads])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    listBenchmarks(controller.signal)
+      .then((found) => setRuns(found))
+      .catch(() => !controller.signal.aborted && setRuns([]))
     return () => controller.abort()
   }, [reloads])
 
@@ -237,12 +257,19 @@ export function SecurityLabPage() {
 
   return (
     <div className="min-w-0">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Security Lab</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Intentionally vulnerable lab targets in an isolated zone — synthetic data, simulated tools, no
-          internet access.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">Security Lab</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Intentionally vulnerable lab targets in an isolated zone — synthetic data, simulated
+            tools, no internet access.
+          </p>
+        </div>
+        {canUse !== false && (
+          <Button asChild>
+            <Link href="/lab/benchmarks/new">New benchmark run</Link>
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -309,10 +336,41 @@ export function SecurityLabPage() {
           value="benchmarks"
           className="mt-4 rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
-          <EmptyState
-            title="No benchmark run yet"
-            description="A benchmark run compares testing strategies on the same lab targets under equal conditions."
-          />
+          {runs === null ? (
+            <Skeleton className="h-28 w-full" />
+          ) : runs.length === 0 ? (
+            <EmptyState
+              title="No benchmark run yet"
+              description="A benchmark run compares testing strategies on the same lab targets under equal conditions."
+            />
+          ) : (
+            <ul className="space-y-2">
+              {runs.map((run) => (
+                <li key={run.code}>
+                  <Link
+                    href={`/lab/benchmarks/${run.code}`}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border bg-card p-4 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-sm font-medium">
+                        {run.code} — {run.name}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {run.lab_targets.join(", ")} · {run.strategies.length} strategies ·{" "}
+                        {run.repetitions} repetitions
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="tabular text-xs text-muted-foreground">
+                        {run.runs_done} of {run.runs_total} runs
+                      </span>
+                      <Badge variant="outline">{BENCHMARK_STATUS_LABEL[run.status]}</Badge>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </TabsContent>
       </Tabs>
 
