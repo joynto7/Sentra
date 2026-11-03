@@ -95,6 +95,7 @@ export function ScheduleFields({
   error,
   disabled,
   withImmediately = true,
+  needsApproval = false,
   idPrefix = "schedule",
 }: {
   draft: ScheduleDraft
@@ -104,10 +105,19 @@ export function ScheduleFields({
   disabled?: boolean
   /** The builder offers "immediately"; a campaign that already exists is launched instead. */
   withImmediately?: boolean
+  /** FR-5.2: where the organization requires approval, nothing starts until a decision is made */
+  needsApproval?: boolean
   idPrefix?: string
 }) {
   const set = (changes: Partial<ScheduleDraft>) => onChange({ ...draft, ...changes })
-  const choices = withImmediately ? CHOICES : CHOICES.filter((choice) => choice.value !== "immediately")
+  const offered = withImmediately ? CHOICES : CHOICES.filter((choice) => choice.value !== "immediately")
+  const choices = needsApproval
+    ? offered.map((choice) =>
+        choice.value === "immediately"
+          ? { ...choice, help: "The first run starts as soon as a Security Manager has approved it." }
+          : choice,
+      )
+    : offered
   const errorId = `${idPrefix}-error`
   return (
     <div className="space-y-4">
