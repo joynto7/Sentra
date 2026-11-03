@@ -99,7 +99,8 @@ STATE_LABELS = {
 }
 
 
-def _may(db: Session, membership: Membership) -> None:
+def may_use(db: Session, membership: Membership) -> None:
+    """Only a Security Analyst deploys, resets or benchmarks (FR-1.6, UC-11.1)."""
     from app.modules.m01_users.permissions import Action, allowed
 
     if not allowed(membership.role, Action.USE_SECURITY_LAB):
@@ -180,7 +181,7 @@ def deploy(db: Session, membership: Membership, user: User, key: str) -> Card:
     reads what it reports about itself. A lab target the organization already has is returned as
     it is and can be reset (1a1); a Lab zone that isn't running leaves the card "Not ready" with
     the command to start it (2a1)."""
-    _may(db, membership)
+    may_use(db, membership)
     if key not in catalogue.CATALOGUE:
         raise NotFoundError("Sentra has no such lab target.")
     lab = catalogue.entry(key)
@@ -264,7 +265,7 @@ def _read_state(db: Session, target: Target, row: LabDeployment) -> None:
 def start_reset(db: Session, membership: Membership, user: User, target_id: uuid.UUID) -> Card:
     """UC-11.2 step 1 and 1a: the lab target is marked resetting, so no campaign run can use it,
     and the work itself runs as a job. A run that is in progress refuses a manual reset."""
-    _may(db, membership)
+    may_use(db, membership)
     organization_id = membership.organization_id
     row = _deployment(db, organization_id, target_id)
     target = db.get(Target, target_id)
@@ -337,6 +338,16 @@ def run_reset(db: Session, deployment_id: uuid.UUID) -> None:
     )
     db.commit()
     connection.start(db, target, None)  # step 5: the normal connection test
+
+
+def reset_for_benchmark(db: Session, row: LabDeployment) -> None:
+    """UC-11.2 with the other trigger of its use case: a benchmark run is about to start a
+    repetition (UC-11.4 step 3). It runs here and now, because the caller is already on a worker
+    and must know whether the lab target is ready before it launches the campaign run."""
+    row.state, row.last_error = LabState.RESETTING, None
+    db.commit()
+    run_reset(db, row.id)
+    db.refresh(row)
 
 
 def before_run(db: Session, target_id: uuid.UUID) -> bool:

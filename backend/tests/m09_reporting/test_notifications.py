@@ -98,7 +98,7 @@ def test_preferences_list_every_event_switched_on_by_default(maya):
 
     # with the events of UC-2.4 step 4, UC-3.1 step 6, UC-8.2 step 6, UC-9.6 3a1, FR-5.3 and
     # "Finding reopened as a regression" (FR-6.6)
-    assert len(preferences) == 14
+    assert len(preferences) == 15
     assert all(p["in_app"] and p["email"] for p in preferences)
     assert preferences[0]["label"] == "Campaign run completed"
 

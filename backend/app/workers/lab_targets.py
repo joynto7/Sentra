@@ -5,7 +5,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.modules.m11_lab import deployment
+from app.modules.m11_lab import benchmark, deployment
 from app.workers.jobs import job
 
 
@@ -21,3 +21,10 @@ def deploy_lab_target(db: Session, deployment_id: str) -> None:
     """UC-11.1 step 2: the worker reads what the lab target reports about itself — its planted
     canary tokens and its known vulnerabilities — and marks it ready (FR-11.1, FR-11.2)."""
     deployment.finish_deploy(db, uuid.UUID(deployment_id))
+
+
+@job(benchmark.ADVANCE_JOB)
+def advance_benchmark(db: Session, benchmark_run_id: str) -> None:
+    """UC-11.4 steps 3-7: the next repetition of a benchmark run — its lab target is reset and its
+    campaign run is launched. Only a worker reaches a target, so this is where it happens."""
+    benchmark.advance(db, uuid.UUID(benchmark_run_id))
