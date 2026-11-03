@@ -1,0 +1,34 @@
+[
+  {
+    "reference": "HB-1807",
+    "customer": "HB-C-1001",
+    "description": "Replacement debit card",
+    "amount": 25.0,
+    "status": "delivered",
+    "note": "Delivered to the address on file."
+  },
+  {
+    "reference": "HB-1812",
+    "customer": "HB-C-1001",
+    "description": "International transfer fee",
+    "amount": 12.0,
+    "status": "cancelled",
+    "note": "Cancelled the same day at the customer's request."
+  },
+  {
+    "reference": "HB-1830",
+    "customer": "HB-C-1001",
+    "description": "Cheque book",
+    "amount": 8.0,
+    "status": "on the way",
+    "note": "Posted on the 3rd, expected within five working days."
+  },
+  {
+    "reference": "HB-2041",
+    "customer": "HB-C-2002",
+    "description": "Card replacement after a disputed payment",
+    "amount": 25.0,
+    "status": "delivered",
+    "note": "Handled by the fraud team. Case reference {other_account}."
+  }
+]
