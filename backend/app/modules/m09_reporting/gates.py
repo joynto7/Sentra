@@ -182,10 +182,11 @@ def update(
     return gate
 
 
-def _policy_words(gate: SecurityGate) -> str:
-    """The policy in the words of UC-9.4 step 2, for the audit log and the CLI."""
-    names = " or ".join(one.capitalize() for one in gate.fail_on)
-    reopened = ", or a fixed finding comes back" if gate.fail_on_reopened else ""
+def _policy_words(policy: SecurityGate | GateRun) -> str:
+    """The policy in the words of UC-9.4 step 2, for the audit log, the CLI and Screen 55. It
+    reads a gate or one of its runs, because a run keeps the policy it was judged by."""
+    names = " or ".join(one.capitalize() for one in policy.fail_on)
+    reopened = ", or a fixed finding comes back" if policy.fail_on_reopened else ""
     return f"fail if a new finding of severity {names} appears{reopened}"
 
 
@@ -226,6 +227,8 @@ def start(
             gate_id=gate.id,
             number=number,
             campaign_run_id=run.id,
+            fail_on=list(gate.fail_on),
+            fail_on_reopened=gate.fail_on_reopened,
             build_ref=(build_ref or None),
             build_commit=(build_commit or None),
             build_url=(build_url or None),
@@ -288,6 +291,8 @@ def _could_not_start(
         gate_id=gate.id,
         number=number,
         verdict=GateVerdict.ERROR,
+        fail_on=list(gate.fail_on),
+        fail_on_reopened=gate.fail_on_reopened,
         build_ref=(build_ref or None),
         build_commit=(build_commit or None),
         build_url=(build_url or None),
@@ -418,10 +423,14 @@ def decide(db: Session, gate_run: GateRun, run: CampaignRun) -> GateRun:
             continue  # 5b1: an analyst triaged it away, so it no longer counts
         if _root_cause(finding) not in accepted:
             new.append(_finding_out(finding, "new"))
-        elif gate.fail_on_reopened and finding.status == FindingStatus.REOPENED:
+        elif gate_run.fail_on_reopened and finding.status == FindingStatus.REOPENED:
             new.append(_finding_out(finding, "reopened"))
 
-    breaking = [one for one in new if one["severity"] in gate.fail_on or one["why"] == "reopened"]
+    # The policy of the gate run, not of the gate: a policy changed while the campaign was running
+    # judges the next release, never this one (UC-9.4, quality requirement 2).
+    breaking = [
+        one for one in new if one["severity"] in gate_run.fail_on or one["why"] == "reopened"
+    ]
     gate_run.new_findings = new
     gate_run.compared_run_id = accepted_id
     if breaking:
@@ -441,7 +450,7 @@ def decide(db: Session, gate_run: GateRun, run: CampaignRun) -> GateRun:
         gate_run,
         GateVerdict.PASSED,
         (
-            f"No new finding breaks the policy ({_policy_words(gate)})."
+            f"No new finding breaks the policy ({_policy_words(gate_run)})."
             if not new
             else f"{len(new)} new finding(s), none of them of a severity the policy fails on."
         ),
@@ -500,7 +509,7 @@ def tell_them(db: Session, gate_run: GateRun) -> None:
         organization_id=gate.organization_id,
         subject=f"{gate.code} #{gate_run.number} did not pass",
         text=(f"The security gate {gate.name}{build} did not pass: {gate_run.message}"),
-        link=f"/integrations/gates/{gate.code}/runs/{gate_run.number}",
+        link=f"/integrations/gates/{gate.code}?release={gate_run.number}",
     )
 
 

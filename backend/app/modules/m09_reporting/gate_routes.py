@@ -7,6 +7,7 @@ targets.
 """
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
 from app.modules.m02_targets.models import Target
 from app.modules.m05_campaigns import lifecycle
+from app.modules.m05_campaigns import service as campaign_service
 from app.modules.m05_campaigns.models import Campaign, CampaignRun
 from app.modules.m09_reporting import gates
 from app.modules.m09_reporting.api_keys import Actor, reader
@@ -36,6 +38,7 @@ from app.modules.m09_reporting.schemas import (
     GateOut,
     GateRunIn,
     GateRunOut,
+    GateSuiteOut,
     GateUpdateIn,
 )
 
@@ -84,6 +87,7 @@ def run_out(db: Session, gate: SecurityGate, gate_run: GateRun) -> GateRunOut:
         compared_with=compared,
         new_findings=gate_run.new_findings or [],
         breaking=gate_run.breaking or [],
+        policy_words=gates._policy_words(gate_run),
         started_by=_started_by(db, gate_run),
         started_at=gate_run.started_at,
         finished_at=gate_run.finished_at,
@@ -100,23 +104,43 @@ def _recent(db: Session, gate: SecurityGate, limit: int = RECENT_RUNS) -> list[G
     return [run_out(db, gate, one) for one in found]
 
 
+def _baseline(db: Session, gate: SecurityGate) -> tuple[str | None, datetime | None]:
+    """The run every release is compared with until one passes, with the day it ran."""
+    run = db.get(CampaignRun, gate.baseline_run_id) if gate.baseline_run_id else None
+    if run is None:
+        return None, None
+    return lifecycle.code(run, lifecycle.campaign_of(db, run)), (run.started_at or run.created_at)
+
+
 def gate_out(db: Session, gate: SecurityGate) -> GateOut:
     target = db.get(Target, gate.target_id)
     campaign = db.get(Campaign, gate.campaign_id)
     creator = db.get(User, gate.created_by_id) if gate.created_by_id else None
-    baseline, _ = _run_code(db, gate.baseline_run_id)
+    baseline, baseline_at = _baseline(db, gate)
+    # Step 1 is the campaign's own answer, so the suites, their versions and the budget a gate run
+    # sends are read where M5 keeps them and never copied into the gate.
+    plan = (
+        campaign_service.get_campaign(db, gate.organization_id, campaign.code)
+        if campaign is not None
+        else {}
+    )
     return GateOut(
         code=gate.code,
         name=gate.name,
         status=gate.status,
         target_id=gate.target_id,
         target_name=target.name if target else "",
+        target_environment=target.environment if target else "",
         campaign_code=campaign.code if campaign else "",
         campaign_name=campaign.name if campaign else "",
+        suites=[GateSuiteOut(**one) for one in plan.get("suites", [])],
+        attempt_budget=campaign.attempt_budget if campaign else 0,
+        approval_status=campaign.approval_status if campaign else "",
         fail_on=list(gate.fail_on),
         fail_on_reopened=gate.fail_on_reopened,
         policy_words=gates._policy_words(gate),
         baseline_run_code=baseline,
+        baseline_at=baseline_at,
         created_by=creator.name if creator else None,
         created_at=gate.created_at,
         runs=_recent(db, gate),
@@ -139,7 +163,7 @@ def list_gates(
     ).all()
     taken = {one.campaign_id for one in found}
     query = (
-        select(Campaign, Target.name)
+        select(Campaign, Target.name, Target.environment)
         .join(Target, Target.id == Campaign.target_id)
         .where(Campaign.organization_id == organization_id)
         .order_by(Campaign.number.desc())
@@ -154,8 +178,12 @@ def list_gates(
                 name=campaign.name,
                 target_id=campaign.target_id,
                 target_name=target_name,
+                target_environment=environment,
+                suite_count=len(campaign.suites),
+                attempt_budget=campaign.attempt_budget,
+                approval_status=campaign.approval_status,
             )
-            for campaign, target_name in db.execute(query).all()
+            for campaign, target_name, environment in db.execute(query).all()
         ],
     )
 
