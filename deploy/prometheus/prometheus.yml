@@ -1,0 +1,14 @@
+# What Prometheus scrapes (NFR-5.5, FR-10.6). Sentra's API exports its own operational metrics at
+# /api/metrics: the requests it answered, their p50 and p95, its uptime and its version. The
+# database, Redis and Celery export their own metrics through their own exporters, which an
+# operator adds here; Sentra never pretends to measure them itself.
+global:
+  scrape_interval: 15s
+  external_labels:
+    platform: sentra
+
+scrape_configs:
+  - job_name: sentra-api
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ["api:8000"]

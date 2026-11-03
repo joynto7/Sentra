@@ -9,6 +9,7 @@ from app.core import health
 from app.core.audit import SourceAddressMiddleware
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
+from app.core.metrics import RequestMetricsMiddleware
 from app.modules import load_models, routers, startup_hooks
 
 
@@ -40,6 +41,8 @@ def create_app() -> FastAPI:
     )
     # Where each request came from, for the audit log (FR-10.2).
     app.add_middleware(SourceAddressMiddleware)
+    # How long each request took and whether it failed, for the system health page (FR-10.6).
+    app.add_middleware(RequestMetricsMiddleware)
     register_error_handlers(app)
 
     load_models()
