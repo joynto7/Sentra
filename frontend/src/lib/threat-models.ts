@@ -286,9 +286,10 @@ export const ATLAS_TECHNIQUES: { code: string; name: string }[] = [
   { code: "AML.T0051.001", name: "LLM Prompt Injection: Indirect" },
   { code: "AML.T0053", name: "AI Agent Tool Invocation" },
   { code: "AML.T0054", name: "LLM Jailbreak" },
-  { code: "AML.T0056", name: "Extract LLM System Prompt" },
-  { code: "AML.T0057", name: "LLM Data Leakage" },
   { code: "AML.T0070", name: "RAG Poisoning" },
+  { code: "AML.T0085.000", name: "Data from AI Services: RAG Databases" },
+  { code: "AML.T0085.002", name: "Data from AI Services: Conversation Context and Memory" },
+  { code: "AML.T0085.003", name: "Data from AI Services: System Instructions" },
 ]
 export const ATLAS_PATTERN = /^AML\.T\d{4}(\.\d{3})?$/
 

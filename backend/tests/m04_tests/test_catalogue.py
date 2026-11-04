@@ -40,10 +40,10 @@ def test_filter_by_target_type(catalogue):
 
 def test_search_by_name_code_or_atlas_technique(catalogue):
     by_name = catalogue.get(URL, params={"search": "retrieved document"}).json()
-    by_atlas = catalogue.get(URL, params={"search": "AML.T0056"}).json()
+    by_atlas = catalogue.get(URL, params={"search": "AML.T0085.003"}).json()
 
     assert by_name["items"][0]["code"] == "PI-IND-014"
-    assert {item["category"] for item in by_atlas["items"]} == {"LLM07"}
+    assert {item["category"] for item in by_atlas["items"]} == {"LLM02", "LLM07"}
 
 
 def test_facets_count_the_options_of_each_filter(catalogue):
@@ -92,3 +92,11 @@ def test_unknown_test_returns_404(catalogue):
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_no_built_in_test_uses_a_retired_atlas_technique():
+    """MITRE ATLAS 2026.10 retired them; UC-7.4 promises identifiers that exist (NFR-8.4)."""
+    from app.modules.m03_threat_models.frameworks import ATLAS_RETIRED
+    from app.modules.m04_tests.library import load_library
+
+    assert not [spec.code for spec in load_library() if set(spec.atlas) & set(ATLAS_RETIRED)]

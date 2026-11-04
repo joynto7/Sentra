@@ -13,7 +13,7 @@ OWASP_OUT_OF_SCOPE: set[str] = set(OUT_OF_SCOPE)
 ATLAS_PATTERN = re.compile(r"AML\.T\d{4}(\.\d{3})?")
 
 # The techniques that the baseline rules and the test library use, with their names in the
-# ATLAS data (github.com/mitre-atlas/atlas-data, checked on 2026-10-30). Any other well-formed
+# ATLAS data (atlas.mitre.org, checked on 2026-11-04, ATLAS 2026.10). Any other well-formed
 # technique ID may be entered too; it is shown without a name.
 ATLAS_NAMES: dict[str, str] = {
     "AML.T0029": "Denial of AI Service",
@@ -26,6 +26,16 @@ ATLAS_NAMES: dict[str, str] = {
     "AML.T0056": "Extract LLM System Prompt",
     "AML.T0057": "LLM Data Leakage",
     "AML.T0070": "RAG Poisoning",
+    "AML.T0085.000": "Data from AI Services: RAG Databases",
+    "AML.T0085.002": "Data from AI Services: Conversation Context and Memory",
+    "AML.T0085.003": "Data from AI Services: System Instructions",
+}
+
+# ATLAS 2026.10 (28 October 2026) retired these. Stored threat models, findings and old versions of
+# tests keep the ID they were made with, so the names above stay; nothing new uses them.
+ATLAS_RETIRED: dict[str, str] = {
+    "AML.T0056": "AML.T0085.003",
+    "AML.T0057": "AML.T0085.002",
 }
 
 

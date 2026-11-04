@@ -324,7 +324,8 @@ def _codes(
             (code, name, code not in frameworks.OWASP_OUT_OF_SCOPE)
             for code, name in frameworks.OWASP_NAMES.items()
         ]
-    found = set(frameworks.ATLAS_NAMES)
+    # A retired technique is a row only where a stored threat model or an old test still names it.
+    found = set(frameworks.ATLAS_NAMES) - set(frameworks.ATLAS_RETIRED)
     found |= {code for one in relevant.values() for code in one.model_techniques}
     found |= {code for _, code in tested}
     return [(code, frameworks.ATLAS_NAMES.get(code), True) for code in sorted(found)]

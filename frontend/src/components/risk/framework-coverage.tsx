@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 
+import { AtlasId, OwaspId } from "@/components/sentra/framework-ids"
 import { CoveragePanel } from "@/components/risk/coverage-panel"
 import { PageHeader } from "@/components/layout/page-header"
 import { FilterSelect } from "@/components/sentra/filter-select"
@@ -17,12 +18,13 @@ import {
   type CoverageStatus,
   getCoverage,
 } from "@/lib/risk"
+import { ATLAS_VERSION } from "@/lib/frameworks"
 import { formatDate } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
 const FRAMEWORKS = [
   { value: "owasp", label: "OWASP Top 10 for LLM Applications 2025" },
-  { value: "atlas", label: "MITRE ATLAS" },
+  { value: "atlas", label: `MITRE ATLAS ${ATLAS_VERSION}` },
 ] as const
 
 /** What a cell says beside its symbol: short, and never only a colour (NFR-4.3). */
@@ -123,7 +125,9 @@ export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: stri
         <section aria-labelledby="coverage" className="min-w-0 rounded-[10px] border bg-card">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
             <h2 id="coverage" className="text-[15px] font-semibold">
-              {framework === "owasp" ? "OWASP Top 10 for LLM Applications (2025)" : "MITRE ATLAS techniques"}
+              {framework === "owasp"
+                ? "OWASP Top 10 for LLM Applications (2025)"
+                : `MITRE ATLAS ${ATLAS_VERSION} techniques`}
             </h2>
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-text-secondary">
               {data.legend
@@ -172,7 +176,9 @@ export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: stri
               {data.rows.map((row) => (
                 <TableRow key={row.code} className={cn(!row.in_scope && "text-muted-foreground")}>
                   <TableCell className="align-top">
-                    <span className="text-[13px] font-medium">{row.code}</span>
+                    <span className="text-[13px] font-medium">
+                      {framework === "owasp" ? <OwaspId code={row.code} /> : <AtlasId code={row.code} />}
+                    </span>
                     <span className="block text-xs text-muted-foreground">{row.name ?? "—"}</span>
                     {!row.in_scope && (
                       <span className="block text-xs text-muted-foreground">

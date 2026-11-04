@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Pencil, RotateCcw, Trash2, Undo2 } from "lucide-react"
 
+import { AtlasId } from "@/components/sentra/framework-ids"
 import { CHIP, SourceChip } from "@/components/threat-models/badges"
 import { ThreatFields, type ThreatForm, formOf, formProblems } from "@/components/threat-models/threat-fields"
 import { Button } from "@/components/ui/button"
@@ -200,8 +201,8 @@ export function ThreatItem({
           </Value>
           <Value label="MITRE ATLAS">
             {threat.atlas ? (
-              <abbr title={threat.atlas.name ?? undefined} className="font-mono text-xs no-underline">
-                {threat.atlas.code}
+              <abbr title={threat.atlas.name ?? undefined} className="text-xs no-underline">
+                <AtlasId code={threat.atlas.code} />
               </abbr>
             ) : (
               <>
