@@ -116,7 +116,7 @@ function FindingPanel({
               </dl>
               {shown.detection?.requires_confirmation && (
                 <p className="rounded-[7px] border border-warning/40 bg-warning/5 p-3 text-sm text-warning">
-                  Only the LLM judge supports this finding. An analyst confirms or rejects it (FR-6.5).
+                  Only the LLM judge supports this finding. An analyst confirms or rejects it.
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
