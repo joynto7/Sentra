@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation"
 
 import { cn } from "@/lib/utils"
 
-// The Administration sub-menu of the UI brief, in its order. Each item appears once its page is
-// built: Data Retention with FR-10.5 (M10).
+// The Administration sub-menu of the UI brief, in its order.
 const ITEMS = [
   { href: "/admin/members", label: "Members" },
   { href: "/admin/security", label: "Organization Security" },
   { href: "/admin/data-and-ai", label: "Data and AI" },
+  { href: "/admin/retention", label: "Data Retention" },
 ]
 
 /** Administration sub-navigation, left of the content (Organization Administrators only). */
