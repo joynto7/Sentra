@@ -40,11 +40,23 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return body as T
 }
 
+/** What a download gave: the file's name, and what the server says about it. */
+export type Downloaded = { name: string; checksum: string | null; rows: number | null }
+
 /**
  * Calls an API endpoint that answers with a file (an export) and saves it in the browser under
  * the name the server gives, or `fallbackName`. Throws an ApiError like apiFetch.
  */
 export async function apiDownload(path: string, init: RequestInit, fallbackName: string): Promise<string> {
+  return (await apiDownloadFile(path, init, fallbackName)).name
+}
+
+/** The same download, with the checksum the server sends beside it (FR-11.5, UC-11.6 step 5). */
+export async function apiDownloadFile(
+  path: string,
+  init: RequestInit,
+  fallbackName: string,
+): Promise<Downloaded> {
   let response: Response
   try {
     response = await fetch(`${API_URL}${path}`, {
@@ -74,7 +86,12 @@ export async function apiDownload(path: string, init: RequestInit, fallbackName:
   link.click()
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return name
+  const rows = Number(response.headers.get("X-Export-Rows"))
+  return {
+    name,
+    checksum: response.headers.get("X-Checksum-Sha256"),
+    rows: Number.isFinite(rows) && rows > 0 ? rows : null,
+  }
 }
 
 /** Field errors of a validation error, keyed by field name ("email", "password", …). */
