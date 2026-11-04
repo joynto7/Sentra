@@ -7,7 +7,7 @@ export type IntegrationsTab = "gates" | "keys" | "webhooks"
 const TABS: { id: IntegrationsTab; label: string; href?: string; comesWith?: string }[] = [
   { id: "gates", label: "Security gates", href: "/integrations" },
   { id: "keys", label: "API keys", href: "/integrations/api-keys" },
-  { id: "webhooks", label: "Webhooks", comesWith: "webhooks (FR-9.6)" },
+  { id: "webhooks", label: "Webhooks", href: "/integrations/webhooks" },
 ]
 
 const SHARED = "flex h-10 items-center border-b-2 px-0.5 text-sm whitespace-nowrap"

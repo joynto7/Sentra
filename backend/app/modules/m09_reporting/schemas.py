@@ -300,3 +300,80 @@ class GateList(BaseModel):
     rows: list[GateOut]
     # The campaigns a gate can still be made of (step 1): one gate per campaign
     campaigns: list[GateCampaignRef]
+
+
+# ---------------------------------------------------------------- webhooks (FR-9.6, UC-9.7)
+
+
+class WebhookIn(BaseModel):
+    """What an administrator enters for a new webhook (step 1)."""
+
+    name: str
+    url: str
+    events: list[str]
+
+
+class WebhookUpdateIn(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    events: list[str] | None = None
+    status: str | None = None
+
+
+class WebhookDeliveryOut(BaseModel):
+    """One event on its way to one webhook ("Recent deliveries" of Screen 57)."""
+
+    id: uuid.UUID
+    event: str
+    payload: dict  # the summary that was sent: never evidence or secrets
+    attempts: int
+    status_code: int | None
+    duration_ms: int | None
+    error: str | None
+    delivered_at: datetime | None
+    created_at: datetime
+
+
+class WebhookOut(BaseModel):
+    """One endpoint of Screen 57. The signing secret is never part of it."""
+
+    id: uuid.UUID
+    name: str
+    url: str
+    events: list[str]
+    status: str
+    verified_at: datetime | None
+    secret_created_at: datetime
+    secret_is_old: bool
+    failures: int
+    disabled_at: datetime | None
+    created_at: datetime
+    created_by: str | None
+    last_delivery: WebhookDeliveryOut | None
+
+
+class WebhookList(BaseModel):
+    webhooks: list[WebhookOut]
+    # The events that can be chosen, with their labels: the same list as the notifications.
+    events: list[dict]
+
+
+class WebhookCreated(BaseModel):
+    """Step 3: the secret, shown this once."""
+
+    webhook: WebhookOut
+    secret: str
+
+
+class WebhookSecretOut(BaseModel):
+    secret: str
+    webhook: WebhookOut
+
+
+class WebhookTestOut(BaseModel):
+    """Step 4 and 4a1: what the receiving system answered to the test event."""
+
+    ok: bool
+    message: str
+    webhook: WebhookOut
+    delivery: WebhookDeliveryOut

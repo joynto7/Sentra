@@ -90,12 +90,19 @@ def notify(
     group_key: str | None = None,
     combined_text: str | None = None,
     email: bool = True,
+    webhooks: bool = True,
+    data: dict | None = None,
 ) -> None:
     """UC-9.3 steps 1-3 for the given recipients. Call it after your own change is committed.
 
     `group_key` and `combined_text` (with "{count}") combine events of the same group within an
     hour into one notification (1a), and send only the first e-mail of the group. `email=False`
     when the caller sends its own e-mail, as M1 does for password changes.
+
+    The same event also goes to the organization's webhooks (FR-9.6, UC-9.7 step 6), which is why
+    no other module has to know that webhooks exist. `data` are named values a receiving system
+    can act on, such as a finding's code and severity; `webhooks=False` keeps an event out of
+    them, which only the "a webhook was switched off" event needs.
     """
     assert event in BY_KEY, event
     mails = []
@@ -121,6 +128,14 @@ def notify(
     db.commit()
     for mail in mails:
         _deliver(*mail)
+    if webhooks and organization_id is not None:
+        # After the commit: a receiving system that is slow or down never holds up, or undoes,
+        # what a person has already been told (UC-9.7 step 6).
+        from app.modules.m09_reporting import webhooks as hooks
+
+        hooks.send(
+            db, organization_id=organization_id, event=event, text=text, link=link, data=data
+        )
 
 
 def _combine(
