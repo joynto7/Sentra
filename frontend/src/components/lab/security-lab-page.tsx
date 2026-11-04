@@ -165,6 +165,11 @@ function LabTargetCard({
             <Button variant="outline" size="sm" onClick={onVulnerabilities} disabled={!card.vulnerabilities}>
               Known vulnerabilities
             </Button>
+            {card.active_run && (
+              <p className="w-full text-xs text-muted-foreground">
+                Reset is available when {card.active_run} has ended.
+              </p>
+            )}
           </>
         ) : (
           <Button size="sm" onClick={onDeploy} disabled={busy || !canUse}>
@@ -282,6 +287,13 @@ export function SecurityLabPage() {
             </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {canUse === false && (
+        <p role="note" className="mb-4 rounded-[10px] border bg-card p-4 text-sm text-muted-foreground">
+          You can read everything here. Only Security Analysts deploy and reset lab targets, and start
+          benchmark runs.
+        </p>
       )}
 
       <Tabs defaultValue="targets">
