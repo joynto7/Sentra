@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -132,6 +132,7 @@ def _runs(
             Campaign.number,
             TestDefinition.category,
             TestDefinition.atlas,
+            TestDefinition.code,
         )
         .join(Attempt, Attempt.campaign_run_id == CampaignRun.id)
         .join(TestDefinition, TestDefinition.id == Attempt.test_definition_id)
@@ -146,13 +147,28 @@ def _runs(
         )
         .distinct()
     ).all()
+    # A newer version of a test may map to another technique, as when MITRE ATLAS 2026.10 retired two
+    # (FR-4.5, M4). A run of the older version tested the same thing, so it counts for both.
+    current = dict(
+        db.execute(
+            select(TestDefinition.code, TestDefinition.atlas).where(
+                TestDefinition.code.in_({row.code for row in rows}),
+                TestDefinition.is_current.is_(True),
+                or_(
+                    TestDefinition.organization_id.is_(None),
+                    TestDefinition.organization_id == organization_id,
+                ),
+            )
+        ).all()
+    )
     by_category: dict[tuple[uuid.UUID, str], Tested] = {}
     by_technique: dict[tuple[uuid.UUID, str], Tested] = {}
-    for target_id, run_id, number, ended_at, campaign_number, category, techniques in rows:
+    for target_id, run_id, number, ended_at, campaign_number, category, techniques, test in rows:
         # The run's code, as m05_campaigns.lifecycle.code() writes it
         code = f"R-{campaign_number:03d}-{number}" if campaign_number else f"R-{str(run_id)[:8]}"
         run = Tested(code, ended_at)
-        for found, keys in ((by_category, [category]), (by_technique, list(techniques or []))):
+        named = {*(techniques or []), *(current.get(test) or [])}
+        for found, keys in ((by_category, [category]), (by_technique, named)):
             for key in keys:
                 before = found.get((target_id, key))
                 if before is None or before.ended_at < ended_at:

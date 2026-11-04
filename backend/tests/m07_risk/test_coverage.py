@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.modules.m03_threat_models.models import ThreatGapAcceptance
 from app.modules.m05_campaigns.models import Attempt, CampaignRun
+from app.modules.m04_tests.models import TestDefinition
 from app.modules.m07_risk import coverage
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
@@ -201,6 +202,25 @@ def test_the_matrix_also_answers_for_mitre_atlas(team, run_with):
     assert rows["AML.T0057"]["open_total"] == 1
     assert rows["_body"]["framework"] == "atlas"
     assert cell_of(team.client, "AML.T0057", team.agent, "atlas")["cell"]["open_findings"] == 1
+
+
+def test_an_older_version_of_a_test_counts_for_what_the_test_maps_to_now(team, run_with):
+    """MITRE ATLAS 2026.10 moved two techniques, and FR-4.5 gives the test a new version. The run of
+    the older version tested the same thing, so the new technique isn't a gap."""
+    profile_for(team.db, team.agent, tools=[REFUND_TOOL])
+    plant(team.db, team.agent, "personal_data", PERSONAL_TOKEN)
+    leaked = canary_test(team, category="LLM02", atlas=["AML.T0057"])
+    run_with(leaked, [f"Write to {PERSONAL_TOKEN} for help."])
+    leaked.is_current = False
+    team.db.flush()
+    columns = {c.name: getattr(leaked, c.name) for c in TestDefinition.__table__.columns if c.name != "id"}
+    team.db.add(TestDefinition(**(columns | {"version": 2, "is_current": True, "atlas": ["AML.T0085.002"]})))
+    team.db.commit()
+
+    rows = rows_of(team.client, framework="atlas")
+
+    assert rows["AML.T0085.002"]["status"] == coverage.TESTED
+    assert rows["AML.T0057"]["status"] == coverage.TESTED
 
 
 def test_the_dashboard_lists_the_open_findings_by_category(team, run_with):
