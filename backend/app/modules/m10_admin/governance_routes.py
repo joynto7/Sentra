@@ -18,7 +18,7 @@ from app.core.models import Organization
 from app.modules.m01_users.deps import current_user, platform_admin
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m10_admin import audit_log, data_sharing, user_admin
+from app.modules.m10_admin import audit_log, data_sharing, retention, user_admin
 from app.modules.m10_admin.schemas import (
     AccountOrganizationOut,
     AccountOut,
@@ -36,6 +36,11 @@ from app.modules.m10_admin.schemas import (
     LLMTaskOut,
     MembershipStatusOut,
     PasswordConfirmIn,
+    RetentionIn,
+    RetentionKindOut,
+    RetentionOut,
+    RetentionPreviewOut,
+    RetentionRunOut,
     SuspendIn,
     SuspensionImpactOut,
 )
@@ -373,3 +378,84 @@ def change_data_and_ai(
         db, membership, user, data.local_models_only, data.password, background
     )
     return data_sharing_out(db, organization)
+
+
+# ---------------------------------------------------------------- data retention (UC-10.7)
+
+
+def _kind(days: int, name: str, amount: retention.Amount) -> RetentionKindOut:
+    low, high = retention.LIMITS[name]
+    return RetentionKindOut(
+        days=days, minimum=low, maximum=high, items=amount.items, bytes=amount.bytes
+    )
+
+
+def retention_out(db: Session, organization_id: uuid.UUID) -> RetentionOut:
+    periods = retention.periods_of(db, organization_id)
+    row = retention.row_of(db, organization_id)
+    amounts = retention.stored(db, organization_id)
+    changed_by = db.get(User, row.updated_by_id) if row and row.updated_by_id else None
+    last = retention.last_run(db, organization_id)
+    return RetentionOut(
+        evidence=_kind(periods.evidence_days, "evidence_days", amounts["evidence"]),
+        campaign=_kind(periods.campaign_days, "campaign_days", amounts["campaign"]),
+        reports=_kind(periods.report_days, "report_days", amounts["reports"]),
+        using_defaults=row is None,
+        changed_by=changed_by.name if changed_by else None,
+        changed_at=row.updated_at if row else None,
+        clean_up_at=retention.CLEAN_UP_AT,
+        last_run=RetentionRunOut.model_validate(last, from_attributes=True) if last else None,
+        audit_log_days=retention.AUDIT_LOG_DAYS,
+    )
+
+
+@router.get("/retention")
+def read_retention(
+    membership: Membership = Depends(can_manage_data), db: Session = Depends(get_db)
+) -> RetentionOut:
+    """Screen 60: the three periods with the range the platform allows, how much is stored, and
+    what the last clean-up did (UC-10.7 step 1, UC-10.8 step 6)."""
+    return retention_out(db, membership.organization_id)
+
+
+@router.get("/retention/preview")
+def preview_retention(
+    evidence_days: int = Query(ge=1, le=36500),
+    campaign_days: int = Query(ge=1, le=36500),
+    report_days: int = Query(ge=1, le=36500),
+    membership: Membership = Depends(can_manage_data),
+    db: Session = Depends(get_db),
+) -> RetentionPreviewOut:
+    """Step 4: what the next clean-up would delete with these periods — the same code that does
+    the deleting, asked only to count — and 4a's open findings whose evidence is among it."""
+    periods = retention.Periods(evidence_days, campaign_days, report_days)
+    retention.check(periods)  # 3a1, so the preview refuses what the save would refuse
+    found = retention.clean_up(db, membership.organization_id, periods=periods, dry_run=True)
+    return RetentionPreviewOut(
+        evidence_items=found.evidence.items,
+        evidence_bytes=found.evidence.bytes,
+        attempts=found.attempts.items,
+        reports=found.reports.items,
+        postponed=found.postponed,
+        open_findings=found.open_findings,
+    )
+
+
+@router.put("/retention")
+def change_retention(
+    data: RetentionIn,
+    membership: Membership = Depends(can_manage_data),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> RetentionOut:
+    """Steps 3-6: the periods are checked against the platform's range (3a), confirmed with the
+    password (NFR-3.5) and saved. Nothing is deleted now; the next daily clean-up does it, so a
+    mistaken change can still be corrected (quality requirement 6)."""
+    retention.save(
+        db,
+        admin=membership,
+        admin_user=user,
+        periods=retention.Periods(data.evidence_days, data.campaign_days, data.report_days),
+        password=data.password,
+    )
+    return retention_out(db, membership.organization_id)
