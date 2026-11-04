@@ -410,6 +410,38 @@ def test_one_documented_weakness_counts_as_one_discovery(
     assert len(found["unmatched"]) == 1
 
 
+def test_a_finding_is_matched_to_the_weakness_whose_slot_it_proved(
+    analyst,  # noqa: F811
+    db,
+    lab_target,
+    definition,
+):
+    run = benchmark_run(db, lab_target, repetitions=1)
+    # Two documented weaknesses of the category LLM01, the one without a canary slot first. A
+    # finding that proved the second one's slot must take that one and not the loose first one,
+    # or the finding that proved nothing would be left with a slot it can't match.
+    row = db.scalar(select(LabDeployment))
+    row.known_vulnerabilities = [
+        {**KNOWN[1], "id": "RAG-04", "title": "Direct prompt injection", "slot": None},
+        KNOWN[1],
+    ]
+    db.commit()
+    ran(
+        db,
+        definition,
+        run.repetition_rows[0],
+        findings=[
+            ("LLM01", "Knowledge sources", DOCUMENT),
+            ("LLM01", "System prompt", SYSTEM_PROMPT),
+        ],
+    )
+
+    found = evaluation(analyst, run)
+
+    assert figure(found, "A", "discovery_rate")["mean"] == 100.0  # both, not one
+    assert found["unmatched"] == []
+
+
 def test_a_documented_component_has_to_match_as_well(
     analyst,  # noqa: F811
     db,
