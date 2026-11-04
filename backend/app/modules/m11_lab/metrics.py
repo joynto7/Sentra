@@ -385,8 +385,8 @@ def _document(db: Session, user: User, finding: Finding, note: str | None) -> No
 
 PERCENT, COUNT, MINUTES, USD, TOKENS = "percent", "count", "minutes", "usd", "tokens"
 NO_BENIGN = (
-    "The share of benign requests blocked or changed is measured by the retest of FR-8.5 with its "
-    "own benign request set, which isn't part of this comparison."
+    "The share of benign requests blocked or changed is measured by a retest with its own benign "
+    "request set, which isn't part of this comparison."
 )
 
 

@@ -338,7 +338,7 @@ export function TargetHistory({ id }: { id: string }) {
         <div className="min-w-0">
           {history.scores.length === 0 ? (
             <p className="text-[13px] text-muted-foreground">
-              No risk score yet. The first campaign run of this target calculates one (FR-7.2).
+              No risk score yet. The first campaign run of this target calculates one.
             </p>
           ) : asTable ? (
             <ScoreTable scores={history.scores} />

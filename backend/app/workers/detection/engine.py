@@ -22,7 +22,7 @@ log = logging.getLogger("uvicorn.error")
 BUDGET_MS = 100  # for the deterministic methods of one attempt (NFR-1.4)
 NO_TOOL_PATH = (
     "The target's answers don't name its tool calls, so they can't be inspected. Its registration "
-    "needs the place of the tool calls in its response format (FR-2.1)."
+    "needs the place of the tool calls in its response format."
 )
 UNREADABLE_TOOLS = (
     "The target's tool calls can't be read: Sentra reads a list of calls, each with the tool's "

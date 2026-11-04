@@ -55,7 +55,7 @@ NOT_SUBMITTED = (
 )
 NO_MANAGER = (
     "{organization} has no Security Manager, so nobody could approve a campaign. Give someone the "
-    "Security Manager role first (Screen 09)."
+    "Security Manager role first, under Administration, Members."
 )
 OWN_CAMPAIGN = "You can't approve campaigns you created."
 NOT_A_MANAGER = "Only a Security Manager approves a campaign's scope."

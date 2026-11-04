@@ -143,7 +143,7 @@ function FindingPanel({
 }
 
 /** Screen 38: the organization's findings (UC-6.4), the most severe first. */
-export function FindingsList() {
+export function FindingsList({ targetId }: { targetId?: string } = {}) {
   const organization = useSession().organization
   const query = useSearchParams()
   // The risk dashboard (Screen 42) links here with the filter behind every number it shows, so
@@ -151,7 +151,8 @@ export function FindingsList() {
   const asked = query.get("view") as FindingView | null
   const [view, setView] = useState<FindingView>(asked && VIEWS.includes(asked) ? asked : "open")
   const [search, setSearch] = useState("")
-  const [target, setTarget] = useState(query.get("target_id") ?? "")
+  // Inside a target's tabs the list shows only that target, so it has no target filter.
+  const [target, setTarget] = useState(targetId ?? query.get("target_id") ?? "")
   const [severity, setSeverity] = useState(query.get("severity") ?? "")
   const [category, setCategory] = useState(query.get("category") ?? "")
   const [status, setStatus] = useState(query.get("status") ?? "")
@@ -198,17 +199,17 @@ export function FindingsList() {
     }
   }, [view, search, target, severity, category, status, runId, owner, page, attempt])
 
-  const filtered = Boolean(search.trim() || target || severity || category || status || runId || owner)
+  const filtered = Boolean(search.trim() || (target && !targetId) || severity || category || status || runId || owner)
   const clearFilters = useCallback(() => {
     setSearch("")
-    setTarget("")
+    setTarget(targetId ?? "")
     setSeverity("")
     setCategory("")
     setStatus("")
     setRunId("")
     setOwner("")
     setPage(1)
-  }, [])
+  }, [targetId])
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
 
   const panel = (
@@ -231,15 +232,17 @@ export function FindingsList() {
             className="h-9 w-full rounded-[7px] border border-input bg-card pr-3 pl-8 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           />
         </label>
-        <FilterSelect
-          label="Target"
-          value={target}
-          onChange={(value) => {
-            setTarget(value)
-            setPage(1)
-          }}
-          options={(options?.targets ?? []).map((row) => ({ value: row.id, label: row.name }))}
-        />
+        {!targetId && (
+          <FilterSelect
+            label="Target"
+            value={target}
+            onChange={(value) => {
+              setTarget(value)
+              setPage(1)
+            }}
+            options={(options?.targets ?? []).map((row) => ({ value: row.id, label: row.name }))}
+          />
+        )}
         <FilterSelect
           label="Severity"
           value={severity}
@@ -451,10 +454,12 @@ export function FindingsList() {
 
   return (
     <>
-      <PageHeader
-        title="Findings"
-        description={`Weaknesses found in ${organization?.name ?? "your organization"}'s targets, with evidence.`}
-      />
+      {!targetId && (
+        <PageHeader
+          title="Findings"
+          description={`Weaknesses found in ${organization?.name ?? "your organization"}'s targets, with evidence.`}
+        />
+      )}
 
       <Tabs
         value={view}

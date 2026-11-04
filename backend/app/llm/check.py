@@ -24,7 +24,7 @@ def main(names: list[str]) -> int:
         for task in tasks:
             choice = model_for(db, task)
             if choice is None:
-                print(f"{task}: no model configured (assign one on Screen 62, or set LLM_MODEL)")
+                print(f"{task}: no model configured (assign one under LLM Providers, or set LLM_MODEL)")
                 failed += 1
                 continue
             try:

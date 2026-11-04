@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { useSession } from "@/components/session-provider"
+import { TargetTabs } from "@/components/targets/target-tabs"
 import { AddThreatDialog } from "@/components/threat-models/add-threat-dialog"
 import { NewerVersionDialog } from "@/components/threat-models/newer-version-dialog"
 import { RemoveThreatDialog } from "@/components/threat-models/remove-threat-dialog"
@@ -293,7 +294,16 @@ function DraftBanner({ current }: { current: VersionDetail }) {
 
 /** Screen 26: one version of a target's threat model, its components and threats; reviewing and
  * approving it (UC-3.1 result, UC-3.2). Only a Security Analyst changes or approves it. */
-export function ThreatModelReview({ targetId, initialVersion }: { targetId: string; initialVersion: number | null }) {
+export function ThreatModelReview({
+  targetId,
+  initialVersion,
+  inTarget = false,
+}: {
+  targetId: string
+  initialVersion: number | null
+  /** Inside the target's tabs (Screen 20), not under Threat Models. */
+  inTarget?: boolean
+}) {
   const router = useRouter()
   const me = useSession().name
   const canManage = useCan("manage_threat_models")
@@ -338,7 +348,13 @@ export function ThreatModelReview({ targetId, initialVersion }: { targetId: stri
     return () => controller.abort()
   }, [targetId, version])
 
-  usePageCrumbs(page ? [{ label: page.target.name }] : [])
+  usePageCrumbs(
+    page
+      ? inTarget
+        ? [{ label: page.target.name, href: `/targets/${targetId}` }, { label: "Threat model" }]
+        : [{ label: page.target.name }]
+      : [],
+  )
 
   const changes = count(pending)
   const current = page?.current ?? null
@@ -679,6 +695,7 @@ export function ThreatModelReview({ targetId, initialVersion }: { targetId: stri
           </div>
         )}
       </div>
+      {inTarget && <TargetTabs targetId={targetId} active="threat-model" />}
 
       {archived && (
         <Alert className="mb-4">

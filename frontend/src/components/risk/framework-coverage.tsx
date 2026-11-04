@@ -47,9 +47,9 @@ const TINT: Partial<Record<CoverageStatus, string>> = {
  * cell carries its own text, so the matrix can be read without colour, and selecting one opens
  * the panel with the threats, the suites and the way to accept the gap.
  */
-export function FrameworkCoverage() {
+export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: string } = {}) {
   const [framework, setFramework] = useState<"owasp" | "atlas">("owasp")
-  const [target, setTarget] = useState("")
+  const [target, setTarget] = useState(initialTarget)
   const [data, setData] = useState<Coverage | null>(null)
   const [options, setOptions] = useState<{ id: string; name: string }[]>([])
   const [error, setError] = useState(false)

@@ -339,7 +339,7 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
           <Kpi
             label="New · seen again · reopened"
             value={inRun ? `${inRun.new} · ${inRun.seen_again} · ${inRun.reopened}` : "–"}
-            note="New weaknesses, the same root cause again (FR-6.6), and fixed ones that came back"
+            note="New weaknesses, the same root cause again, and fixed ones that came back"
           />
         ) : (
           <Kpi label="Request rate" value={`${run.request_rate}/min`} note="Never faster than the target's safe rate" />
@@ -446,7 +446,7 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
           <Card title="Versions used">
             <p className="text-sm text-text-secondary">
               The run keeps the versions it started with, so a later change to a suite or a test doesn&apos;t change
-              it (FR-4.5).
+              it.
             </p>
             <dl className="space-y-1 text-sm">
               <div className="flex justify-between gap-2">
