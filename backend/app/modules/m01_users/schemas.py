@@ -258,6 +258,58 @@ class MfaStatusOut(BaseModel):
     required_by: list[str]  # the user's organizations that require it
 
 
+class SsoDetailsIn(BaseModel):
+    """What an Organization Administrator types in the "Single sign-on" card (UC-1.7 step 4)."""
+
+    protocol: str = "oidc"
+    email_domain: str
+    issuer: str
+    client_id: str
+    client_secret: str
+
+    def details(self):
+        from app.modules.m01_users.sso import Details
+
+        return Details(
+            email_domain=self.email_domain,
+            issuer=self.issuer,
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            protocol=self.protocol,
+        )
+
+
+class SsoOut(BaseModel):
+    """The connection as Screen 11 shows it. The client secret is never given back."""
+
+    connected: bool
+    protocol: str
+    email_domain: str | None
+    issuer: str | None
+    client_id: str | None
+    tested_at: datetime | None
+    # The one address the provider may answer to; the administrator copies it into the provider.
+    redirect_uri: str
+
+
+class SsoTestOut(BaseModel):
+    """The answer of "Test connection" (UC-1.7 step 5 and 5a)."""
+
+    ok: bool
+    message: str
+
+
+class SsoStartIn(BaseModel):
+    email: str
+
+
+class SsoStartOut(BaseModel):
+    """Where to send the browser (UC-1.5 step 2), or why not (2a)."""
+
+    authorization_url: str | None
+    message: str | None
+
+
 class OrganizationSecurityIn(BaseModel):
     mfa_required: bool
 
@@ -267,6 +319,8 @@ class OrganizationSecurityOut(BaseModel):
 
     mfa_required: bool
     members_without_mfa: int
+    # The identity provider of FR-1.3, in the same answer: Screen 11 is one page.
+    sso: SsoOut
     # This session's last password confirmation, and until when it allows changes (step 2).
     password_confirmed_at: datetime | None
     password_confirmed_until: datetime | None

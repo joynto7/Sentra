@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api"
+import type { SsoConnection } from "@/lib/sso"
 
 /** Types and API calls of two-step verification (FR-1.2): Screens 02, 09, 10 and 11. */
 
@@ -23,6 +24,8 @@ export type OrganizationSecurity = {
   members_without_mfa: number
   password_confirmed_at: string | null
   password_confirmed_until: string | null
+  /** The organization's identity provider (FR-1.3); Screen 11 is one page for both settings. */
+  sso: SsoConnection
 }
 
 const post = (body?: unknown) => ({ method: "POST", body: body === undefined ? undefined : JSON.stringify(body) })

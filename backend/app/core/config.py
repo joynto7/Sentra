@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
     web_url: str = "http://localhost:3000"
+    # Sentra's own API as a browser reaches it. Single sign-on needs it (FR-1.3): the identity
+    # provider sends its answer straight here, because the session cookie is set in that answer.
+    api_url: str = "http://localhost:8000/api"
     # Run every module's startup.py when the API starts (switched off in the tests).
     run_startup_hooks: bool = True
 

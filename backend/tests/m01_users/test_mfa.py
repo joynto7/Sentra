@@ -365,11 +365,14 @@ def require(client: TestClient, required: bool = True):
 
 
 def test_changing_the_requirement_needs_the_password_again(tom, db):
-    assert tom.get(SECURITY).json() == {
+    # Screen 11 is one page, so the answer also carries the identity provider of FR-1.3; what it
+    # says about it is tested in test_sso.py.
+    assert tom.get(SECURITY).json() | {"sso": None} == {
         "mfa_required": False,
         "members_without_mfa": 3,
         "password_confirmed_at": None,
         "password_confirmed_until": None,
+        "sso": None,
     }
     assert require(tom).json()["error"]["code"] == "password_confirmation_required"
     wrong = tom.post("/api/v1/auth/confirm-password", json={"password": "Not-The-Right-One-99"})
