@@ -20,6 +20,7 @@ from app.core.audit import AuditLogEntry, chain_key
 from app.core.models import Organization
 from app.modules.m01_users.models import Invitation, InvitationStatus, Membership, User
 from app.modules.m02_targets.models import Target, TargetStatus
+from app.modules.m05_campaigns.models import ENDED, CampaignRun, RunType
 
 
 @dataclass
@@ -76,9 +77,15 @@ def _first(db: Session, organization_id: uuid.UUID, *conditions) -> TargetRef | 
 
 
 def _campaign_run_finished(db: Session, organization_id: uuid.UUID) -> bool:
-    """Step 5. Campaign runs come with FR-5.4 (Joynto's J-S2-02); until they exist, no run can
-    have finished."""
-    return False
+    """Step 5: a campaign run has ended and its target answered, so there are results to read. A
+    run stopped before anything was sent doesn't count, and neither does a retest or a benchmark."""
+    finished = select(CampaignRun.id).where(
+        CampaignRun.organization_id == organization_id,
+        CampaignRun.run_type == RunType.CAMPAIGN,
+        CampaignRun.status.in_(ENDED),
+        CampaignRun.attempts_replied > 0,
+    )
+    return db.scalar(select(finished.exists()))
 
 
 def first_steps(db: Session, organization_id: uuid.UUID) -> FirstSteps:
