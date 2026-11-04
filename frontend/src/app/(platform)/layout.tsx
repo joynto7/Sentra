@@ -2,6 +2,7 @@ import { cookies } from "next/headers"
 
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { BreadcrumbProvider } from "@/components/layout/breadcrumbs"
+import { SkipLink } from "@/components/layout/skip-link"
 import { TopBar } from "@/components/layout/top-bar"
 import { PlatformGuard } from "@/components/platform/platform-guard"
 import { SessionProvider } from "@/components/session-provider"
@@ -18,11 +19,14 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     <SessionProvider requireOrganization={false}>
       <PlatformGuard>
         <BreadcrumbProvider>
+          <SkipLink />
           <SidebarProvider defaultOpen={defaultOpen}>
             <AppSidebar platform />
             <SidebarInset className="min-w-0 bg-background">
               <TopBar />
-              <main className="flex-1 px-4 py-6 md:px-8">{children}</main>
+              <main id="main-content" tabIndex={-1} className="flex-1 px-4 py-6 outline-none md:px-8">
+                {children}
+              </main>
             </SidebarInset>
           </SidebarProvider>
           <Toaster position="bottom-right" />
