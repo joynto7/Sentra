@@ -176,8 +176,9 @@ export function FindingView({ code }: { code: string }) {
 
   const detection = finding.detection
   // A proposal can be asked for once the finding is confirmed; the row below says why not before.
+  const writing = remediation?.job?.status === "queued" || remediation?.job?.status === "running"
   const requestable = Boolean(
-    canRequest && remediation && !remediation.blocker && !remediation.current && !remediation.job,
+    canRequest && remediation && !remediation.blocker && !remediation.current && !writing,
   )
 
   return (
@@ -321,6 +322,10 @@ export function FindingView({ code }: { code: string }) {
                 {remediation?.current ? (
                   <Link href={`/findings/${finding.code}/remediation`} className="text-link hover:underline">
                     Version {remediation.current.version} · {STATUS_LABEL[remediation.current.status]}
+                  </Link>
+                ) : writing ? (
+                  <Link href={`/findings/${finding.code}/remediation`} className="text-link hover:underline">
+                    Being written
                   </Link>
                 ) : (
                   "Not started"
