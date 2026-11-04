@@ -15,18 +15,28 @@ from app.core.database import get_db
 from app.modules.m01_users.deps import current_membership, current_user
 from app.modules.m01_users.models import Membership, User
 from app.modules.m02_targets.models import Target
-from app.modules.m11_lab import benchmark, deployment
+from app.modules.m11_lab import benchmark, deployment, metrics
 from app.modules.m11_lab.models import BenchmarkRun
 from app.modules.m11_lab.schemas import (
+    AgreementOut,
+    BaselineOut,
     BenchmarkDetail,
     BenchmarkIn,
     BenchmarkItem,
+    DocumentedOut,
     EstimateOut,
+    EvaluationOut,
+    FigureOut,
     KnownVulnerability,
     LabCardOut,
+    LabelIn,
     LabOut,
+    MatchedOut,
+    MeasureOut,
     RepetitionOut,
+    StrategyMetricsOut,
     StrategyOut,
+    ToLabelOut,
 )
 
 router = APIRouter(prefix="/lab", tags=["M11 Security Lab"])
@@ -251,3 +261,103 @@ def stop_benchmark(
 ) -> BenchmarkDetail:
     """The analyst stops the experiment; the repetitions that finished are kept."""
     return _detail(db, benchmark.stop(db, membership, user, code))
+
+
+# ---------------------------------------------------------------- the evaluation (FR-11.4)
+
+
+def _matched(row: metrics.Matched) -> MatchedOut:
+    return MatchedOut(**row.__dict__)
+
+
+def _evaluation(found: metrics.Evaluation) -> EvaluationOut:
+    return EvaluationOut(
+        **{
+            **found.__dict__,
+            "documented": [DocumentedOut(**item.__dict__) for item in found.documented],
+            "strategies": [
+                StrategyMetricsOut(
+                    **{
+                        **strategy.__dict__,
+                        "figures": [FigureOut(**f.__dict__) for f in strategy.figures],
+                        "rows": [MeasureOut(**m.__dict__) for m in strategy.rows],
+                    }
+                )
+                for strategy in found.strategies
+            ],
+            "agreement": [AgreementOut(**row.__dict__) for row in found.agreement],
+            "unmatched": [_matched(row) for row in found.unmatched],
+            "baseline": BaselineOut(**found.baseline.__dict__) if found.baseline else None,
+        }
+    )
+
+
+@router.get("/benchmarks/{code}/evaluation")
+def read_evaluation(
+    code: str,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> EvaluationOut:
+    """Screen 69 (UC-11.5): the metrics of every strategy with the mean and spread over the
+    repetitions, the detection agreement, the version of each list of documented weaknesses, and
+    which labels are still missing. It is calculated when it is read, so one more label or a
+    newly documented weakness (2a1) changes it at once. Every member may read it."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    return _evaluation(metrics.evaluation(db, run))
+
+
+@router.get("/benchmarks/{code}/findings")
+def unmatched_findings(
+    code: str,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> list[MatchedOut]:
+    """UC-11.5 step 2: the findings of the run that matched no documented weakness."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    return [_matched(row) for row in metrics.unmatched(db, run)]
+
+
+@router.post("/benchmarks/{code}/findings/{finding_id}/label")
+def label_finding(
+    code: str,
+    finding_id: uuid.UUID,
+    data: LabelIn,
+    membership: Membership = Depends(current_membership),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> list[MatchedOut]:
+    """UC-11.5 step 2: a false positive, or a real weakness the lab target's list doesn't name
+    yet — which documents it as a new version of that list (2a1)."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    found = metrics.label_finding(db, membership, user, run, finding_id, data.verdict, data.note)
+    return [_matched(row) for row in found]
+
+
+@router.get("/benchmarks/{code}/sample")
+def blind_sample(
+    code: str,
+    place: int | None = None,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> ToLabelOut | None:
+    """Screen 68 (UC-11.5 step 3): the next attempt of the random sample to label, or the one at
+    `place`. Nothing in the answer says what Sentra decided (quality requirement 3)."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    found = metrics.sample(db, run, place)
+    return ToLabelOut(**found.__dict__) if found else None
+
+
+@router.post("/benchmarks/{code}/sample/{attempt_id}/label")
+def label_attempt(
+    code: str,
+    attempt_id: uuid.UUID,
+    data: LabelIn,
+    membership: Membership = Depends(current_membership),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> ToLabelOut | None:
+    """UC-11.5 step 3: successful, unsuccessful or unsure, and the next attempt comes back. A
+    second label on the same attempt replaces the first."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    found = metrics.label_attempt(db, membership, user, run, attempt_id, data.verdict, data.note)
+    return ToLabelOut(**found.__dict__) if found else None

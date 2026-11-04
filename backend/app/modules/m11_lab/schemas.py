@@ -8,12 +8,16 @@ from pydantic import BaseModel, Field
 
 
 class KnownVulnerability(BaseModel):
-    """One documented weakness of a lab target, as the application itself reports it (FR-11.1)."""
+    """One documented weakness of a lab target: as the application itself reports it (FR-11.1),
+    or as an analyst documented it after a benchmark found it (UC-11.5, 2a1)."""
 
     id: str
     title: str
     category: str  # the OWASP LLM category, e.g. "LLM01"
     description: str
+    slot: str | None = None  # the canary token it is reached through, in Sentra's words
+    component: str | None = None
+    source: str = "lab"  # "lab" or "analyst"
 
 
 class LabCardOut(BaseModel):
@@ -121,3 +125,132 @@ class BenchmarkDetail(BenchmarkItem):
     versions: dict
     order_seed: int | None
     repetition_rows: list[RepetitionOut]
+
+
+# ---------------------------------------------------------------- benchmark metrics (FR-11.4)
+
+
+class FigureOut(BaseModel):
+    """One metric of one strategy, as a mean over the repetitions with their spread."""
+
+    key: str
+    label: str
+    unit: str  # percent, count, minutes, usd or tokens
+    mean: float | None
+    sd: float | None
+    repetitions: int
+    values: list[float]
+    note: str | None
+
+
+class MeasureOut(BaseModel):
+    id: uuid.UUID
+    target_name: str
+    repetition: int
+    status: str
+    documented: int
+    discovered: int
+    findings: int
+    false_positives: int
+    unlabelled: int
+    attempts: int
+    successful: int
+    minutes: float | None
+    tokens: int
+    cost_usd: Decimal
+
+
+class StrategyMetricsOut(BaseModel):
+    key: str
+    name: str
+    suites: list[str]
+    adaptive_agent: bool
+    completed: int
+    incomplete: int
+    figures: list[FigureOut]
+    rows: list[MeasureOut]
+
+
+class AgreementOut(BaseModel):
+    """The LLM judge alone and the combined detection against the analyst's blind labels."""
+
+    key: str
+    label: str
+    labelled: int
+    unsure: int
+    without_verdict: int
+    true_positive: int
+    false_positive: int
+    true_negative: int
+    false_negative: int
+    precision: float | None
+    recall: float | None
+    agreement: float | None
+
+
+class DocumentedOut(BaseModel):
+    target_id: uuid.UUID
+    target_name: str
+    count: int
+    version: int
+    added_by_analyst: int
+
+
+class MatchedOut(BaseModel):
+    """A finding of the benchmark run: which documented weakness it matched, or none (step 2)."""
+
+    finding_id: uuid.UUID
+    finding_number: int
+    known_id: str | None
+    category: str
+    title: str
+    component: str
+    label: str | None
+
+
+class BaselineOut(BaseModel):
+    code: str
+    name: str
+    rows: list[dict]
+    note: str
+
+
+class EvaluationOut(BaseModel):
+    code: str
+    name: str
+    status: str
+    ready: bool
+    judge_every_attempt: bool
+    documented: list[DocumentedOut]
+    strategies: list[StrategyMetricsOut]
+    agreement: list[AgreementOut]
+    unmatched: list[MatchedOut]
+    sample_total: int
+    sample_labelled: int
+    incomplete: int
+    missing: list[str]
+    baseline: BaselineOut | None
+
+
+class ToLabelOut(BaseModel):
+    """One attempt of the blind sample, with nothing of Sentra's own verdict in it (step 3)."""
+
+    attempt_id: uuid.UUID
+    place: int
+    total: int
+    labelled: int
+    target_name: str
+    category: str
+    test_code: str
+    objective: str
+    message: str
+    reply: str | None
+    tool_calls: str | None
+    note: str | None
+    verdict: str | None
+    blind: str
+
+
+class LabelIn(BaseModel):
+    verdict: str = Field(max_length=20)
+    note: str | None = Field(default=None, max_length=2000)

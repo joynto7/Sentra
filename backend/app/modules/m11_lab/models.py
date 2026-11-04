@@ -47,8 +47,12 @@ class LabDeployment(UUIDPrimaryKey, OrganizationScoped, Base):
     )
     lab_key: Mapped[str] = mapped_column(String(40))  # catalogue.CATALOGUE
     state: Mapped[str] = mapped_column(String(20), default=LabState.READY)
-    # What the lab target itself says it is vulnerable to (FR-11.1), read from /lab/state
+    # What the lab target itself says it is vulnerable to (FR-11.1), read from /lab/state, plus
+    # the entries an analyst documented after a benchmark found something undocumented (UC-11.5,
+    # 2a1); those carry "source": "analyst". `known_version` counts the changes, so a benchmark's
+    # metrics can say which version of the list they were measured against.
     known_vulnerabilities: Mapped[list] = mapped_column(JSONB, default=list)
+    known_version: Mapped[int] = mapped_column(default=1)
     deployed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -159,3 +163,54 @@ class BenchmarkRepetition(UUIDPrimaryKey, Base):
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal(0))
 
     benchmark: Mapped[BenchmarkRun] = relationship(back_populates="repetition_rows")
+
+
+class LabelKind(StrEnum):
+    """What an analyst labelled during a benchmark's evaluation (UC-11.5 steps 2-3)."""
+
+    ATTEMPT = "attempt"  # a blind sample: did this attempt succeed?
+    FINDING = "finding"  # a finding that matched no documented weakness
+
+
+class AttemptLabel(StrEnum):
+    SUCCESSFUL = "successful"
+    UNSUCCESSFUL = "unsuccessful"
+    UNSURE = "unsure"  # left out of the agreement figures
+
+
+class FindingLabel(StrEnum):
+    FALSE_POSITIVE = "false_positive"
+    UNDOCUMENTED = "undocumented"  # a real weakness the lab target's list doesn't name yet (2a)
+
+
+class BenchmarkLabel(UUIDPrimaryKey, Base):
+    """One judgement a person made about a benchmark run's results (UC-11.5 steps 2-3, NFR-9.5).
+
+    The attempt labels are made **without** the detection results, so they are an independent
+    reference to measure the detection against; nothing in this row says what Sentra thought.
+    """
+
+    __tablename__ = "benchmark_labels"
+    __table_args__ = (
+        UniqueConstraint("benchmark_run_id", "attempt_id", name="uq_benchmark_labels_one_attempt"),
+        UniqueConstraint("benchmark_run_id", "finding_id", name="uq_benchmark_labels_one_finding"),
+    )
+
+    benchmark_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("benchmark_runs.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(10))  # LabelKind
+    attempt_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("attempts.id", ondelete="CASCADE")
+    )
+    finding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE")
+    )
+    verdict: Mapped[str] = mapped_column(String(20))  # AttemptLabel or FindingLabel
+    note: Mapped[str | None] = mapped_column(Text)
+    labelled_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    labelled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

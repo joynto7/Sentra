@@ -613,8 +613,8 @@ def _pause(db: Session, run: BenchmarkRun, why: str) -> None:
 
 
 def _finish(db: Session, run: BenchmarkRun) -> None:
-    """Step 7: every repetition has ended, so the analyst is told. The evaluation of UC-11.5 comes
-    with FR-11.4, which reads these repetitions."""
+    """Step 7: every repetition has ended, so the analyst is told. The evaluation of UC-11.5 is
+    calculated from these repetitions when it is read (`m11_lab/metrics.py`, FR-11.4)."""
     run.status, run.status_message = BenchmarkStatus.COMPLETED, FINISHED
     run.ended_at = datetime.now(UTC)
     audit.record(
