@@ -165,11 +165,6 @@ function LabTargetCard({
             <Button variant="outline" size="sm" onClick={onVulnerabilities} disabled={!card.vulnerabilities}>
               Known vulnerabilities
             </Button>
-            {card.active_run && (
-              <p className="w-full text-xs text-muted-foreground">
-                Reset is available when {card.active_run} has ended.
-              </p>
-            )}
           </>
         ) : (
           <Button size="sm" onClick={onDeploy} disabled={busy || !canUse}>

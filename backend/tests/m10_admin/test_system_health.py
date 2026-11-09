@@ -347,7 +347,10 @@ class FakeInspect:
         calls.append({"timeout": timeout, "limit": limit})
 
     def stats(self):
-        return {"worker-1": {"pool": {"processes": [1, 2]}}, "worker-2": {"pool": {"processes": [1]}}}
+        return {
+            "worker-1": {"pool": {"processes": [1, 2]}},
+            "worker-2": {"pool": {"processes": [1]}},
+        }
 
     def active(self):
         return {"worker-1": [{"id": "a"}], "worker-2": []}
