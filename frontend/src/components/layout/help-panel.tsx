@@ -89,7 +89,7 @@ export function HelpPanel() {
             <section className="border-t pt-5 text-sm text-muted-foreground">
               New to Sentra?{" "}
               <SheetClose asChild>
-                <Link href="/getting-started" className="text-[var(--link)] underline-offset-2 hover:underline">
+                <Link href="/getting-started" className="text-[var(--link)] underline underline-offset-2">
                   Start with Getting Started
                 </Link>
               </SheetClose>
