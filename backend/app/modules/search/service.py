@@ -36,7 +36,10 @@ def _total(db: Session, query) -> int:
 
 
 def _target_names(db: Session, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
-    return {id_: name for id_, name in db.execute(select(Target.id, Target.name).where(Target.id.in_(ids)))}
+    return {
+        id_: name
+        for id_, name in db.execute(select(Target.id, Target.name).where(Target.id.in_(ids)))
+    }
 
 
 def _targets(db: Session, organization_id: uuid.UUID, words: str) -> dict:
