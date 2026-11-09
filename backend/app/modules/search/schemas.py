@@ -1,4 +1,4 @@
-"""The answer of the search box. Only these fields leave the API: what the lists show every member."""
+"""The answer of the search box. Only these fields leave the API: what a list shows every member."""
 
 import uuid
 
