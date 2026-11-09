@@ -19,7 +19,8 @@ def search(
 ) -> dict:
     """POST although it only reads: people search for sensitive things, and in a POST the words stay
     out of the address, so out of the access logs and the browser's history. Every member may read
-    their organization's targets, findings and campaigns (FR-1.6, M1), so no role is checked here."""
+    their organization's targets, findings and campaigns (FR-1.6, M1), so no role is checked
+    here."""
     if not service.limiter.allow(membership.user_id):
         raise AppError(
             "Too many searches in a short time. Wait a minute and try again.",
