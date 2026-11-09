@@ -1,6 +1,7 @@
 import { ATLAS_RETIRED, OWASP_2026, OWASP_EDITION, atlasHref, owaspHref } from "@/lib/frameworks"
 
-const LINK = "font-mono text-link underline-offset-2 hover:underline"
+// At least 24 px high, the target size of WCAG 2.5.8.
+const LINK = "inline-block min-h-6 font-mono leading-6 text-link underline-offset-2 hover:underline"
 
 /** A MITRE ATLAS technique that opens its page. A retired one says what replaced it. */
 export function AtlasId({ code, className }: { code: string; className?: string }) {

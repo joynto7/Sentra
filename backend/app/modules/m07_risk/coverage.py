@@ -147,8 +147,8 @@ def _runs(
         )
         .distinct()
     ).all()
-    # A newer version of a test may map to another technique, as when MITRE ATLAS 2026.10 retired two
-    # (FR-4.5, M4). A run of the older version tested the same thing, so it counts for both.
+    # A newer version of a test may map to another technique, as when MITRE ATLAS 2026.10 retired
+    # two (FR-4.5, M4). A run of the older version tested the same thing, so it counts for both.
     current = dict(
         db.execute(
             select(TestDefinition.code, TestDefinition.atlas).where(

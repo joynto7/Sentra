@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from app.modules.m03_threat_models.models import ThreatGapAcceptance
-from app.modules.m05_campaigns.models import Attempt, CampaignRun
 from app.modules.m04_tests.models import TestDefinition
+from app.modules.m05_campaigns.models import Attempt, CampaignRun
 from app.modules.m07_risk import coverage
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
@@ -213,8 +213,12 @@ def test_an_older_version_of_a_test_counts_for_what_the_test_maps_to_now(team, r
     run_with(leaked, [f"Write to {PERSONAL_TOKEN} for help."])
     leaked.is_current = False
     team.db.flush()
-    columns = {c.name: getattr(leaked, c.name) for c in TestDefinition.__table__.columns if c.name != "id"}
-    team.db.add(TestDefinition(**(columns | {"version": 2, "is_current": True, "atlas": ["AML.T0085.002"]})))
+    columns = {
+        c.name: getattr(leaked, c.name) for c in TestDefinition.__table__.columns if c.name != "id"
+    }
+    team.db.add(
+        TestDefinition(**(columns | {"version": 2, "is_current": True, "atlas": ["AML.T0085.002"]}))
+    )
     team.db.commit()
 
     rows = rows_of(team.client, framework="atlas")
