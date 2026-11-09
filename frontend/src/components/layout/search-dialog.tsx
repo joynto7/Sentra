@@ -118,14 +118,14 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
       >
         <DialogTitle className="sr-only">Search targets, findings and campaigns</DialogTitle>
         <Command shouldFilter={false} loop label="Search targets, findings and campaigns">
-          <div className="flex items-center gap-2.5 border-b px-3 focus-within:shadow-[inset_0_-2px_0_var(--ring)]">
+          <div className="flex items-center gap-2.5 border-b px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <Command.Input
               value={words}
               onValueChange={change}
               maxLength={100}
               placeholder="Search targets, findings, campaigns"
-              className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:shadow-[inset_0_-2px_0_var(--ring)]"
             />
             <kbd className="rounded border px-1.5 font-mono text-[11px] text-muted-foreground">Esc</kbd>
           </div>
