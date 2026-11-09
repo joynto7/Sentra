@@ -303,8 +303,8 @@ export function TriagePanel({
                     </p>
                   )}
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    A severity you set is never overwritten by the rating again; the calculated one stays beside it
-                   .
+                    A severity you set is never overwritten by the rating again; the calculated one stays beside
+                    it.
                   </p>
                 </div>
               )}

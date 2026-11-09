@@ -212,8 +212,8 @@ def _filtered(
 
 
 def _run_refs(db: Session, run_ids: set[uuid.UUID]) -> dict[uuid.UUID, dict]:
-    """The code of each run: R-001-2 for a campaign's run, BR-3 for a repetition of a benchmark run,
-    and "Retest" for a retest, whose run has no code of its own that people know."""
+    """The code of each run: R-001-2 for a campaign's run, BR-003 for a repetition of a benchmark
+    run, and "Retest" for a retest, whose run has no code of its own that people know."""
     rows = db.execute(
         select(CampaignRun, Campaign)
         .outerjoin(Campaign, Campaign.id == CampaignRun.campaign_id)
@@ -238,7 +238,9 @@ def _run_refs(db: Session, run_ids: set[uuid.UUID]) -> dict[uuid.UUID, dict]:
             return lifecycle.code(run, campaign)
         if run.run_type == RunType.RETEST:
             return "Retest"
-        return benchmarks.get((run.settings or {}).get("benchmark_run_id"), lifecycle.code(run, None))
+        return benchmarks.get(
+            (run.settings or {}).get("benchmark_run_id"), lifecycle.code(run, None)
+        )
 
     return {run.id: {"id": run.id, "code": code(run, campaign)} for run, campaign in rows}
 

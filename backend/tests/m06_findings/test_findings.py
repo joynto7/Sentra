@@ -16,10 +16,11 @@ from app.core import storage
 from app.core.config import get_settings
 from app.core.email import outbox
 from app.modules.m01_users.models import User
-from app.modules.m05_campaigns.models import AttemptStatus, CampaignRun
-from app.modules.m06_findings import evidence
+from app.modules.m05_campaigns.models import AttemptStatus, CampaignRun, RunType
+from app.modules.m06_findings import evidence, service
 from app.modules.m06_findings.models import Evidence, Finding
 from app.modules.m09_reporting.models import Notification
+from app.modules.m11_lab.models import BenchmarkRun
 from app.workers import jobs
 from app.workers.connector.connector import Reply
 from app.workers.connector.errors import TargetHTTPError
@@ -172,6 +173,43 @@ def test_the_same_root_cause_adds_evidence_and_the_run_to_its_finding(team, run_
         ("R-001-1", 2, True),
         ("R-001-2", 1, False),
     ]
+
+
+def test_a_run_without_a_campaign_is_named_as_people_know_it(team):
+    """A finding names the run that found it. A retest's run has no code of its own that people
+    know, and a repetition of a benchmark run carries the benchmark run's code, so neither shows
+    the start of its database ID."""
+    benchmark = BenchmarkRun(
+        organization_id=team.org, number=3, name="Strategies", attempt_budget=10, repetitions=2
+    )
+    team.db.add(benchmark)
+    team.db.flush()
+
+    def run(run_type: str, settings: dict) -> CampaignRun:
+        found = CampaignRun(
+            organization_id=team.org,
+            target_id=team.agent.id,
+            number=1,
+            run_type=run_type,
+            settings=settings,
+            attempt_budget=10,
+            request_rate=20,
+        )
+        team.db.add(found)
+        return found
+
+    retest = run(RunType.RETEST, {})
+    repetition = run(RunType.BENCHMARK, {"benchmark_run_id": str(benchmark.id)})
+    unknown = run(RunType.BENCHMARK, {})  # a benchmark run's link that is missing
+    team.db.commit()
+
+    refs = service._run_refs(team.db, {retest.id, repetition.id, unknown.id})
+
+    assert {run_id: ref["code"] for run_id, ref in refs.items()} == {
+        retest.id: "Retest",
+        repetition.id: "BR-003",
+        unknown.id: f"R-{str(unknown.id)[:8]}",
+    }
 
 
 def test_each_affected_component_is_a_root_cause_of_its_own(team, run_with):
