@@ -101,6 +101,12 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
   )
 }
 
+/** A run as a sentence names it: BR-012 is a benchmark run, and a retest has no code of its own. */
+function runName(code: string): string {
+  if (code === "Retest") return "a retest"
+  return code.startsWith("BR-") ? `benchmark run ${code}` : `campaign run ${code}`
+}
+
 /** Screen 39: one finding in plain language, with its rating, its detection and its details. */
 export function FindingView({ code }: { code: string }) {
   const router = useRouter()
@@ -279,7 +285,7 @@ export function FindingView({ code }: { code: string }) {
                   ))}
                 </ul>
                 <p className="text-xs text-muted-foreground">
-                  From attempt {detection.attempt_no} of campaign run {detection.run.code}.
+                  From attempt {detection.attempt_no} of {runName(detection.run.code)}.
                   {detection.disagreement
                     ? " The LLM judge disagreed with the deterministic methods; the deterministic evidence decided."
                     : ""}
