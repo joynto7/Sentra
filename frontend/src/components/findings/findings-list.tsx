@@ -556,10 +556,11 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
                       <SeverityBadge severity={finding.severity} />
                     </TableCell>
                     <TableCell className="py-2">
-                      {/* Two lines for the title before it is cut: it says what the finding is */}
+                      {/* One line, cut with an ellipsis, so rows stay about 56 px: the whole title
+                          is its tooltip, what a screen reader reads, and the preview's heading */}
                       <Link
                         href={`/findings/${finding.code}`}
-                        className="line-clamp-2 min-h-6 text-[13px] font-medium text-link hover:underline"
+                        className="block truncate text-[13px] leading-6 font-medium text-link hover:underline"
                         title={finding.title}
                       >
                         {finding.title}
