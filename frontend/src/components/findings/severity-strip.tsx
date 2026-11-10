@@ -21,7 +21,8 @@ export function SeverityStrip({
   return (
     <div role="group" aria-label="Show one severity" className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
       {SEVERITIES.map((severity) => {
-        const count = counts?.[severity] ?? 0
+        // Before the list has loaded, or when it couldn't, the strip says "–", as the tabs do
+        const count = counts?.[severity]
         const on = chosen === severity
         return (
           <button
@@ -29,7 +30,7 @@ export function SeverityStrip({
             type="button"
             aria-pressed={on}
             // A severity with nothing in it stays readable but can't be chosen, unless it is the chosen one
-            disabled={count === 0 && !on}
+            disabled={!count && !on}
             onClick={() => onChoose(on ? "" : severity)}
             className={cn(
               "inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border px-2.5 text-[13px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default disabled:opacity-60",
@@ -37,7 +38,7 @@ export function SeverityStrip({
             )}
           >
             <SeverityShape severity={severity} />
-            <span className="tabular font-semibold">{count}</span>
+            <span className="tabular font-semibold">{count ?? "–"}</span>
             {SEVERITY_LABEL[severity]}
           </button>
         )

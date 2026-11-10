@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, CircleHelp } from "lucide-react"
 import { toast } from "sonner"
@@ -153,6 +153,7 @@ export function FindingPreview({
   onChanged,
   onPrevious,
   onNext,
+  returnFocus,
 }: {
   code: string | null
   /** "3 of 25": where the finding stands in the list as it is sorted and filtered */
@@ -162,30 +163,51 @@ export function FindingPreview({
   onChanged: (finding: FindingDetail) => void
   onPrevious?: () => void
   onNext?: () => void
+  /** Where the keyboard goes back to when the panel closes: the button that opened it */
+  returnFocus?: () => HTMLElement | null
 }) {
   const canTriage = useCan("triage_findings")
   const canRequest = useCan("request_remediations")
   const me = useSession().id
   const [finding, setFinding] = useState<FindingDetail | null>(null)
+  const [failed, setFailed] = useState<{ code: string; message: string } | null>(null)
+  const [attempt, setAttempt] = useState(0)
   const [assigning, setAssigning] = useState<string | null>(null)
+  // After "Assign" closes, the keyboard stays where the person was working (WCAG 2.4.3)
+  const assignButton = useRef<HTMLButtonElement>(null)
+  const nextHeading = useRef<HTMLHeadingElement>(null)
+  const focusSoon = (target: { current: HTMLElement | null }) => requestAnimationFrame(() => target.current?.focus())
 
   useEffect(() => {
     if (!code) return
     const controller = new AbortController()
     getFinding(code, controller.signal)
       .then(setFinding)
-      .catch(() => undefined)
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setFailed({ code, message: error instanceof ApiError ? error.message : "This finding could not be loaded." })
+      })
     return () => controller.abort()
-  }, [code])
+  }, [code, attempt])
 
   // While another finding is being read, the panel shows its skeleton, not the one before.
   const shown = finding && finding.code === code ? finding : null
+  const problem = !shown && failed?.code === code ? failed.message : null
   const judgeOnly = shown?.status === "requires_confirmation"
   const judge = shown?.detection?.methods.find((method) => method.method === "llm_judge")
 
   return (
     <Sheet open={code !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full gap-0 sm:max-w-[480px]">
+      <SheetContent
+        className="w-full gap-0 sm:max-w-[480px]"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocus?.()
+          if (target) {
+            event.preventDefault()
+            target.focus()
+          }
+        }}
+      >
         {shown ? (
           <>
             <SheetHeader>
@@ -208,7 +230,7 @@ export function FindingPreview({
                 <h3 id="preview-happened" className="text-sm font-semibold">
                   What happened
                 </h3>
-                <p className="text-sm text-text-secondary">{shown.description}</p>
+                <p className="line-clamp-3 text-sm text-text-secondary">{shown.description}</p>
                 <p className="text-xs text-muted-foreground">
                   Detection:{" "}
                   {judgeOnly
@@ -232,7 +254,7 @@ export function FindingPreview({
               )}
 
               <section aria-labelledby="preview-next" className="space-y-1">
-                <h3 id="preview-next" className="text-sm font-semibold">
+                <h3 id="preview-next" ref={nextHeading} tabIndex={-1} className="text-sm font-semibold outline-none">
                   Next steps
                 </h3>
                 <p className="text-sm text-text-secondary">{nextStep(shown, Boolean(canTriage), Boolean(canRequest), me)}</p>
@@ -247,11 +269,15 @@ export function FindingPreview({
               {assigning === shown.code && (
                 <AssignOwner
                   finding={shown}
-                  onCancel={() => setAssigning(null)}
+                  onCancel={() => {
+                    setAssigning(null)
+                    focusSoon(assignButton)
+                  }}
                   onDone={(saved) => {
                     setAssigning(null)
                     setFinding(saved)
                     onChanged(saved)
+                    focusSoon(nextHeading)
                   }}
                 />
               )}
@@ -266,7 +292,7 @@ export function FindingPreview({
                       Triage
                     </Button>
                     {assigning !== shown.code && (
-                      <Button variant="outline" className="h-9" onClick={() => setAssigning(shown.code)}>
+                      <Button ref={assignButton} variant="outline" className="h-9" onClick={() => setAssigning(shown.code)}>
                         Assign
                       </Button>
                     )}
@@ -276,18 +302,48 @@ export function FindingPreview({
             </div>
           </>
         ) : (
-          <div className="flex-1 space-y-3 p-4" role="status" aria-label="Loading the finding">
-            <Skeleton className="h-6 w-64" />
-            <Skeleton className="h-32 w-full" />
-          </div>
+          <>
+            {/* The dialog has a name from the start, also while it loads or when loading fails */}
+            <SheetHeader className="sr-only">
+              <SheetTitle>Finding {code}</SheetTitle>
+              <SheetDescription>{problem ? "It could not be loaded." : "Loading."}</SheetDescription>
+            </SheetHeader>
+            {problem ? (
+              <div className="flex-1 space-y-3 p-4">
+                <p role="alert" className="text-sm text-destructive">
+                  {problem}
+                </p>
+                <Button variant="outline" className="h-9" onClick={() => setAttempt((count) => count + 1)}>
+                  Try again
+                </Button>
+              </div>
+            ) : (
+              <div className="flex-1 space-y-3 p-4" role="status" aria-label="Loading the finding">
+                <Skeleton className="h-6 w-64" />
+                <Skeleton className="h-32 w-full" />
+              </div>
+            )}
+          </>
         )}
+        {/* At either end of the list the buttons stay focusable and say so, so the keyboard
+            isn't thrown out of the panel when the last finding is reached */}
         <nav aria-label="Findings in this list" className="flex items-center justify-between gap-2 border-t px-4 py-2.5">
-          <Button variant="outline" className="h-9" disabled={!onPrevious} onClick={onPrevious}>
+          <Button
+            variant="outline"
+            className="h-9 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+            aria-disabled={!onPrevious}
+            onClick={() => onPrevious?.()}
+          >
             <ChevronLeft aria-hidden="true" />
             Previous
           </Button>
           <span className="tabular text-sm text-muted-foreground">{position}</span>
-          <Button variant="outline" className="h-9" disabled={!onNext} onClick={onNext}>
+          <Button
+            variant="outline"
+            className="h-9 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+            aria-disabled={!onNext}
+            onClick={() => onNext?.()}
+          >
             Next
             <ChevronRight aria-hidden="true" />
           </Button>

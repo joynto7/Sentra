@@ -9,7 +9,8 @@ from sqlalchemy import select
 
 from app.modules.m01_users.models import User
 from app.modules.m06_findings.models import Finding, FindingStatus
-from tests.m01_users.test_organizations import log_in
+from app.modules.m06_findings.service import SORTS
+from tests.m01_users.test_organizations import create, log_in, new_user
 from tests.m06_findings.conftest import PERSONAL_TOKEN, SYSTEM_TOKEN, make_test, plant
 
 FINDINGS = "/api/v1/findings"
@@ -139,3 +140,16 @@ def test_the_severity_strip_counts_everything_but_the_severity(team, three):
 def test_an_unknown_order_is_refused(team, three):
     assert team.client.get(FINDINGS, params={"sort": "evidence_count"}).status_code == 422
     assert team.client.get(FINDINGS, params={"direction": "up"}).status_code == 422
+
+
+def test_another_organization_sees_none_of_them_in_any_order(team, three, client, db):
+    """NFR-3.3: whatever the order, the strip and the counts, another organization's member gets
+    nothing of Halcyon Bank's findings."""
+    new_user(db, "eve@example.com")
+    log_in(client, "eve@example.com")
+    create(client, "Other Bank")
+
+    for sort in SORTS:
+        page = listed(client, sort=sort)
+        assert page["total"] == 0 and page["items"] == [], sort
+        assert sum(page["severity_counts"].values()) == 0, sort

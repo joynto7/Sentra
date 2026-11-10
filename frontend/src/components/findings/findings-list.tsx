@@ -124,7 +124,7 @@ function Owner({ finding }: { finding: FindingItem }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5" title={name}>
       <span
-        className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-text-secondary"
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-text-secondary"
         aria-hidden="true"
       >
         {initials(name)}
@@ -137,14 +137,26 @@ function Owner({ finding }: { finding: FindingItem }) {
   )
 }
 
-/** The mark of UC-6.4, 2b: only the LLM judge supported the finding, so an analyst confirms it. */
+/** The mark of UC-6.4, 2b: only the LLM judge supported the finding, so an analyst confirms it.
+ * Dashed, like its status, and in words, so it never rests on colour (NFR-4.3). */
 function JudgeOnly() {
   return (
-    <span className="flex items-center gap-1 text-xs text-warning">
+    <span className="mt-0.5 inline-flex items-center gap-1 rounded-[5px] border border-dashed border-warning/60 px-1.5 text-xs text-warning">
       <CircleHelp className="size-3.5 shrink-0" aria-hidden="true" />
       Only the LLM judge supports this finding
     </span>
   )
+}
+
+/** The order of the list in words, for screen readers when it changes. */
+const SORT_WORDS: Record<SortKey, [string, string]> = {
+  severity: ["least severe first", "most severe first"],
+  title: ["by finding, A to Z", "by finding, Z to A"],
+  category: ["by category, LLM01 first", "by category, LLM10 first"],
+  status: ["by status, new first", "by status, closed first"],
+  reproducibility: ["least reproducible first", "most reproducible first"],
+  owner: ["by owner, A to Z", "by owner, Z to A"],
+  last_seen: ["last seen, oldest first", "last seen, newest first"],
 }
 
 /** Screen 38: the organization's findings (UC-6.4), the most severe first. */
@@ -182,6 +194,16 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
   const [selected, setSelected] = useState<string | null>(null)
   // "Next" at the end of a page opens the next page and then its first finding
   const selectOnLoad = useRef<"first" | "last" | null>(null)
+  // The finding last previewed: closing the panel, or the triage after it, returns there
+  const previewed = useRef<string | null>(null)
+  const preview = (code: string | null) => {
+    if (code) previewed.current = code
+    setSelected(code)
+  }
+  const previewButton = () =>
+    [...document.querySelectorAll<HTMLElement>(`[data-preview="${previewed.current}"]`)].find(
+      (button) => button.offsetParent !== null,
+    ) ?? null
   // The finding whose triage panel is open (Screen 41)
   const [triaging, setTriaging] = useState<FindingDetail | null>(null)
 
@@ -226,10 +248,16 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
       for (const [key, value] of Object.entries(period)) if (value) params.set(key, value)
       listFindings(params, controller.signal)
         .then((found) => {
+          // A page beyond the last one (an old link, or a list that shrank after a triage) opens
+          // the last page instead of an empty table
+          if (!found.items.length && found.total > 0 && found.page > 1) {
+            setPage(Math.ceil(found.total / found.page_size))
+            return
+          }
           setData(found)
           setError(false)
           if (selectOnLoad.current && found.items.length) {
-            setSelected(found.items[selectOnLoad.current === "first" ? 0 : found.items.length - 1].code)
+            preview(found.items[selectOnLoad.current === "first" ? 0 : found.items.length - 1].code)
           }
           selectOnLoad.current = null
         })
@@ -287,7 +315,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
   const position = index >= 0 && data ? `${(data.page - 1) * data.page_size + index + 1} of ${data.total}` : ""
   const onPrevious =
     index > 0
-      ? () => setSelected(items[index - 1].code)
+      ? () => preview(items[index - 1].code)
       : index === 0 && page > 1
         ? () => {
             selectOnLoad.current = "last"
@@ -296,7 +324,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
         : undefined
   const onNext =
     index >= 0 && index < items.length - 1
-      ? () => setSelected(items[index + 1].code)
+      ? () => preview(items[index + 1].code)
       : index === items.length - 1 && page < pages
         ? () => {
             selectOnLoad.current = "first"
@@ -393,6 +421,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
         )}
         <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
           {data ? `${data.total} ${data.total === 1 ? "finding" : "findings"}` : ""}
+          {data && <span className="sr-only">, {SORT_WORDS[sort][direction === "asc" ? 0 : 1]}</span>}
         </span>
       </div>
 
@@ -468,7 +497,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
               container={{
                 tabIndex: 0,
                 role: "group",
-                "aria-label": "Findings",
+                "aria-label": "Findings table",
                 className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
               }}
             >
@@ -496,7 +525,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
                       {/* Two lines for the title before it is cut: it says what the finding is */}
                       <Link
                         href={`/findings/${finding.code}`}
-                        className="line-clamp-2 text-[13px] font-medium text-link hover:underline"
+                        className="line-clamp-2 min-h-6 text-[13px] font-medium text-link hover:underline"
                         title={finding.title}
                       >
                         {finding.title}
@@ -532,7 +561,8 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
                         className="size-8"
                         aria-label={`Preview ${finding.code}`}
                         title="Preview"
-                        onClick={() => setSelected(finding.code)}
+                        data-preview={finding.code}
+                        onClick={() => preview(finding.code)}
                       >
                         <PanelRightOpen aria-hidden="true" />
                       </Button>
@@ -562,7 +592,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
               }}
             />
           </div>
-          <ul className="divide-y @4xl:hidden" aria-label="Findings">
+          <ul className="divide-y @4xl:hidden" aria-label="Findings, one card each">
             {data.items.map((finding: FindingItem) => (
               <li key={finding.code} className="space-y-1.5 p-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -570,7 +600,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
                   <StatusBadge status={finding.status} />
                   <span className="font-mono text-xs text-muted-foreground">{finding.category}</span>
                 </div>
-                <Link href={`/findings/${finding.code}`} className="block text-sm font-medium text-link hover:underline">
+                <Link href={`/findings/${finding.code}`} className="block min-h-6 text-sm font-medium text-link hover:underline">
                   {finding.title}
                 </Link>
                 {finding.status === "requires_confirmation" && <JudgeOnly />}
@@ -581,7 +611,14 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
                 <div className="flex items-center justify-between gap-3">
                   <Owner finding={finding} />
                   <Reproducibility finding={finding} />
-                  <Button variant="outline" size="sm" className="h-8" onClick={() => setSelected(finding.code)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    aria-label={`Preview ${finding.code}`}
+                    data-preview={finding.code}
+                    onClick={() => preview(finding.code)}
+                  >
                     Preview
                   </Button>
                 </div>
@@ -638,7 +675,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
         {/* Four quick views don't fit a tablet, so the strip scrolls instead of the page. */}
         <TabsList
           variant="line"
-          aria-label="Findings"
+          aria-label="Which findings"
           className="h-10 w-full justify-start gap-6 overflow-x-auto border-b px-0"
         >
           {VIEWS.map((value) => (
@@ -674,12 +711,14 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
         onChanged={() => setAttempt((count) => count + 1)}
         onPrevious={onPrevious}
         onNext={onNext}
+        returnFocus={previewButton}
       />
       {triaging && (
         <TriagePanel
           finding={triaging}
           open
           onOpenChange={(open) => !open && setTriaging(null)}
+          returnFocus={previewButton}
           onDone={() => {
             setTriaging(null)
             setSelected(null)
