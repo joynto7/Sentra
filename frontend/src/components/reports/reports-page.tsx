@@ -189,7 +189,11 @@ export function ReportsPage() {
             {reports.length === 0 ? (
               <EmptyState
                 title="No report yet"
-                description="Generate an executive report for the organization, or a technical one for a target or a campaign run."
+                description={
+                  canGenerate
+                    ? "Generate an executive report for the organization, or a technical one for a target or a campaign run."
+                    : "Executive and technical reports appear here once a Security Analyst or a Security Manager generates one."
+                }
                 action={
                   canGenerate ? (
                     <Button className="h-9 hover:bg-primary-hover" onClick={() => setDialog({})}>
@@ -316,7 +320,11 @@ export function ReportsPage() {
             {schedules.length === 0 ? (
               <EmptyState
                 title="No schedule yet"
-                description="A schedule produces a report after every campaign run of a target, weekly or monthly, and tells its recipients with a link."
+                description={
+                  canGenerate
+                    ? "A schedule produces a report after every campaign run of a target, weekly or monthly, and tells its recipients with a link."
+                    : "A schedule produces a report after every campaign run of a target, weekly or monthly. A Security Analyst or a Security Manager sets one up."
+                }
                 action={
                   canGenerate ? (
                     <Button

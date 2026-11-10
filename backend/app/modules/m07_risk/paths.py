@@ -42,7 +42,7 @@ INPUT_NOTE = "Every request to the target arrives here."
 NOT_IN_PROFILE = "Not in the Target Profile. A finding names it, so it is drawn here."
 NO_PROFILE = (
     "no_profile",
-    "Map the target's profile first. The components of the graph come from it (FR-2.5).",
+    "Map the target's profile first. The components of the graph come from it.",
 )
 NO_FINDINGS = "This target has no open finding, so there is nothing to place on its components."
 ONE_FINDING = "Only one open finding is on this target, so there is no chain of steps to follow."
@@ -143,9 +143,14 @@ class Node:
             return f"At its end the answer leaves the application through {self.name}."
         if self.kind != ComponentKind.TOOL:
             return ""
+        # The side effect is what a person typed into the profile, a verb phrase or not ("issues
+        # a refund", "read-only"), so the sentence quotes it instead of continuing it.
         effect = self.side_effect.strip().rstrip(".")
         if effect:
-            return f"At its end the model calls {self.name}, which {effect[0].lower()}{effect[1:]}."
+            return (
+                f"At its end the model calls {self.name}. Its side effect in the target profile: "
+                f"{effect[0].lower()}{effect[1:]}."
+            )
         return f"At its end the model calls {self.name}, an action of the application."
 
     def as_json(self) -> dict:

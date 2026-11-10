@@ -17,6 +17,7 @@ from app.modules.m08_remediation.models import (
     RetestStatus,
     RetestVerdict,
 )
+from app.modules.m09_reporting import reports
 from app.modules.m09_reporting.models import Report, ReportStatus
 from tests.m01_users.test_organizations import log_in
 from tests.m06_findings.conftest import PERSONAL_TOKEN, plant
@@ -114,6 +115,21 @@ def test_a_pdf_report_is_written_and_can_be_downloaded(team, run_with):  # noqa:
     assert downloaded.headers["content-type"] == "application/pdf"
     assert downloaded.content.startswith(b"%PDF-")
     assert 'filename="RP-001.pdf"' in downloaded.headers["content-disposition"]
+
+
+def test_a_report_job_that_arrives_twice_leaves_the_ready_report_alone(team, run_with):  # noqa: F811
+    """A queue may deliver a job twice. The second delivery finds the report written and leaves it
+    as it is, instead of failing on the file that exists and marking a good report as failed."""
+    with_findings(team, run_with)
+    ask(team, format="pdf")
+    report = team.db.scalar(select(Report))
+    written = (report.status, report.checksum, report.object_key)
+
+    again = reports.generate(team.db, report.id)
+
+    assert (again.status, again.checksum, again.object_key) == written
+    assert written[0] == ReportStatus.READY
+    assert team.client.get(f"{URL}/RP-001/download").content.startswith(b"%PDF-")
 
 
 def test_every_export_is_recorded(team, run_with):  # noqa: F811

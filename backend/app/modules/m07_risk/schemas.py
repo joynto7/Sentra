@@ -11,6 +11,15 @@ class TargetRef(BaseModel):
     name: str
 
 
+class LiveRun(BaseModel):
+    """A campaign run of the target that is going on now (FR-5.6, M5): queued, running or paused."""
+
+    code: str  # R-238-2
+    campaign: str  # C-238: with `number`, the address of the live monitor
+    number: int
+    status: str
+
+
 class TargetRiskRow(BaseModel):
     """One row of the "Target risk" table (Screen 42) and of the Risk Score column of Screen 16.
     A target without a score says why instead: its ownership isn't verified, or it has no
@@ -26,6 +35,7 @@ class TargetRiskRow(BaseModel):
     band: str | None
     calculated_at: datetime | None
     last_run_at: datetime | None
+    live_run: LiveRun | None = None  # the dashboard says when a run is going on now
     open_total: int
     open_by_severity: dict[str, int]
     awaiting_confirmation: int
@@ -50,7 +60,8 @@ class TopFindings(BaseModel):
 
 class CategoryRow(BaseModel):
     """One OWASP category of the dashboard (Screen 42): the open findings it holds and whether it
-    has been tested (FR-7.4). `worst_target` names the target the status comes from."""
+    has been tested (FR-7.4). `worst_target` names the target the status comes from, and the two
+    counts say how many of the targets it applies to were tested."""
 
     code: str
     name: str | None
@@ -59,6 +70,8 @@ class CategoryRow(BaseModel):
     label: str  # the status in words, so the table needs no colour (NFR-4.3)
     reason: str
     worst_target: str | None
+    tested_targets: int  # tested, and the target hasn't changed since
+    applicable_targets: int  # the verified targets it applies to: an unverified one can't be tested
     open_total: int
     open_by_severity: dict[str, int]
 

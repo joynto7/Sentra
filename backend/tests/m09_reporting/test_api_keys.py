@@ -205,8 +205,9 @@ def test_the_page_marks_a_key_that_expires_soon(admin):
     assert listed["rows"][0]["state"] == "expiring"
     scopes = {scope["value"]: scope for scope in listed["scopes"]}
     assert scopes["read_findings"]["available"] and scopes["read_findings"]["waiting_for"] is None
-    assert not scopes["run_security_gate"]["available"]
-    assert "FR-9.4" in scopes["run_security_gate"]["waiting_for"]
+    assert scopes["run_security_gate"]["available"] and scopes["read_gate_results"]["available"]
+    assert not scopes["read_reports"]["available"]
+    assert scopes["read_reports"]["waiting_for"] == "the reports endpoint of the API"
 
 
 def test_the_administrators_are_told_once_that_a_key_expires_soon(admin):

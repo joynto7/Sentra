@@ -32,6 +32,8 @@ import {
 import { formatDate, formatDateTime } from "@/lib/targets"
 
 const DEFAULT_DAYS = "90"
+// What "Last campaign run" says while a run of the target is going on (FR-5.6, M5).
+const LIVE: Record<string, string> = { running: "Running now", paused: "Paused", queued: "Waiting to start" }
 
 /** "Findings by status" (UC-7.3 step 3): the lifecycle of the findings, each status a link. */
 function ByStatus({
@@ -116,14 +118,29 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
                 <Link href={`/targets/${row.id}`} className="inline-block py-1 font-medium text-link hover:underline">
                   {row.name}
                 </Link>
-                <span className="block text-xs text-muted-foreground">{row.environment}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {row.environment}
+                  {/* Every tested target; Attack Paths itself says why a target has no path. */}
+                  {row.score !== null && (
+                    <>
+                      {" · "}
+                      <Link
+                        href={`/attack-paths?target=${row.id}`}
+                        className="inline-flex min-h-6 items-center text-link underline underline-offset-2"
+                        aria-label={`Attack paths of ${row.name}`}
+                      >
+                        Attack paths
+                      </Link>
+                    </>
+                  )}
+                </span>
               </TableCell>
               <TableCell>
                 {row.score !== null && row.band !== null ? (
                   <RiskScore score={row.score} band={row.band} />
                 ) : (
                   <div className="min-w-44">
-                    <span className="text-[13px] text-muted-foreground">{notScoredText(row.not_scored_reason)}</span>
+                    <span className="block text-[13px] text-muted-foreground">{notScoredText(row.not_scored_reason)}</span>
                     {row.not_scored_reason === "ownership_not_verified" && canVerify && (
                       <Link
                         href={`/targets/${row.id}/verify`}
@@ -157,7 +174,25 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
                 )}
               </TableCell>
               <TableCell className="text-[13px] whitespace-nowrap">
-                {row.last_run_at ? formatDate(row.last_run_at) : <span className="text-muted-foreground">Never</span>}
+                {row.live_run ? (
+                  <>
+                    <Link
+                      href={`/campaigns/${row.live_run.campaign}/runs/${row.live_run.number}`}
+                      className="inline-flex min-h-6 items-center font-medium text-link hover:underline"
+                      aria-label={`${LIVE[row.live_run.status]}: ${row.live_run.code}, open its live monitor`}
+                    >
+                      {LIVE[row.live_run.status]}
+                    </Link>
+                    <span className="block text-xs text-muted-foreground">{row.live_run.code}</span>
+                    {row.last_run_at && (
+                      <span className="block text-xs text-muted-foreground">before: {formatDate(row.last_run_at)}</span>
+                    )}
+                  </>
+                ) : row.last_run_at ? (
+                  formatDate(row.last_run_at)
+                ) : (
+                  <span className="text-muted-foreground">Never</span>
+                )}
               </TableCell>
             </TableRow>
           ))}
@@ -174,6 +209,8 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
 export function RiskDashboard() {
   const canVerify = useCan("verify_targets")
   const canReport = useCan("generate_reports")
+  const canRegister = useCan("manage_targets")
+  const canRun = useCan("manage_campaigns")
   const [report, setReport] = useState(false)
   const [target, setTarget] = useState("")
   const [days, setDays] = useState(DEFAULT_DAYS)
@@ -206,6 +243,8 @@ export function RiskDashboard() {
     setCategory("")
   }, [])
   const targetQuery = target ? `&target_id=${target}` : ""
+  // Before any run has ended, a run that is going on is what there is to see
+  const firstRun = data?.targets.find((row) => row.live_run)
 
   return (
     <>
@@ -298,14 +337,40 @@ export function RiskDashboard() {
         </div>
       )}
 
-      {data && data.last_run_at === null && (
+      {data && data.last_run_at === null && firstRun && (
         <EmptyState
-          title="No campaign results yet"
-          description="Register a target, verify that you own it and run a campaign against it. Its findings, severities and risk scores appear here as soon as the first run has ended."
+          title="The first campaign run is going on"
+          description={`${firstRun.name}: ${firstRun.live_run?.code}. Its findings, severities and risk scores appear here as soon as it has ended.`}
           action={
             <Button asChild className="h-9 hover:bg-primary-hover">
-              <Link href="/targets/new">Register target</Link>
+              <Link href={`/campaigns/${firstRun.live_run?.campaign}/runs/${firstRun.live_run?.number}`}>
+                Open the live monitor
+              </Link>
             </Button>
+          }
+        />
+      )}
+
+      {data && data.last_run_at === null && !firstRun && (
+        <EmptyState
+          title="No campaign results yet"
+          description={
+            canRegister
+              ? "Register a target and verify that you own it; a Security Analyst then runs a campaign against it. Its findings, severities and risk scores appear here as soon as the first run has ended."
+              : canRun
+                ? "Run a campaign against a verified target. Its findings, severities and risk scores appear here as soon as the first run has ended."
+                : "Findings, severities and risk scores appear here after the first campaign run. An AI Application Developer registers and verifies a target, and a Security Analyst runs the campaign."
+          }
+          action={
+            canRegister ? (
+              <Button asChild className="h-9 hover:bg-primary-hover">
+                <Link href="/targets/new">Register target</Link>
+              </Button>
+            ) : canRun ? (
+              <Button asChild className="h-9 hover:bg-primary-hover">
+                <Link href="/campaigns/new">Create campaign</Link>
+              </Button>
+            ) : undefined
           }
         />
       )}
@@ -345,7 +410,7 @@ export function RiskDashboard() {
                 </h2>
                 <span className="tabular text-sm text-muted-foreground">
                   {Math.min(data.top_findings.items.length, data.top_findings.total)} of {data.top_findings.total} ·{" "}
-                  <Link href={`/findings?view=open${targetQuery}`} className="text-link hover:underline">
+                  <Link href={`/findings?view=open${targetQuery}`} className="text-link underline underline-offset-2">
                     View all
                   </Link>
                 </span>

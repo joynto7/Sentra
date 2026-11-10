@@ -4,18 +4,18 @@ that came and went.
 
 Nothing is interpolated or invented. A score line is a step line through the calculations that
 really happened (FR-7.2 keeps every one of them), and the bars count findings by the dates the
-findings themselves carry. Until FR-6.5 records when a status changed, a closed finding belongs to
-the period in which it was last seen — the same compromise the dashboard's counts make, and the
-one place where a bar is an approximation.
+findings themselves carry. A closed finding belongs to the period in which it was closed, as its
+history records it (FR-6.5, M6; `closing()`); the dashboard's counts of closed findings use the same
+date.
 """
 
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.modules.m06_findings.models import CLOSED, Finding
+from app.modules.m06_findings.models import CLOSED, Finding, FindingEvent, FindingEventKind
 from app.modules.m07_risk.models import RiskScore
 
 BUCKETS = 6  # Screen 42: six two-week columns over the default 90 days
@@ -30,6 +30,52 @@ def buckets(days: int, until: datetime) -> list[tuple[datetime, datetime]]:
     return [(start + length * step, start + length * (step + 1)) for step in range(BUCKETS)]
 
 
+def closing(organization_id: uuid.UUID):
+    """When each closed finding was closed: its newest history entry that closed it (FR-6.5, M6): a
+    false positive, a merge, or any status change into a closed status. A finding that a retest
+    verified as fixed has no such entry, so for it the moment it was last seen stands in. Returns
+    the subquery to outer-join on the finding and the date to filter and count by."""
+    entered = (
+        select(FindingEvent.finding_id, func.max(FindingEvent.created_at).label("at"))
+        .where(
+            FindingEvent.organization_id == organization_id,
+            or_(
+                FindingEvent.kind.in_((FindingEventKind.FALSE_POSITIVE, FindingEventKind.MERGED)),
+                FindingEvent.became.in_(CLOSED),
+            ),
+        )
+        .group_by(FindingEvent.finding_id)
+        .subquery()
+    )
+    return entered, func.coalesce(entered.c.at, Finding.last_seen_at)
+
+
+def _closed_dates(
+    db: Session,
+    organization_id: uuid.UUID,
+    target_ids: list[uuid.UUID],
+    *,
+    since: datetime,
+    category: str | None,
+) -> list[datetime]:
+    """When the findings that are closed now were closed, for those closed in the period."""
+    entered, closed_at = closing(organization_id)
+    query = (
+        select(closed_at)
+        .select_from(Finding)
+        .outerjoin(entered, entered.c.finding_id == Finding.id)
+        .where(
+            Finding.organization_id == organization_id,
+            Finding.target_id.in_(target_ids),
+            Finding.status.in_(CLOSED),
+            closed_at >= since,
+        )
+    )
+    if category:
+        query = query.where(Finding.category == category)
+    return list(db.scalars(query))
+
+
 def _counted(
     db: Session,
     organization_id: uuid.UUID,
@@ -38,17 +84,13 @@ def _counted(
     *,
     since: datetime,
     category: str | None,
-    closed: bool,
 ) -> list[datetime]:
-    """The dates of the findings of the period: when each was first seen, or last seen for the
-    ones that are closed."""
+    """The dates the findings of the period were first seen."""
     query = select(column).where(
         Finding.organization_id == organization_id,
         Finding.target_id.in_(target_ids),
         column >= since,
     )
-    if closed:
-        query = query.where(Finding.status.in_(CLOSED))
     if category:
         query = query.where(Finding.category == category)
     return list(db.scalars(query))
@@ -74,17 +116,8 @@ def _bars(
         Finding.first_seen_at,
         since=since,
         category=category,
-        closed=False,
     )
-    gone = _counted(
-        db,
-        organization_id,
-        target_ids,
-        Finding.last_seen_at,
-        since=since,
-        category=category,
-        closed=True,
-    )
+    gone = _closed_dates(db, organization_id, target_ids, since=since, category=category)
     bars = []
     for start, end in parts:
         bars.append(

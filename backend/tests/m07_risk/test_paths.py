@@ -6,7 +6,7 @@ names, and a stub model for the judge.
 from sqlalchemy import select
 
 from app.core.audit import AuditLogEntry
-from app.modules.m06_findings.models import FindingStatus
+from app.modules.m06_findings.models import ComponentKind, FindingStatus
 from app.modules.m07_risk import paths
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
@@ -83,7 +83,9 @@ def test_the_graph_draws_the_components_of_the_profile_with_the_findings_on_them
     assert by_id["knowledge_source:Knowledge sources"]["entry"]
     assert not by_id["tool:issue_refund"]["entry"]
     assert by_id["tool:issue_refund"]["label"] == "Tool: issue_refund"
-    assert by_id["tool:issue_refund"]["impact"].endswith("which issues a refund to the customer.")
+    assert by_id["tool:issue_refund"]["impact"].endswith(
+        "Its side effect in the target profile: issues a refund to the customer."
+    )
     assert by_id["tool:lookup_customer"]["impact"].endswith("an action of the application.")
     assert by_id["tool:issue_refund"]["findings"] == ["F-001"]
     assert all(node["in_profile"] for node in shown["nodes"])
@@ -117,10 +119,26 @@ def test_two_findings_on_connected_components_make_one_path(team, run_with):
         "are on it: F-001, F-002."
     )
     assert path["impact"] == (
-        "At its end the model calls issue_refund, which issues a refund to the customer."
+        "At its end the model calls issue_refund. Its side effect in the target profile: issues "
+        "a refund to the customer."
     )
     assert path["node_ids"] == ["model:Model", "tool:issue_refund"]
     assert not path["has_unconfirmed"] and shown["no_paths_reason"] == ""
+
+
+def test_a_side_effect_is_quoted_whatever_its_grammar():
+    """A person types the side effect into the profile: "issues a refund" and "Read-only" must
+    both read right, so the sentence quotes it instead of continuing it after "which"."""
+    refund = paths.Node(ComponentKind.TOOL, "issue_refund", side_effect="Issues a refund.")
+    lookup = paths.Node(ComponentKind.TOOL, "get_policy", side_effect="Read-only")
+
+    assert refund.impact() == (
+        "At its end the model calls issue_refund. Its side effect in the target profile: issues "
+        "a refund."
+    )
+    assert lookup.impact() == (
+        "At its end the model calls get_policy. Its side effect in the target profile: read-only."
+    )
 
 
 def test_a_path_starts_where_something_comes_from_outside(team, run_with):

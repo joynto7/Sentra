@@ -9,6 +9,7 @@ const SEVERITY_COLOUR: Record<string, string> = {
   high: "var(--severity-high)",
   medium: "var(--severity-medium)",
   low: "var(--severity-low)",
+  informational: "var(--severity-info)",
 }
 
 /**

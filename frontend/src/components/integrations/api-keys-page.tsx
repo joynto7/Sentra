@@ -324,11 +324,6 @@ export function ApiKeysPage() {
         </section>
       )}
 
-      <p className="mt-4 text-[13px] text-muted-foreground">
-        The security gates of the CI/CD pipeline (FR-9.4) and the webhooks (FR-9.6) join this page
-        when they are built.
-      </p>
-
       <CreateKeyDialog
         open={creating}
         scopes={data?.scopes ?? []}

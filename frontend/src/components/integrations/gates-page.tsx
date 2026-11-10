@@ -212,6 +212,11 @@ function CreateGateDialog({
           )}
         </div>
 
+        {!busy && (!name.trim() || !campaign) && (
+          <p id="gate-missing" className="text-[13px] text-muted-foreground">
+            Give the gate a name and choose its campaign, then you can create it.
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
@@ -219,6 +224,7 @@ function CreateGateDialog({
           <Button
             onClick={save}
             disabled={busy || !name.trim() || !campaign}
+            aria-describedby={!name.trim() || !campaign ? "gate-missing" : undefined}
             className="hover:bg-primary-hover"
           >
             Create the gate

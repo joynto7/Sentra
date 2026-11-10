@@ -57,7 +57,7 @@ export function ScoreMethod() {
           <DialogTitle>How Sentra rates a finding and scores a target</DialogTitle>
           <DialogDescription>
             Every severity and every score follows these rules, so the same evidence always gives the same
-            result (FR-7.1, FR-7.2).
+            result.
           </DialogDescription>
         </DialogHeader>
         {error && <p className="text-sm text-destructive">The rules could not be loaded. Close this and try again.</p>}
@@ -100,7 +100,7 @@ export function ScoreMethod() {
               <p className="mt-2 text-text-secondary">
                 A weakness that is reproduced less often counts as harder to reach: at or above{" "}
                 {share(method, 0)} the likelihood stays as it is, from {share(method, 1)} it drops by one
-                level, and below that by two (FR-6.4).
+                level, and below that by two.
               </p>
             </section>
             <section aria-labelledby="method-matrix">
