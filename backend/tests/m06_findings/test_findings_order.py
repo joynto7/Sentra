@@ -79,6 +79,7 @@ def three(team, run_with):
         ("title", "asc", ["F-002", "F-001", "F-003"]),
         ("title", "desc", ["F-003", "F-001", "F-002"]),
         ("category", "asc", ["F-003", "F-002", "F-001"]),  # LLM01, LLM02, LLM07
+        ("category", "desc", ["F-001", "F-002", "F-003"]),
         # The lifecycle order: new, requires confirmation, confirmed, reopened …
         ("status", "asc", ["F-002", "F-001", "F-003"]),
         ("status", "desc", ["F-003", "F-001", "F-002"]),
@@ -87,6 +88,7 @@ def three(team, run_with):
         ("reproducibility", "asc", ["F-001", "F-002", "F-003"]),
         # By the owner's name; nobody last
         ("owner", "asc", ["F-003", "F-001", "F-002"]),
+        ("owner", "desc", ["F-001", "F-003", "F-002"]),
         ("last_seen", "desc", ["F-001", "F-003", "F-002"]),
         ("last_seen", "asc", ["F-002", "F-003", "F-001"]),
     ],

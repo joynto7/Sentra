@@ -176,6 +176,8 @@ export function FindingPreview({
   // After "Assign" closes, the keyboard stays where the person was working (WCAG 2.4.3)
   const assignButton = useRef<HTMLButtonElement>(null)
   const nextHeading = useRef<HTMLHeadingElement>(null)
+  // "Triage" hands the keyboard to the triage panel, which opens as this one closes
+  const toTriage = useRef(false)
   const focusSoon = (target: { current: HTMLElement | null }) => requestAnimationFrame(() => target.current?.focus())
 
   useEffect(() => {
@@ -201,6 +203,11 @@ export function FindingPreview({
       <SheetContent
         className="w-full gap-0 sm:max-w-[480px]"
         onCloseAutoFocus={(event) => {
+          if (toTriage.current) {
+            toTriage.current = false
+            event.preventDefault()
+            return
+          }
           const target = returnFocus?.()
           if (target) {
             event.preventDefault()
@@ -288,7 +295,14 @@ export function FindingPreview({
                 </Button>
                 {canTriage && isOpen(shown) && (
                   <>
-                    <Button variant="outline" className="h-9" onClick={() => onTriage(shown)}>
+                    <Button
+                      variant="outline"
+                      className="h-9"
+                      onClick={() => {
+                        toTriage.current = true
+                        onTriage(shown)
+                      }}
+                    >
                       Triage
                     </Button>
                     {assigning !== shown.code && (

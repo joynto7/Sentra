@@ -159,8 +159,25 @@ const SORT_WORDS: Record<SortKey, [string, string]> = {
   last_seen: ["last seen, oldest first", "last seen, newest first"],
 }
 
+/** The Preview button of a finding that can be seen: the table's or the card's, whichever shows. */
+function previewButtonOf(code: string | null) {
+  if (!code) return null
+  return (
+    [...document.querySelectorAll<HTMLElement>(`[data-preview="${code}"]`)].find(
+      (button) => button.offsetParent !== null,
+    ) ?? null
+  )
+}
+
 /** Screen 38: the organization's findings (UC-6.4), the most severe first. */
 export function FindingsList({ targetId }: { targetId?: string } = {}) {
+  // When the address changes without the list (the menu's Findings link, Back or Forward), the
+  // list starts again from the new address, as if the page had just been opened
+  const [opened, setOpened] = useState(0)
+  return <ListFromAddress key={opened} targetId={targetId} onOutside={() => setOpened((count) => count + 1)} />
+}
+
+function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside: () => void }) {
   const organization = useSession().organization
   const query = useSearchParams()
   // The list starts as its address says: a link from the Risk Dashboard (UC-7.3 step 6), a
@@ -200,15 +217,18 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
     if (code) previewed.current = code
     setSelected(code)
   }
-  const previewButton = () =>
-    [...document.querySelectorAll<HTMLElement>(`[data-preview="${previewed.current}"]`)].find(
-      (button) => button.offsetParent !== null,
-    ) ?? null
+  // The count above the list: where the keyboard goes when the finding is no longer on this page
+  const countLine = useRef<HTMLSpanElement>(null)
+  const returnFocus = () => previewButtonOf(previewed.current) ?? countLine.current
   // The finding whose triage panel is open (Screen 41)
   const [triaging, setTriaging] = useState<FindingDetail | null>(null)
+  // After a triage the list loads again, and a finding that left this view takes its row and the
+  // Preview button the keyboard was on with it
+  const afterTriage = useRef(false)
 
   // Everything but the search words goes in the address: what people search for stays out of the
-  // browser's history, as in the search box of the top bar
+  // browser's history, as in the search box of the top bar. A sort's own first direction is left
+  // out, so "sort=title" reads A to Z.
   useUrlState(
     {
       view,
@@ -218,12 +238,13 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
       status,
       run_id: runId,
       owner_id: owner,
-      ...period,
+      ...Object.fromEntries(PERIOD_FILTERS.map((key) => [key, period[key] ?? ""])),
       sort,
       direction,
       page: String(page),
     },
-    { view: "open", sort: "severity", direction: "desc", page: "1" },
+    { view: "open", sort: "severity", direction: FIRST_DIRECTION[sort], page: "1" },
+    onOutside,
   )
 
   useEffect(() => {
@@ -268,6 +289,14 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
       controller.abort()
     }
   }, [view, search, target, severity, category, status, runId, owner, period, sort, direction, page, attempt])
+
+  // If the triaged finding's row went, the keyboard went with it: it goes to the count above the
+  // list instead of the top of the page (WCAG 2.4.3)
+  useEffect(() => {
+    if (!data || !afterTriage.current) return
+    afterTriage.current = false
+    if (document.activeElement === document.body) (previewButtonOf(previewed.current) ?? countLine.current)?.focus()
+  }, [data])
 
   const periods = [
     { keys: ["first_seen_from", "first_seen_until"] as const, text: periodText("First seen", period.first_seen_from, period.first_seen_until) },
@@ -419,7 +448,12 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
             Clear filters
           </Button>
         )}
-        <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
+        <span
+          ref={countLine}
+          tabIndex={-1}
+          className="tabular ml-auto rounded-[5px] text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-live="polite"
+        >
           {data ? `${data.total} ${data.total === 1 ? "finding" : "findings"}` : ""}
           {data && <span className="sr-only">, {SORT_WORDS[sort][direction === "asc" ? 0 : 1]}</span>}
         </span>
@@ -711,15 +745,16 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
         onChanged={() => setAttempt((count) => count + 1)}
         onPrevious={onPrevious}
         onNext={onNext}
-        returnFocus={previewButton}
+        returnFocus={returnFocus}
       />
       {triaging && (
         <TriagePanel
           finding={triaging}
           open
           onOpenChange={(open) => !open && setTriaging(null)}
-          returnFocus={previewButton}
+          returnFocus={returnFocus}
           onDone={() => {
+            afterTriage.current = true
             setTriaging(null)
             setSelected(null)
             setAttempt((count) => count + 1)
