@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Bar, BarChart, CartesianGrid, LabelList, Tooltip, XAxis, YAxis } from "recharts"
 
@@ -27,7 +28,7 @@ export default function FindingsFlow({
 }) {
   const router = useRouter()
   const config: ChartConfig = { new: FLOW.new, closed: FLOW.closed }
-  const rows = buckets.map((bucket) => ({ ...bucket, label: shortDate(bucket.starts_at) }))
+  const rows = useMemo(() => buckets.map((bucket) => ({ ...bucket, label: shortDate(bucket.starts_at) })), [buckets])
   const summary = buckets.map((b) => `${shortDate(b.starts_at)}: ${b.new} new, ${b.closed} closed`).join("; ")
   return (
     <ChartContainer config={config} className={`aspect-auto h-[200px] w-full ${CHART_FOCUS}`}>

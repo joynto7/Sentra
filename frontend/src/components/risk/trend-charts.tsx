@@ -144,8 +144,13 @@ export function TrendCharts({
   const [bands, setBands] = useState<RiskMethod["bands"] | null>(null)
   const [scoreAt, setScoreAt] = useState<ScoreRow | null>(null)
   const [bucketAt, setBucketAt] = useState<TrendBucket | null>(null)
-  const showScores = useCallback((row: ScoreRow) => setScoreAt(row), [])
-  const showBucket = useCallback((bucket: TrendBucket) => setBucketAt(bucket), [])
+  // The chart reports the same point again on every drawing; the same point changes nothing, so
+  // the page draws once per point and not in a loop
+  const showScores = useCallback((row: ScoreRow) => setScoreAt((now) => (now?.at === row.at ? now : row)), [])
+  const showBucket = useCallback(
+    (bucket: TrendBucket) => setBucketAt((now) => (now?.starts_at === bucket.starts_at ? now : bucket)),
+    [],
+  )
   useEffect(() => {
     // The bands come from the code that scores (FR-7.2, M7), so the shading can't drift from it
     const controller = new AbortController()
