@@ -46,7 +46,7 @@ function spoken(row: CategoryRow): string {
 }
 
 /**
- * "Open findings by OWASP category" (Screen 42, FR-7.4): what each category holds and whether it
+ * "Open findings by OWASP category" (Screen 42; FR-7.4, M7): what each category holds and whether it
  * has been tested. The coverage column says it in words and with a symbol, never in colour alone
  * (NFR-4.3), and the whole matrix is Framework Coverage. Categories that are out of scope and hold
  * nothing are named once under the table instead of taking a row each.
@@ -128,18 +128,13 @@ export function CategoryTable({
               <TableCell className="py-1.5 whitespace-normal">
                 <span className="text-[13px]" title={row.reason}>
                   <span aria-hidden="true">{COVERAGE_SYMBOL[row.status]} </span>
-                  {row.applicable_targets > 1 ? (
-                    // With several targets, how many were tested says more than one target's gap.
-                    `${row.tested_targets} of ${row.applicable_targets} targets tested`
-                  ) : (
-                    <>
-                      {row.label}
-                      {row.worst_target && SHORT[row.status] && (
-                        <span className="block text-xs text-muted-foreground">
-                          {row.worst_target}: {SHORT[row.status]}
-                        </span>
-                      )}
-                    </>
+                  {/* With several targets, how many were tested says more than one target's word */}
+                  {row.applicable_targets > 1 ? `${row.tested_targets} of ${row.applicable_targets} targets tested` : row.label}
+                  {/* The weakest target's gap stays readable without a pointer (Screen 42) */}
+                  {row.worst_target && SHORT[row.status] && (
+                    <span className="block text-xs text-muted-foreground">
+                      {row.worst_target}: {SHORT[row.status]}
+                    </span>
                   )}
                 </span>
               </TableCell>

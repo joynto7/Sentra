@@ -71,19 +71,34 @@ export type FindingPage = {
   total: number
   page: number
   page_size: number
-  counts: { open: number; assigned: number; requires_confirmation: number; closed: number }
+  counts: Partial<Record<FindingView, number>>
   in_run_counts: InRunCounts | null
 }
 
 /** The quick views of Screen 38. */
-export type FindingView = "open" | "assigned" | "requires_confirmation" | "closed"
+export type FindingView =
+  | "open"
+  | "assigned"
+  | "requires_confirmation"
+  | "closed"
+  // Not tabs: the Risk Dashboard opens these, so a total opens exactly the findings it counts
+  | "all"
+  | "awaiting_triage"
+  | "awaiting_remediation"
 
 export const VIEW_LABEL: Record<FindingView, string> = {
   open: "All open",
   assigned: "Assigned to me",
   requires_confirmation: "Requires confirmation",
   closed: "Closed",
+  all: "Open and closed",
+  awaiting_triage: "Awaiting triage",
+  awaiting_remediation: "Awaiting remediation",
 }
+
+/** A part of a period, as the Risk Dashboard's numbers have it: first seen in it, or closed in it. */
+export const PERIOD_FILTERS = ["first_seen_from", "first_seen_until", "closed_from", "closed_until"] as const
+export type PeriodFilters = Partial<Record<(typeof PERIOD_FILTERS)[number], string>>
 
 /** The version of the test that found it: what it checks, and how to fix what it finds. */
 export type FindingTest = {

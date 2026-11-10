@@ -6,6 +6,7 @@ member of the organization may read them, like the runs themselves; another orga
 import re
 import uuid
 from dataclasses import dataclass, replace
+from datetime import datetime
 
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -140,14 +141,44 @@ def run_detection(
 # ---------------------------------------------------------------- findings (FR-6.2, FR-6.3)
 
 # The quick views of the findings list (Screen 38). "assigned" is "Assigned to me": the open
-# findings whose owner is the member who is reading (FR-6.5).
+# findings whose owner is the member who is reading (FR-6.5, M6). The last three are not tabs:
+# the Risk Dashboard links to them (UC-7.3 step 6), so a total such as "Awaiting triage 16" opens
+# exactly the 16 findings it counts.
 VIEWS = {
     "open": OPEN,
     "assigned": OPEN,
     "requires_confirmation": (FindingStatus.REQUIRES_CONFIRMATION,),
     "closed": CLOSED,
+    "all": OPEN + CLOSED,
+    "awaiting_triage": (FindingStatus.NEW, FindingStatus.REQUIRES_CONFIRMATION),
+    "awaiting_remediation": (FindingStatus.CONFIRMED, FindingStatus.REOPENED),
 }
 MINE = "assigned"
+TABS = ("open", "assigned", "requires_confirmation", "closed")  # the views with a tab and a count
+
+
+def closing(organization_id: uuid.UUID):
+    """When each closed finding was closed: its newest history entry that closed it (FR-6.5, M6) —
+    a false positive, a merge, or any status change into a closed status. A finding that a retest
+    verified as fixed has no such entry, so for it the moment it was last seen stands in. Returns
+    the subquery to outer-join on the finding and the date to filter and count by. The Risk
+    Dashboard counts closed findings by this date (FR-7.4, M7) and the list's "closed from" filter
+    uses it too, so a number and the list it opens agree."""
+    entered = (
+        select(FindingEvent.finding_id, func.max(FindingEvent.created_at).label("at"))
+        .where(
+            FindingEvent.organization_id == organization_id,
+            or_(
+                FindingEvent.kind.in_((FindingEventKind.FALSE_POSITIVE, FindingEventKind.MERGED)),
+                FindingEvent.became.in_(CLOSED),
+            ),
+        )
+        .group_by(FindingEvent.finding_id)
+        .subquery()
+    )
+    return entered, func.coalesce(entered.c.at, Finding.last_seen_at)
+
+
 SEVERITY_RANK = {severity.value: rank for rank, severity in enumerate(Severity)}  # critical first
 _CODE = re.compile(r"F-(\d{1,9})", re.IGNORECASE)
 
@@ -164,6 +195,12 @@ class FindingFilters:
     run_id: uuid.UUID | None = None  # the findings that this campaign run found or saw again
     owner_id: uuid.UUID | None = None  # FR-6.5: the Owner filter of Screen 38
     search: str = ""  # in the title, or a finding's code such as F-012
+    # A part of a period, as the Risk Dashboard's numbers have it (UC-7.3 step 6): first seen in
+    # it, or closed in it. "until" is the end, not included.
+    first_seen_from: datetime | None = None
+    first_seen_until: datetime | None = None
+    closed_from: datetime | None = None
+    closed_until: datetime | None = None
     # Who is reading, for the quick view "Assigned to me"; the route fills it in
     user_id: uuid.UUID | None = None
 
@@ -208,6 +245,19 @@ def _filtered(
         if match := _CODE.fullmatch(search):
             condition = or_(condition, Finding.number == int(match[1]))
         query = query.where(condition)
+    if filters.first_seen_from:
+        query = query.where(Finding.first_seen_at >= filters.first_seen_from)
+    if filters.first_seen_until:
+        query = query.where(Finding.first_seen_at < filters.first_seen_until)
+    if filters.closed_from or filters.closed_until:
+        entered, closed_at = closing(organization_id)
+        query = query.outerjoin(entered, entered.c.finding_id == Finding.id).where(
+            Finding.status.in_(CLOSED)
+        )
+        if filters.closed_from:
+            query = query.where(closed_at >= filters.closed_from)
+        if filters.closed_until:
+            query = query.where(closed_at < filters.closed_until)
     return query
 
 
@@ -353,10 +403,7 @@ def list_findings(
     refs = _run_refs(db, {run for f in found for run in (f.first_run_id, f.last_run_id)})
     owners = _owners(db, list(found))
     measured = reproducibility.latest(db, {f.id for f in found})
-    counts = {
-        view: sum(statuses.get(status, 0) for status in included)
-        for view, included in VIEWS.items()
-    }
+    counts = {view: sum(statuses.get(status, 0) for status in VIEWS[view]) for view in TABS}
     counts[MINE] = db.scalar(
         select(func.count()).select_from(
             _filtered(organization_id, replace(filters, view=MINE)).subquery()

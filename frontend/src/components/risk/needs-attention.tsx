@@ -24,6 +24,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ApiError } from "@/lib/api"
 import { getAttention, type Attention, type AttentionItem, type AttentionKey } from "@/lib/risk"
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
@@ -102,7 +103,8 @@ const WORDING: Record<AttentionKey, { icon: LucideIcon; text: (item: AttentionIt
   },
   expiring_api_keys: {
     icon: KeyRound,
-    text: ({ count }) => plural(count, "API key expires within two weeks", "API keys expire within two weeks"),
+    text: ({ count, detail }) =>
+      plural(count, `API key expires within ${detail.within_days} days`, `API keys expire within ${detail.within_days} days`),
     href: () => "/integrations/api-keys",
   },
 }
@@ -147,7 +149,7 @@ function Item({ item }: { item: AttentionItem }) {
  */
 export function NeedsAttention({ filtered }: { filtered: boolean }) {
   const [data, setData] = useState<Attention | null>(null)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
@@ -155,9 +157,13 @@ export function NeedsAttention({ filtered }: { filtered: boolean }) {
     getAttention(controller.signal)
       .then((found) => {
         setData(found)
-        setFailed(false)
+        setFailed(null)
       })
-      .catch(() => !controller.signal.aborted && setFailed(true))
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        // The API's own words when it gave any, such as "wait a minute" after too many requests
+        setFailed(error instanceof ApiError ? error.message : "This list could not be loaded.")
+      })
     return () => controller.abort()
   }, [attempt])
 
@@ -168,8 +174,8 @@ export function NeedsAttention({ filtered }: { filtered: boolean }) {
         {filtered && <span className="ml-2 text-[13px] font-normal text-muted-foreground">in the whole organization</span>}
       </h2>
       {failed ? (
-        <p className="mt-2 flex items-center gap-3 text-[13px] text-muted-foreground">
-          This list could not be loaded.
+        <p className="mt-2 flex items-center gap-3 text-[13px] text-muted-foreground" role="alert">
+          {failed}
           <Button variant="outline" size="sm" className="h-8" onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </Button>

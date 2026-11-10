@@ -5,17 +5,18 @@ that came and went.
 Nothing is interpolated or invented. A score line is a step line through the calculations that
 really happened (FR-7.2 keeps every one of them), and the bars count findings by the dates the
 findings themselves carry. A closed finding belongs to the period in which it was closed, as its
-history records it (FR-6.5, M6; `closing()`); the dashboard's counts of closed findings use the same
-date.
+history records it (FR-6.5, M6; `closing()` of Module 6); the dashboard's counts of closed findings
+and the list a number opens use the same date.
 """
 
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.m06_findings.models import CLOSED, Finding, FindingEvent, FindingEventKind
+from app.modules.m06_findings.models import CLOSED, Finding
+from app.modules.m06_findings.service import closing
 from app.modules.m07_risk.models import RiskScore
 
 BUCKETS = 6  # Screen 42: six two-week columns over the default 90 days
@@ -28,26 +29,6 @@ def buckets(days: int, until: datetime) -> list[tuple[datetime, datetime]]:
     length = timedelta(days=days) / BUCKETS
     start = until - timedelta(days=days)
     return [(start + length * step, start + length * (step + 1)) for step in range(BUCKETS)]
-
-
-def closing(organization_id: uuid.UUID):
-    """When each closed finding was closed: its newest history entry that closed it (FR-6.5, M6): a
-    false positive, a merge, or any status change into a closed status. A finding that a retest
-    verified as fixed has no such entry, so for it the moment it was last seen stands in. Returns
-    the subquery to outer-join on the finding and the date to filter and count by."""
-    entered = (
-        select(FindingEvent.finding_id, func.max(FindingEvent.created_at).label("at"))
-        .where(
-            FindingEvent.organization_id == organization_id,
-            or_(
-                FindingEvent.kind.in_((FindingEventKind.FALSE_POSITIVE, FindingEventKind.MERGED)),
-                FindingEvent.became.in_(CLOSED),
-            ),
-        )
-        .group_by(FindingEvent.finding_id)
-        .subquery()
-    )
-    return entered, func.coalesce(entered.c.at, Finding.last_seen_at)
 
 
 def _closed_dates(

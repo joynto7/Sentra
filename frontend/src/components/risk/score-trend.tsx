@@ -3,29 +3,34 @@
 import { useState } from "react"
 import { CartesianGrid, Line, LineChart, ReferenceArea, Tooltip, XAxis, YAxis } from "recharts"
 
-import { SCORE_LINES } from "@/components/risk/chart-series"
+import { CHART_FOCUS, SCORE_LINES } from "@/components/risk/chart-series"
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
-import { BAND_LABEL, type RiskBand, type ScoreSeries } from "@/lib/risk"
+import { BAND_LABEL, type RiskBand, type RiskMethod, type ScoreSeries } from "@/lib/risk"
 
-/** The bands of a risk score (FR-7.2), shaded behind the lines and named on the right. */
-const BANDS: { band: RiskBand; from: number; to: number; fill: string }[] = [
-  { band: "critical", from: 75, to: 100, fill: "var(--severity-critical)" },
-  { band: "high", from: 50, to: 75, fill: "var(--severity-high)" },
-  { band: "medium", from: 25, to: 50, fill: "var(--severity-medium)" },
-  { band: "low", from: 0, to: 25, fill: "var(--severity-low)" },
+/** The bands of a risk score (FR-7.2, M7), shaded behind the lines and named on the right. The
+ * page asks the API for them; these are the same values, for the moment before it answers. */
+const FALLBACK: RiskMethod["bands"] = [
+  { band: "critical", severity: "critical", from: 75, to: 100 },
+  { band: "high", severity: "high", from: 50, to: 74 },
+  { band: "medium", severity: "medium", from: 25, to: 49 },
+  { band: "low", severity: "low", from: 1, to: 24 },
 ]
+const FILL: Record<string, string> = {
+  critical: "var(--severity-critical)",
+  high: "var(--severity-high)",
+  medium: "var(--severity-medium)",
+  low: "var(--severity-low)",
+}
 // Right of the plot: first where each line ends now, then the band names (as the design draws it)
 const BAND_COLUMN = 34
 const RIGHT = 96
 const HEIGHT = 200
 const LABEL_GAP = 14 // px: an end label closer than this to another one is left to the legend
 
-type Row = { at: number } & Record<string, number | boolean | null>
+type Row = { at: number } & Record<string, number | string | boolean | null>
 
 const time = (iso: string) => new Date(iso).getTime()
 const shortDate = (at: number) => new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
-const band = (score: number): RiskBand =>
-  score >= 75 ? "critical" : score >= 50 ? "high" : score >= 25 ? "medium" : score >= 1 ? "low" : "none"
 
 /**
  * One row per moment a score was calculated, from the start of the period to now. A score holds
@@ -42,6 +47,8 @@ export function scoreRows(series: ScoreSeries[], from: number, to: number): Row[
       series.forEach((one, index) => {
         const reached = one.points.filter((point) => Math.max(from, time(point.at)) <= at)
         row[`s${index}`] = reached.length ? reached[reached.length - 1].score : null
+        // The band that calculation gave, as the API says it, not worked out again here
+        row[`s${index}_band`] = reached.length ? reached[reached.length - 1].band : null
         row[`s${index}_calculated`] = one.points.some((point) => !point.before_period && time(point.at) === at)
       })
       return row
@@ -55,7 +62,7 @@ function TrendTooltip({
   series,
 }: {
   active?: boolean
-  payload?: { dataKey?: string | number; value?: number | null }[]
+  payload?: { dataKey?: string | number; value?: number | null; payload?: Row }[]
   label?: number
   series: ScoreSeries[]
 }) {
@@ -76,7 +83,8 @@ function TrendTooltip({
                 </svg>
                 <span className="tabular font-semibold">{item.value}</span>
                 <span className="text-muted-foreground">
-                  {BAND_LABEL[band(item.value as number)]} · {series[index]?.target.name}
+                  {BAND_LABEL[(item.payload?.[`s${index}_band`] as RiskBand | null) ?? "none"]} ·{" "}
+                  {series[index]?.target.name}
                 </span>
               </li>
             )
@@ -88,11 +96,29 @@ function TrendTooltip({
 
 /**
  * "Risk score over time" (Screen 42; UC-7.3 step 5): the scores of up to three targets across the
- * period, against the bands of FR-7.2. The chart can be read with the keyboard — focus it, then
+ * period, against the bands of FR-7.2 (M7). The chart can be read with the keyboard — focus it, then
  * the arrow keys move from one calculation to the next and the tooltip says what each line was —
  * and Escape closes the tooltip (WCAG 1.4.13). Nothing moves on its own.
  */
-export default function ScoreTrend({ series, from, to }: { series: ScoreSeries[]; from: number; to: number }) {
+export default function ScoreTrend({
+  series,
+  from,
+  to,
+  bands,
+}: {
+  series: ScoreSeries[]
+  from: number
+  to: number
+  bands: RiskMethod["bands"] | null
+}) {
+  // A band reaches up to where the next one starts, so the shading has no gaps
+  const shaded = [...(bands ?? FALLBACK)]
+    .sort((a, b) => a.from - b.from)
+    .map((one, index, all) => ({
+      band: one.band as RiskBand,
+      from: index === 0 ? 0 : one.from,
+      to: index === all.length - 1 ? 100 : all[index + 1].from,
+    }))
   const [quiet, setQuiet] = useState(false)
   const rows = scoreRows(series, from, to)
   const config: ChartConfig = Object.fromEntries(
@@ -120,7 +146,7 @@ export default function ScoreTrend({ series, from, to }: { series: ScoreSeries[]
       onPointerMove={() => quiet && setQuiet(false)}
       onFocus={() => quiet && setQuiet(false)}
     >
-      <ChartContainer config={config} className="aspect-auto h-[200px] w-full">
+      <ChartContainer config={config} className={`aspect-auto h-[200px] w-full ${CHART_FOCUS}`}>
         <LineChart
           data={rows}
           margin={{ top: 8, right: RIGHT, bottom: 0, left: 0 }}
@@ -129,13 +155,13 @@ export default function ScoreTrend({ series, from, to }: { series: ScoreSeries[]
           desc={`Risk scores across the period, now: ${summary}. The same numbers are in the table view.`}
         >
           <CartesianGrid vertical={false} stroke="var(--border)" />
-          {BANDS.map((one) => (
+          {shaded.map((one) => (
             <ReferenceArea
               key={one.band}
               yAxisId="score"
               y1={one.from}
               y2={one.to}
-              fill={one.fill}
+              fill={FILL[one.band] ?? "var(--muted)"}
               fillOpacity={0.07}
               ifOverflow="hidden"
               label={(props: { viewBox?: { x?: number; y?: number; width?: number; height?: number } }) => {

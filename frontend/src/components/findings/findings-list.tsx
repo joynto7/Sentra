@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react"
 
 import { StatusBadge, Reproducibility } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
@@ -25,6 +25,8 @@ import {
   type FindingItem,
   type FindingPage,
   type FindingView,
+  PERIOD_FILTERS,
+  type PeriodFilters,
   VIEW_LABEL,
   findingFilterOptions,
   getFinding,
@@ -36,6 +38,17 @@ import { formatDate } from "@/lib/targets"
 
 const PAGE_SIZE = 25
 const VIEWS: FindingView[] = ["open", "assigned", "requires_confirmation", "closed"]
+// Views a link can open that have no tab of their own (from the Risk Dashboard's totals)
+const LINKED_VIEWS: FindingView[] = ["all", "awaiting_triage", "awaiting_remediation"]
+
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+
+/** "First seen 12 Aug – 27 Aug", "Closed since 12 Aug": a period filter in words. */
+function periodText(kind: "First seen" | "Closed", from?: string, until?: string): string | null {
+  if (!from && !until) return null
+  if (from && until) return `${kind} ${shortDate(from)} – ${shortDate(until)}`
+  return from ? `${kind} since ${shortDate(from)}` : `${kind} before ${shortDate(until as string)}`
+}
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"]
 const STATUSES = [
   "new",
@@ -149,7 +162,12 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
   // The risk dashboard (Screen 42) links here with the filter behind every number it shows, so
   // the list starts with the view and the filters of that link (UC-7.3 step 6).
   const asked = query.get("view") as FindingView | null
-  const [view, setView] = useState<FindingView>(asked && VIEWS.includes(asked) ? asked : "open")
+  const [view, setView] = useState<FindingView>(
+    asked && (VIEWS.includes(asked) || LINKED_VIEWS.includes(asked)) ? asked : "open",
+  )
+  const [period, setPeriod] = useState<PeriodFilters>(() =>
+    Object.fromEntries(PERIOD_FILTERS.flatMap((key) => (query.get(key) ? [[key, query.get(key) as string]] : []))),
+  )
   const [search, setSearch] = useState("")
   // Inside a target's tabs the list shows only that target, so it has no target filter.
   const [target, setTarget] = useState(targetId ?? query.get("target_id") ?? "")
@@ -186,6 +204,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
       if (status) params.set("status", status)
       if (runId) params.set("run_id", runId)
       if (owner) params.set("owner_id", owner)
+      for (const [key, value] of Object.entries(period)) if (value) params.set(key, value)
       listFindings(params, controller.signal)
         .then((found) => {
           setData(found)
@@ -197,9 +216,15 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [view, search, target, severity, category, status, runId, owner, page, attempt])
+  }, [view, search, target, severity, category, status, runId, owner, period, page, attempt])
 
-  const filtered = Boolean(search.trim() || (target && !targetId) || severity || category || status || runId || owner)
+  const periods = [
+    { keys: ["first_seen_from", "first_seen_until"] as const, text: periodText("First seen", period.first_seen_from, period.first_seen_until) },
+    { keys: ["closed_from", "closed_until"] as const, text: periodText("Closed", period.closed_from, period.closed_until) },
+  ].filter((one) => one.text)
+  const filtered = Boolean(
+    search.trim() || (target && !targetId) || severity || category || status || runId || owner || periods.length,
+  )
   const clearFilters = useCallback(() => {
     setSearch("")
     setTarget(targetId ?? "")
@@ -208,8 +233,20 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
     setStatus("")
     setRunId("")
     setOwner("")
+    setPeriod({})
     setPage(1)
   }, [targetId])
+  // What a link from the Risk Dashboard narrowed the list to, each removable on its own
+  const chips = [
+    ...(LINKED_VIEWS.includes(view)
+      ? [{ text: VIEW_LABEL[view], remove: () => setView("open") }]
+      : []),
+    ...periods.map((one) => ({
+      text: one.text as string,
+      remove: () =>
+        setPeriod((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !(one.keys as readonly string[]).includes(key)))),
+    })),
+  ]
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
 
   const panel = (
@@ -291,6 +328,25 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
           }}
           options={(options?.runs ?? []).map((row) => ({ value: row.id, label: row.code }))}
         />
+        {chips.map((chip) => (
+          <span
+            key={chip.text}
+            className="inline-flex h-9 items-center gap-1 rounded-[7px] border border-input bg-accent pr-1 pl-3 text-sm text-accent-foreground"
+          >
+            {chip.text}
+            <button
+              type="button"
+              onClick={() => {
+                chip.remove()
+                setPage(1)
+              }}
+              className="inline-flex size-7 items-center justify-center rounded-[5px] hover:bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              aria-label={`Remove the filter: ${chip.text}`}
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </button>
+          </span>
+        ))}
         {filtered && (
           <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
             Clear filters
@@ -493,6 +549,7 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
             {panel}
           </TabsContent>
         ))}
+        {LINKED_VIEWS.includes(view) && panel}
       </Tabs>
 
 

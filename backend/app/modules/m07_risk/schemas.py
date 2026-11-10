@@ -51,7 +51,7 @@ class TopFindingItem(BaseModel):
     severity: str
     status: str
     target: TargetRef
-    owner: str | None = None  # nobody owns it yet: None (FR-6.5)
+    owner: str | None = None  # nobody owns it yet: None (FR-6.5, M6)
     reproducibility: str | None  # None until the finding has been rated (FR-7.1)
     provisional: bool
     last_seen_at: datetime

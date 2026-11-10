@@ -109,19 +109,28 @@ def test_the_tiles_and_statuses_are_the_lists_they_open(team, history):
         )
         assert shown["by_status"][status] == listed(team.client, **link), status
         assert shown["by_status"][status] == counted(db, Finding.status == status)
+    # The two middle tiles open the views that hold exactly what they count
     assert (
         shown["awaiting_triage"]
-        == shown["by_status"]["new"] + shown["by_status"]["requires_confirmation"]
+        == listed(team.client, view="awaiting_triage")
+        == (shown["by_status"]["new"] + shown["by_status"]["requires_confirmation"])
     )
     assert (
         shown["awaiting_remediation"]
-        == shown["by_status"]["confirmed"] + shown["by_status"]["reopened"]
+        == listed(team.client, view="awaiting_remediation")
+        == (shown["by_status"]["confirmed"] + shown["by_status"]["reopened"])
     )
-    # Fixed and verified within the period: the one fixed today, not the one of 100 days ago
+    # Closed in the period: the link carries the start of the period, so the list holds the one
+    # fixed today and not the one fixed 100 days ago
+    since = shown["changes"]["since"]
     assert shown["fixed_and_verified"] == 1
-    assert shown["fixed_and_verified"] <= listed(
-        team.client, view="closed", status="fixed_and_verified"
+    assert shown["fixed_and_verified"] == listed(
+        team.client, view="closed", status="fixed_and_verified", closed_from=since
     )
+    for status in ("fixed_and_verified", "false_positive", "merged"):
+        assert shown["by_status"][status] == listed(
+            team.client, view="closed", status=status, closed_from=since
+        ), status
 
 
 def test_each_target_row_is_its_own_list_and_its_own_score(team, history):
@@ -182,6 +191,12 @@ def test_the_trends_add_up_to_the_findings_of_the_period(team, history):
     assert sum(bar["new"] for bar in bars) == counted(team.db, Finding.first_seen_at >= start)
     assert sum(bar["closed"] for bar in bars) == closed == 1
     assert shown["trends"]["net_change"] == sum(bar["new"] - bar["closed"] for bar in bars)
+    # Each bar opens its own findings: those first seen in its part of the period, or closed in it
+    for bar in bars:
+        part = {"first_seen_from": bar["starts_at"], "first_seen_until": bar["ends_at"]}
+        assert bar["new"] == listed(team.client, view="all", **part), bar
+        part = {"closed_from": bar["starts_at"], "closed_until": bar["ends_at"]}
+        assert bar["closed"] == listed(team.client, view="closed", **part), bar
 
 
 def test_the_tiles_compare_with_the_start_and_the_period_before(team, history):
@@ -212,7 +227,7 @@ def test_a_target_first_scored_in_the_period_has_no_score_then(team, run_with):
 
 
 def test_an_archived_targets_findings_stay_out_of_every_number(team, history):
-    """An archived target isn't on the dashboard (FR-2.6), so its findings are in none of the
+    """An archived target isn't on the dashboard (FR-2.6, M2), so its findings are in none of the
     page's numbers, while the Findings list still holds them for their history. The page's
     numbers then equal the lists of the targets it shows."""
     retired = add_target(team.db, team.org, name="Mortgage FAQ Bot")

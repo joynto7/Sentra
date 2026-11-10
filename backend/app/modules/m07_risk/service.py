@@ -338,7 +338,7 @@ def _top_findings(
             select(Target.id, Target.name).where(Target.id.in_({f.target_id for f in found}))
         ).all()
     )
-    # Screen 42's Owner column: who owns each finding (FR-6.5), or nobody yet
+    # Screen 42's Owner column: who owns each finding (FR-6.5, M6), or nobody yet
     owner_ids = {f.owner_id for f in found if f.owner_id}
     owners = (
         dict(db.execute(select(User.id, User.name).where(User.id.in_(owner_ids))).all())

@@ -2,7 +2,7 @@
 (Screen 42, UC-7.3): the "Needs attention" panel at the top of the page.
 
 The panel lists at most five things, and only things that are real and above zero. Which things
-depends on the role, because each role acts on different work (FR-1.6):
+depends on the role, because each role acts on different work (FR-1.6, M1):
 
 - Security Analyst: paused campaign runs, new findings to triage, findings that require
   confirmation, remediations awaiting their approval, threat model drafts to review, findings
@@ -112,7 +112,7 @@ def requires_confirmation(db: Session, organization_id: uuid.UUID, user_id: uuid
 
 
 def assigned_to_me(db: Session, organization_id: uuid.UUID, user_id: uuid.UUID) -> Item:
-    """The quick view "Assigned to me": open findings this person owns (FR-6.5)."""
+    """The quick view "Assigned to me": open findings this person owns (FR-6.5, M6)."""
     mine = (Finding.status.in_(OPEN), Finding.owner_id == user_id)
     return Item("assigned_to_me", _findings(db, organization_id, *mine))
 
@@ -141,8 +141,8 @@ def paused_runs(db: Session, organization_id: uuid.UUID, user_id: uuid.UUID) -> 
 
 
 def scopes_to_approve(db: Session, organization_id: uuid.UUID, user_id: uuid.UUID) -> Item:
-    """Campaigns waiting for a Security Manager's decision on their scope (FR-5.2, UC-5.2). Nobody
-    may decide on a campaign they created, so this person's own ones are left out."""
+    """Campaigns waiting for a Security Manager's decision on their scope (FR-5.2, M5; UC-5.2).
+    Nobody may decide on a campaign they created, so this person's own ones are left out."""
     codes = list(
         db.scalars(
             scoped_select(Campaign, organization_id)
@@ -208,7 +208,7 @@ def _remediation(db: Session, organization_id: uuid.UUID, membership: Membership
 
 
 def unverified_targets(db: Session, organization_id: uuid.UUID, user_id: uuid.UUID) -> Item:
-    """Targets that can't be tested because their ownership isn't verified (FR-2.3, UC-2.3)."""
+    """Targets that can't be tested because their ownership isn't verified (FR-2.3, M2; UC-2.3)."""
     ids = list(
         db.scalars(
             scoped_select(Target, organization_id)
@@ -221,10 +221,10 @@ def unverified_targets(db: Session, organization_id: uuid.UUID, user_id: uuid.UU
 
 
 def gateways_not_reporting(db: Session, organization_id: uuid.UUID, user_id: uuid.UUID) -> Item:
-    """Gateways that Sentra Shield shows as "Not reporting" (FR-8.3, FR-10.6): connected, but no
-    heartbeat for three of its intervals. Screen 47 lists a gateway of an archived target only
-    while its credential isn't revoked, and a revoked gateway is never "not reporting", so every
-    gateway that is not reporting is on that page."""
+    """Gateways that Sentra Shield shows as "Not reporting" (FR-8.3, M8; FR-10.6, M10): connected,
+    but no heartbeat for three of its intervals. Screen 47 lists a gateway of an archived target
+    only while its credential isn't revoked, and a revoked gateway is never "not reporting", so
+    every gateway that is not reporting is on that page."""
     found = [
         gateway.target_id
         for gateway in db.scalars(
@@ -251,7 +251,7 @@ def pending_invitations(db: Session, organization_id: uuid.UUID, user_id: uuid.U
 
 
 def usage_limit(db: Session, organization_id: uuid.UUID, user_id: uuid.UUID) -> Item:
-    """A monthly limit at or past its warning threshold (FR-10.4, UC-10.6): the moment the
+    """A monthly limit at or past its warning threshold (FR-10.4, M10; UC-10.6): the moment the
     Organization Administrators and Security Managers are warned, and the warning stays true until
     the month ends. Counts the limits concerned; the detail names the fullest."""
     allowed_now = limits.limits_for(db, organization_id)
@@ -276,7 +276,8 @@ def expiring_api_keys(db: Session, organization_id: uuid.UUID, user_id: uuid.UUI
     """Keys that API Keys marks "expires soon" (UC-9.6, 3a1): an integration stops working when
     its key expires."""
     keys = api_keys.keys_of(db, organization_id)
-    return Item("expiring_api_keys", sum(api_keys.state(key) == "expiring" for key in keys))
+    expiring = sum(api_keys.state(key) == "expiring" for key in keys)
+    return Item("expiring_api_keys", expiring, detail={"within_days": api_keys.SOON_DAYS})
 
 
 COUNTS = {

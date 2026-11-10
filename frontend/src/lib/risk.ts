@@ -165,7 +165,7 @@ export type AttentionItem = {
   count: number
   /** The one campaign, run or target when there is just one, so the item can open it directly */
   one: { campaign?: string; number?: number; code?: string; target_id?: string }
-  detail: { expired?: number; kind?: string; label?: string; percent?: number; resets?: string }
+  detail: { expired?: number; kind?: string; label?: string; percent?: number; resets?: string; within_days?: number }
 }
 
 export type Attention = { role: string; items: AttentionItem[]; more: number }

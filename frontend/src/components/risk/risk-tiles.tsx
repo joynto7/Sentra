@@ -135,7 +135,7 @@ export function RiskTiles({
   fixedAndVerified,
   byStatus,
   periodDays,
-  targetQuery,
+  filterQuery,
   changes,
 }: {
   openTotal: number
@@ -145,18 +145,19 @@ export function RiskTiles({
   fixedAndVerified: number
   byStatus: Record<string, number>
   periodDays: number
-  /** `&target_id=…` when one target is chosen, so every link keeps the filter. */
-  targetQuery: string
+  /** `&target_id=…&category=…` for the chosen target and category, so every link keeps them */
+  filterQuery: string
   /** The start of the period and the period before it, which the tiles compare with */
   changes: { since: string; open_then: number | null; fixed_before: number }
 }) {
   const since = new Date(changes.since).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
   const opened = changes.open_then === null ? null : openTotal - changes.open_then
   const fixed = fixedAndVerified - changes.fixed_before
-  const open = `/findings?view=open${targetQuery}`
-  const closed = `/findings?view=closed${targetQuery}`
+  const open = `/findings?view=open${filterQuery}`
+  // The period's closings open with the period's start, so the list holds what the tile counts
+  const closedInPeriod = `/findings?view=closed&closed_from=${encodeURIComponent(changes.since)}${filterQuery}`
   const part = (label: string, count: number, href: string) => (
-    <Link href={href} className="text-text-secondary hover:underline">
+    <Link href={href} className="inline-flex min-h-6 items-center gap-1 text-text-secondary hover:underline">
       <span className="tabular">{count}</span> {label}
     </Link>
   )
@@ -181,29 +182,29 @@ export function RiskTiles({
           <p className="mt-2 text-[13px] text-muted-foreground">Nothing is open.</p>
         )}
       </Tile>
-      <Tile title="Awaiting triage" count={awaitingTriage} href={open}>
-        <p className="mt-2 text-[13px]">
-          {part("new", byStatus.new ?? 0, `/findings?view=open&status=new${targetQuery}`)}
-          <span className="text-muted-foreground"> · </span>
+      <Tile title="Awaiting triage" count={awaitingTriage} href={`/findings?view=awaiting_triage${filterQuery}`}>
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[13px]">
+          {part("new", byStatus.new ?? 0, `/findings?view=open&status=new${filterQuery}`)}
+          <span className="text-muted-foreground" aria-hidden="true">·</span>
           {part(
             "require confirmation",
             byStatus.requires_confirmation ?? 0,
-            `/findings?view=requires_confirmation${targetQuery}`,
+            `/findings?view=requires_confirmation${filterQuery}`,
           )}
         </p>
       </Tile>
-      <Tile title="Awaiting remediation" count={awaitingRemediation} href={open}>
-        <p className="mt-2 text-[13px]">
-          {part("confirmed", byStatus.confirmed ?? 0, `/findings?view=open&status=confirmed${targetQuery}`)}
-          <span className="text-muted-foreground"> · </span>
-          {part("reopened", byStatus.reopened ?? 0, `/findings?view=open&status=reopened${targetQuery}`)}
+      <Tile
+        title="Awaiting remediation"
+        count={awaitingRemediation}
+        href={`/findings?view=awaiting_remediation${filterQuery}`}
+      >
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[13px]">
+          {part("confirmed", byStatus.confirmed ?? 0, `/findings?view=open&status=confirmed${filterQuery}`)}
+          <span className="text-muted-foreground" aria-hidden="true">·</span>
+          {part("reopened", byStatus.reopened ?? 0, `/findings?view=open&status=reopened${filterQuery}`)}
         </p>
       </Tile>
-      <Tile
-        title="Fixed and verified"
-        count={fixedAndVerified}
-        href={`${closed}&status=fixed_and_verified`}
-      >
+      <Tile title="Fixed and verified" count={fixedAndVerified} href={`${closedInPeriod}&status=fixed_and_verified`}>
         <Delta
           change={fixed}
           worseWhen="down"

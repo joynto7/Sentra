@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -80,7 +81,16 @@ def attempt_detection(
 
 @router.get("/findings")
 def list_findings(
-    view: Literal["open", "assigned", "requires_confirmation", "closed"] | None = None,
+    view: Literal[
+        "open",
+        "assigned",
+        "requires_confirmation",
+        "closed",
+        "all",
+        "awaiting_triage",
+        "awaiting_remediation",
+    ]
+    | None = None,
     severity: Severity | None = None,
     category: Category | None = None,
     status: FindingStatus | None = None,
@@ -88,6 +98,10 @@ def list_findings(
     run_id: uuid.UUID | None = None,
     owner_id: uuid.UUID | None = None,
     search: str = Query(default="", max_length=200),
+    first_seen_from: datetime | None = None,
+    first_seen_until: datetime | None = None,
+    closed_from: datetime | None = None,
+    closed_until: datetime | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
     actor: api_keys.Actor = Depends(reads_findings),
@@ -116,6 +130,10 @@ def list_findings(
         owner_id=owner_id,
         search=search,
         user_id=actor.membership.user_id if actor.membership else None,
+        first_seen_from=first_seen_from,
+        first_seen_until=first_seen_until,
+        closed_from=closed_from,
+        closed_until=closed_until,
     )
     data = service.list_findings(db, actor.organization_id, filters, page, page_size)
     return FindingPage.model_validate(data)

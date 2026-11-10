@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Bar, BarChart, CartesianGrid, LabelList, Tooltip, XAxis, YAxis } from "recharts"
 
-import { FLOW } from "@/components/risk/chart-series"
+import { CHART_FOCUS, FLOW, flowHref } from "@/components/risk/chart-series"
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
 import type { TrendBucket } from "@/lib/risk"
 
@@ -42,8 +43,9 @@ function FlowTooltip({
  * The bars are thin and grow from one baseline; the keyboard reaches every part of the period
  * through the chart's focus and the arrow keys, and Escape closes the tooltip (WCAG 1.4.13).
  */
-export default function FindingsFlow({ buckets }: { buckets: TrendBucket[] }) {
+export default function FindingsFlow({ buckets, filterQuery }: { buckets: TrendBucket[]; filterQuery: string }) {
   const [quiet, setQuiet] = useState(false)
+  const router = useRouter()
   const config: ChartConfig = { new: FLOW.new, closed: FLOW.closed }
   const rows = buckets.map((bucket) => ({ ...bucket, label: shortDate(bucket.starts_at) }))
   const summary = buckets.map((b) => `${shortDate(b.starts_at)}: ${b.new} new, ${b.closed} closed`).join("; ")
@@ -53,7 +55,7 @@ export default function FindingsFlow({ buckets }: { buckets: TrendBucket[] }) {
       onPointerMove={() => quiet && setQuiet(false)}
       onFocus={() => quiet && setQuiet(false)}
     >
-      <ChartContainer config={config} className="aspect-auto h-[200px] w-full">
+      <ChartContainer config={config} className={`aspect-auto h-[200px] w-full ${CHART_FOCUS}`}>
         <BarChart
           data={rows}
           margin={{ top: 20, right: 4, bottom: 0, left: 0 }}
@@ -81,6 +83,9 @@ export default function FindingsFlow({ buckets }: { buckets: TrendBucket[] }) {
               maxBarSize={24}
               radius={[4, 4, 0, 0]}
               isAnimationActive={false}
+              cursor="pointer"
+              // A bar opens its findings (UC-7.3 step 6); the table view has the same as links
+              onClick={(entry: { payload?: TrendBucket }) => entry.payload && router.push(flowHref(entry.payload, key, filterQuery))}
             >
               <LabelList dataKey={key} position="top" offset={4} className="fill-foreground text-xs" />
             </Bar>

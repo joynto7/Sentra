@@ -14,7 +14,7 @@ import { ScoreMethod } from "@/components/risk/score-method"
 import { TrendCharts } from "@/components/risk/trend-charts"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
-import { SeverityBadge } from "@/components/sentra/severity-badge"
+import { SEVERITY_LABEL, SeverityBadge, type Severity } from "@/components/sentra/severity-badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -23,6 +23,7 @@ import type { FindingStatus } from "@/lib/findings"
 import { useCan } from "@/lib/permissions"
 import {
   CLOSED_STATUSES,
+  COUNTED,
   OPEN_STATUSES,
   PERIODS,
   type RiskDashboard as Dashboard,
@@ -42,20 +43,28 @@ const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { d
 function ByStatus({
   byStatus,
   periodDays,
-  targetQuery,
+  filterQuery,
+  since,
 }: {
   byStatus: Record<string, number>
   periodDays: number
-  targetQuery: string
+  filterQuery: string
+  /** The start of the period: a closed count opens the findings closed since then */
+  since: string
 }) {
   const most = Math.max(1, ...Object.values(byStatus))
   const row = (status: FindingStatus, view: "open" | "closed") => {
     const count = byStatus[status] ?? 0
-    const query = status === "requires_confirmation" ? "view=requires_confirmation" : `view=${view}&status=${status}`
+    const query =
+      status === "requires_confirmation"
+        ? "view=requires_confirmation"
+        : view === "closed"
+          ? `view=closed&status=${status}&closed_from=${encodeURIComponent(since)}`
+          : `view=open&status=${status}`
     return (
       <li key={status}>
         <Link
-          href={`/findings?${query}${targetQuery}`}
+          href={`/findings?${query}${filterQuery}`}
           className="group flex min-h-8 items-center gap-3 rounded-[5px] px-1 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <span className="w-44">
@@ -115,6 +124,7 @@ function ScoreChange({ row, since }: { row: TargetRiskRow; since: string }) {
 
 /** The targets without a score, folded into one row: what each one needs before it can have one. */
 function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boolean | undefined }) {
+  const verify = (row: TargetRiskRow) => row.not_scored_reason === "ownership_not_verified"
   return (
     <TableRow>
       <TableCell colSpan={5} className="text-[13px] whitespace-normal">
@@ -128,7 +138,7 @@ function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: bool
               {row.name}
             </Link>
             <span className="text-muted-foreground"> — {notScoredText(row.not_scored_reason).replace(/^Not scored — /, "")}</span>
-            {row.not_scored_reason === "ownership_not_verified" && canVerify && (
+            {verify(row) && canVerify && (
               <>
                 {" · "}
                 <Link href={`/targets/${row.id}/verify`} className="text-link underline underline-offset-2">
@@ -136,6 +146,8 @@ function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: bool
                 </Link>
               </>
             )}
+            {/* Whoever can't verify learns who can (FR-2.3, M2) */}
+            {verify(row) && !canVerify && <span className="text-muted-foreground"> · an AI Application Developer verifies it</span>}
           </span>
         ))}
       </TableCell>
@@ -205,7 +217,13 @@ function TargetRisk({ rows, canVerify, since }: { rows: TargetRiskRow[]; canVeri
                 <Link
                   href={`/findings?view=open&target_id=${row.id}`}
                   className="block py-1 hover:underline"
-                  aria-label={`${row.open_total} open findings of ${row.name}`}
+                  aria-label={`${row.open_total} open findings of ${row.name}${
+                    row.open_total
+                      ? `: ${COUNTED.filter((severity) => row.open_by_severity[severity])
+                          .map((severity) => `${row.open_by_severity[severity]} ${SEVERITY_LABEL[severity as Severity].toLowerCase()}`)
+                          .join(", ")}`
+                      : ""
+                  }`}
                 >
                   <SeverityCountsStrip counts={row.open_by_severity} />
                 </Link>
@@ -255,7 +273,7 @@ function TargetRisk({ rows, canVerify, since }: { rows: TargetRiskRow[]; canVeri
 
 /** "Critical and high findings" (Screen 42; UC-7.3 step 6 leads to UC-6.4): the most serious
  * open findings first, as the screen lists them. */
-function TopFindings({ data, targetQuery }: { data: Dashboard["top_findings"]; targetQuery: string }) {
+function TopFindings({ data, filterQuery }: { data: Dashboard["top_findings"]; filterQuery: string }) {
   return (
     <section aria-labelledby="top-findings" className="min-w-0 rounded-[10px] border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
@@ -265,7 +283,10 @@ function TopFindings({ data, targetQuery }: { data: Dashboard["top_findings"]; t
         </h2>
         <span className="tabular text-sm text-muted-foreground">
           {Math.min(data.items.length, data.total)} of {data.total} ·{" "}
-          <Link href={`/findings?view=open${targetQuery}`} className="text-link underline underline-offset-2">
+          <Link
+            href={`/findings?view=open${filterQuery}`}
+            className="inline-flex min-h-6 items-center text-link underline underline-offset-2"
+          >
             View all
           </Link>
         </span>
@@ -353,6 +374,11 @@ export function RiskDashboard() {
   const [options, setOptions] = useState<{ id: string; name: string }[]>([])
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  // Which filters the numbers on screen belong to: while they differ from the chosen ones, the
+  // page is updating
+  const asked = `${target}|${days}|${category}|${attempt}`
+  const [answered, setAnswered] = useState("")
+  const loading = answered !== asked
 
   useEffect(() => {
     const controller = new AbortController()
@@ -363,10 +389,17 @@ export function RiskDashboard() {
       .then((found) => {
         setData(found)
         setError(false)
+        setAnswered(`${target}|${days}|${category}|${attempt}`)
         // The answer holds every target while no target is chosen, which is the filter's list.
         if (!target) setOptions(found.targets.map((row) => ({ id: row.id, name: row.name })))
       })
-      .catch(() => !controller.signal.aborted && setError(true))
+      .catch(() => {
+        if (controller.signal.aborted) return
+        // Numbers of other filters would contradict the filters above them: they go
+        setError(true)
+        setData(null)
+        setAnswered(`${target}|${days}|${category}|${attempt}`)
+      })
     return () => controller.abort()
   }, [target, days, category, attempt])
 
@@ -377,6 +410,8 @@ export function RiskDashboard() {
     setCategory("")
   }, [])
   const targetQuery = target ? `&target_id=${target}` : ""
+  // Every link carries the chosen target and category, so it opens what its number counts
+  const filterQuery = `${targetQuery}${category ? `&category=${category}` : ""}`
   // Before any run has ended, a run that is going on is what there is to see
   const firstRun = data?.targets.find((row) => row.live_run)
   const since = data ? shortDate(data.changes.since) : ""
@@ -473,8 +508,12 @@ export function RiskDashboard() {
         </div>
       )}
 
+      {/* While new filters load, the page keeps its frame and says it is updating */}
+      <p className="sr-only" role="status">
+        {loading && data ? "Updating the dashboard" : ""}
+      </p>
       {data && (
-        <div className="space-y-3">
+        <div className={loading ? "space-y-3 opacity-60 transition-opacity motion-reduce:transition-none" : "space-y-3"} aria-busy={loading}>
           <NeedsAttention filtered={target !== "" || category !== ""} />
 
           {data.last_run_at === null && firstRun && (
@@ -525,7 +564,7 @@ export function RiskDashboard() {
                 fixedAndVerified={data.fixed_and_verified}
                 byStatus={data.by_status}
                 periodDays={data.period_days}
-                targetQuery={targetQuery}
+                filterQuery={filterQuery}
                 changes={data.changes}
               />
               {data.category_filtered && (
@@ -536,7 +575,12 @@ export function RiskDashboard() {
               )}
               <TargetRisk rows={data.targets} canVerify={canVerify} since={since} />
               <div className="grid items-start gap-3 lg:grid-cols-3">
-                <ByStatus byStatus={data.by_status} periodDays={data.period_days} targetQuery={targetQuery} />
+                <ByStatus
+                  byStatus={data.by_status}
+                  periodDays={data.period_days}
+                  filterQuery={filterQuery}
+                  since={data.changes.since}
+                />
                 <CategoryTable
                   className="lg:col-span-2"
                   rows={data.by_category}
@@ -545,8 +589,8 @@ export function RiskDashboard() {
                   onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
                 />
               </div>
-              <TrendCharts trends={data.trends} periodDays={data.period_days} />
-              <TopFindings data={data.top_findings} targetQuery={targetQuery} />
+              <TrendCharts trends={data.trends} periodDays={data.period_days} filterQuery={filterQuery} />
+              <TopFindings data={data.top_findings} filterQuery={filterQuery} />
             </>
           )}
         </div>
