@@ -1,13 +1,21 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 
-import { FLOW, SCORE_LINES, flowHref } from "@/components/risk/chart-series"
+import { FLOW, SCORE_LINES, type ScoreRow, flowHref, scoreRows } from "@/components/risk/chart-series"
 import { ChartCard, type ChartState } from "@/components/sentra/chart-card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { BAND_LABEL, type RiskMethod, type ScoreSeries, type TrendBucket, type Trends, getRiskMethod } from "@/lib/risk"
+import {
+  BAND_LABEL,
+  type RiskBand,
+  type RiskMethod,
+  type ScoreSeries,
+  type TrendBucket,
+  type Trends,
+  getRiskMethod,
+} from "@/lib/risk"
 import { formatDate } from "@/lib/targets"
 
 // The charting library is loaded only here, after the page itself; the space it will take is
@@ -109,11 +117,19 @@ function netSentence(net: number): string {
     : `${-net} more ${net === -1 ? "finding was" : "findings were"} closed than came in.`
 }
 
+const shortDate = (at: number | string) => new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+// Legend links stay 24 px or larger (WCAG 2.5.8)
+const LEGEND_LINK = "tabular inline-flex min-h-6 min-w-6 items-center justify-center px-1 hover:underline"
+
 /**
  * The trends of Screen 42 (UC-7.3 step 5), as two chart cards side by side: how the risk scores
  * of the highest-scoring targets moved across the period, and how many findings came and went.
  * Each card can show its numbers as a table, and says so honestly when there is nothing or too
  * little to draw. Every count opens the findings it counts (step 6): a bar, a table cell, a total.
+ *
+ * Instead of a tooltip that floats over the chart, each legend is the readout: point at the chart,
+ * or focus it and use the arrow keys, and the legend shows that moment's values as links. They
+ * stay until Escape or "Back to now", so they can be hovered and used (WCAG 1.4.13).
  */
 export function TrendCharts({
   trends,
@@ -126,6 +142,10 @@ export function TrendCharts({
   filterQuery: string
 }) {
   const [bands, setBands] = useState<RiskMethod["bands"] | null>(null)
+  const [scoreAt, setScoreAt] = useState<ScoreRow | null>(null)
+  const [bucketAt, setBucketAt] = useState<TrendBucket | null>(null)
+  const showScores = useCallback((row: ScoreRow) => setScoreAt(row), [])
+  const showBucket = useCallback((bucket: TrendBucket) => setBucketAt(bucket), [])
   useEffect(() => {
     // The bands come from the code that scores (FR-7.2, M7), so the shading can't drift from it
     const controller = new AbortController()
@@ -147,10 +167,19 @@ export function TrendCharts({
     ? { starts_at: buckets[0].starts_at, ends_at: buckets[buckets.length - 1].ends_at, new: totals.new, closed: totals.closed }
     : null
   const scores = trends.scores
+  const rows = useMemo(() => scoreRows(scores, from, to), [scores, from, to])
   const lines = scoreState(scores)
+  const part = bucketAt ?? whole
 
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
+    <div
+      className="grid gap-3 lg:grid-cols-2"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return
+        setScoreAt(null)
+        setBucketAt(null)
+      }}
+    >
       <ChartCard
         title="Risk score over time"
         unit={
@@ -163,38 +192,66 @@ export function TrendCharts({
         tooLittleText="The trend starts after the next run: each target has been scored once so far."
         table={<ScoreTable scores={scores} />}
         legend={
-          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]" aria-label="Lines">
-            {scores.map((one, index) => (
-              <li key={one.target.id} className="flex items-center gap-1.5">
-                <svg width="22" height="8" aria-hidden="true">
-                  <line
-                    x1="0"
-                    y1="4"
-                    x2="22"
-                    y2="4"
-                    stroke={SCORE_LINES[index].color}
-                    strokeWidth="2"
-                    strokeDasharray={SCORE_LINES[index].dash}
-                  />
-                </svg>
-                <span className="sr-only">{SCORE_LINES[index].pattern} line:</span>
-                <Link href={`/targets/${one.target.id}`} className="inline-flex min-h-6 items-center text-link hover:underline">
-                  {one.target.name}
-                </Link>
-                <Link
-                  href={`/findings?view=open&target_id=${one.target.id}`}
-                  className="tabular inline-flex min-h-6 items-center text-muted-foreground hover:underline"
-                  aria-label={`${one.score ?? "No score"} ${one.band ? BAND_LABEL[one.band] : ""}: the open findings of ${one.target.name}`}
-                >
-                  {one.score ?? "—"} {one.band ? BAND_LABEL[one.band] : ""}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-2 text-[13px]" aria-live="polite">
+            <p className="flex min-h-6 items-center gap-2 text-muted-foreground">
+              {scoreAt ? (
+                <>
+                  <span>
+                    On <span className="font-medium text-foreground">{shortDate(scoreAt.at)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setScoreAt(null)}
+                    className="inline-flex min-h-6 items-center rounded-[5px] px-1 text-link underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Back to now
+                  </button>
+                </>
+              ) : (
+                "Now"
+              )}
+            </p>
+            <ul className="flex flex-wrap gap-x-4" aria-label="Lines">
+              {scores.map((one, index) => {
+                const value = scoreAt ? (scoreAt[`s${index}`] as number | null) : one.score
+                const band = (scoreAt ? scoreAt[`s${index}_band`] : one.band) as RiskBand | null
+                return (
+                  <li key={one.target.id} className="flex items-center gap-1">
+                    <svg width="22" height="8" aria-hidden="true">
+                      <line
+                        x1="0"
+                        y1="4"
+                        x2="22"
+                        y2="4"
+                        stroke={SCORE_LINES[index].color}
+                        strokeWidth="2"
+                        strokeDasharray={SCORE_LINES[index].dash}
+                      />
+                    </svg>
+                    <span className="sr-only">{SCORE_LINES[index].pattern} line:</span>
+                    <Link href={`/targets/${one.target.id}`} className="inline-flex min-h-6 items-center text-link hover:underline">
+                      {one.target.name}
+                    </Link>
+                    {value === null ? (
+                      <span className="text-muted-foreground">not scored yet</span>
+                    ) : (
+                      <Link
+                        href={`/findings?view=open&target_id=${one.target.id}`}
+                        className={`${LEGEND_LINK} text-muted-foreground`}
+                        aria-label={`${value} ${band ? BAND_LABEL[band] : ""}: the open findings of ${one.target.name}`}
+                      >
+                        {value} {band ? BAND_LABEL[band] : ""}
+                      </Link>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         }
         howToRead="Each step is a new calculation, after a run, a triage decision or a retest; the shading marks the bands."
       >
-        <ScoreTrend series={scores} from={from} to={to} bands={bands} />
+        <ScoreTrend series={scores} rows={rows} from={from} to={to} bands={bands} onActive={showScores} />
       </ChartCard>
 
       <ChartCard
@@ -204,29 +261,53 @@ export function TrendCharts({
         emptyText={`No finding was opened or closed in the last ${periodDays} days.`}
         table={<FlowTable buckets={buckets} filterQuery={filterQuery} />}
         legend={
-          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]" aria-label="Bars">
-            {(["new", "closed"] as const).map((key) => (
-              <li key={key} className="flex items-center gap-1.5">
-                <span className="size-2.5 rounded-[2px]" style={{ background: FLOW[key].color }} aria-hidden="true" />
-                {FLOW[key].label}
-                {whole && totals[key] > 0 ? (
-                  <Link
-                    href={flowHref(whole, key, filterQuery)}
-                    className="tabular inline-flex min-h-6 items-center text-muted-foreground hover:underline"
-                    aria-label={`${totals[key]} ${key === "new" ? "first seen" : "closed"} in the last ${periodDays} days`}
-                  >
-                    · {totals[key]}
-                  </Link>
+          part && (
+            <div className="mt-2 text-[13px]" aria-live="polite">
+              <p className="flex min-h-6 items-center gap-2 text-muted-foreground">
+                {bucketAt ? (
+                  <>
+                    <span className="font-medium text-foreground">
+                      {shortDate(bucketAt.starts_at)} – {shortDate(bucketAt.ends_at)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setBucketAt(null)}
+                      className="inline-flex min-h-6 items-center rounded-[5px] px-1 text-link underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                      Whole period
+                    </button>
+                  </>
                 ) : (
-                  <span className="tabular text-muted-foreground">· {totals[key]}</span>
+                  `Last ${periodDays} days`
                 )}
-              </li>
-            ))}
-          </ul>
+              </p>
+              <ul className="flex flex-wrap gap-x-4" aria-label="Bars">
+                {(["new", "closed"] as const).map((key) => (
+                  <li key={key} className="flex items-center gap-1.5">
+                    <span className="size-2.5 rounded-[2px]" style={{ background: FLOW[key].color }} aria-hidden="true" />
+                    {FLOW[key].label}
+                    {part[key] > 0 ? (
+                      <Link
+                        href={flowHref(part, key, filterQuery)}
+                        className={`${LEGEND_LINK} text-link`}
+                        aria-label={`${part[key]} ${key === "new" ? "first seen" : "closed"} ${
+                          bucketAt ? `from ${formatDate(part.starts_at)} to ${formatDate(part.ends_at)}` : `in the last ${periodDays} days`
+                        }`}
+                      >
+                        {part[key]}
+                      </Link>
+                    ) : (
+                      <span className="tabular px-1 text-muted-foreground">0</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
         }
-        howToRead={`Closed means fixed and verified, a false positive or merged. ${netSentence(trends.net_change)} Select a bar for its findings.`}
+        howToRead={`Closed means fixed and verified, a false positive or merged. ${netSentence(trends.net_change)} Select a bar or a number for its findings.`}
       >
-        <FindingsFlow buckets={buckets} filterQuery={filterQuery} />
+        <FindingsFlow buckets={buckets} filterQuery={filterQuery} onActive={showBucket} />
       </ChartCard>
     </div>
   )

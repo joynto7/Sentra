@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { FindingStatus } from "@/lib/findings"
+import { ApiError } from "@/lib/api"
 import { useCan } from "@/lib/permissions"
 import {
   CLOSED_STATUSES,
@@ -95,7 +96,7 @@ function ByStatus({
   )
 }
 
-/** The change of a target's score since the start of the period (FR-7.2 keeps every score); the
+/** The change of a target's score since the start of the period (FR-7.2, M7, keeps every score); the
  * column's header names the date. */
 function ScoreChange({ row, since }: { row: TargetRiskRow; since: string }) {
   if (row.score === null) return null
@@ -372,7 +373,8 @@ export function RiskDashboard() {
   const [category, setCategory] = useState("")
   const [data, setData] = useState<Dashboard | null>(null)
   const [options, setOptions] = useState<{ id: string; name: string }[]>([])
-  const [error, setError] = useState(false)
+  // The API's own words when it gave any (too many requests, a session that ended), else ours
+  const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   // Which filters the numbers on screen belong to: while they differ from the chosen ones, the
   // page is updating
@@ -388,15 +390,15 @@ export function RiskDashboard() {
     getRiskDashboard(params, controller.signal)
       .then((found) => {
         setData(found)
-        setError(false)
+        setError(null)
         setAnswered(`${target}|${days}|${category}|${attempt}`)
         // The answer holds every target while no target is chosen, which is the filter's list.
         if (!target) setOptions(found.targets.map((row) => ({ id: row.id, name: row.name })))
       })
-      .catch(() => {
+      .catch((failure) => {
         if (controller.signal.aborted) return
         // Numbers of other filters would contradict the filters above them: they go
-        setError(true)
+        setError(failure instanceof ApiError ? failure.message : "The dashboard could not be loaded.")
         setData(null)
         setAnswered(`${target}|${days}|${category}|${attempt}`)
       })
@@ -488,7 +490,7 @@ export function RiskDashboard() {
       {error && (
         <Alert variant="destructive" role="alert">
           <AlertDescription className="flex items-center justify-between gap-4">
-            The dashboard could not be loaded.
+            {error}
             <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
               Try again
             </Button>
@@ -589,7 +591,13 @@ export function RiskDashboard() {
                   onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
                 />
               </div>
-              <TrendCharts trends={data.trends} periodDays={data.period_days} filterQuery={filterQuery} />
+              {/* New filters start the readouts afresh */}
+              <TrendCharts
+                key={`${target}|${days}|${category}`}
+                trends={data.trends}
+                periodDays={data.period_days}
+                filterQuery={filterQuery}
+              />
               <TopFindings data={data.top_findings} filterQuery={filterQuery} />
             </>
           )}
