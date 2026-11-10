@@ -356,7 +356,7 @@ def errors_of(document: dict) -> list[str]:
     if terms_total > MAX_TERMS:
         found.append(
             f"A policy may match at most {MAX_TERMS} terms in all; this one would match "
-            f"{terms_total}, which would slow every request down (NFR-1.5)."
+            f"{terms_total}, which would slow every request down."
         )
     return found
 
@@ -383,14 +383,14 @@ def deploy(
         raise NotFoundError("That target doesn't exist.")
     if remediation.status not in (RemediationStatus.APPROVED, RemediationStatus.APPLYING):
         raise ConflictError(
-            "Only an approved remediation is deployed to a gateway (UC-8.3).",
+            "Only an approved remediation is deployed to a gateway.",
             code="not_approved",
         )
     gateway = gateways.active(db, target.id)
     if gateway is None:
         raise ConflictError(
             "This target has no Sentra Shield gateway in its traffic path, so there is nothing to "
-            "deploy a policy to (UC-8.1).",
+            "deploy a policy to.",
             code="no_active_gateway",
         )
     if waiting(db, target.id) is not None:
@@ -405,7 +405,7 @@ def deploy(
     if not document["rules"]:
         raise ConflictError(
             "None of the approved fixes can be enforced by this gateway, so there is no policy to "
-            "deploy. They stay a change inside the application (UC-8.5).",
+            "deploy. They stay a change inside the application.",
             code="nothing_to_enforce",
         )
     found = errors_of(document)
@@ -1105,7 +1105,7 @@ def deployable(db: Session, organization_id: uuid.UUID, target: Target) -> list[
                     guardrail=None,
                 )
                 if gateway is not None
-                else ([], "This target has no gateway in its traffic path (UC-8.1).")
+                else ([], "This target has no gateway in its traffic path.")
             )
             # What it would become is its kind and this gateway's position, not the terms a
             # person has still to write: Screen 48 names the rule and asks for them.

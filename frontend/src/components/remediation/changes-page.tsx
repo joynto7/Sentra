@@ -285,7 +285,7 @@ export function ChangesPage() {
           </ul>
           {!canRequest && (
             <p className="mt-3 text-[13px] text-muted-foreground">
-              The application&apos;s own developer marks a change as implemented (UC-8.5).
+              The application&apos;s own developer marks a change as implemented.
             </p>
           )}
         </section>

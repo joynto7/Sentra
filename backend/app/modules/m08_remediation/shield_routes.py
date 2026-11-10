@@ -16,10 +16,10 @@ from app.core.tenancy import scoped_select
 from app.modules.m01_users.deps import current_membership, recent_password_confirmation
 from app.modules.m01_users.models import Membership, User, UserSession
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m02_targets.models import Target
+from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m06_findings.service import finding_row
 from app.modules.m08_remediation import gateways, policies
-from app.modules.m08_remediation.models import RuleKind, ShieldGateway, ShieldPolicy
+from app.modules.m08_remediation.models import GatewayStatus, RuleKind, ShieldGateway, ShieldPolicy
 from app.modules.m08_remediation.schemas import (
     DeployIn,
     DeployOut,
@@ -59,6 +59,7 @@ def _out(db: Session, gateway: ShieldGateway, target: Target | None = None) -> G
         target_id=gateway.target_id,
         target_name=target.name if target else "",
         target_environment=target.environment if target else "",
+        target_archived=bool(target and target.status == TargetStatus.ARCHIVED),
         position=gateway.position,
         position_label=gateways.POSITION_LABELS[gateway.position],
         status=state,
@@ -84,7 +85,9 @@ def _out(db: Session, gateway: ShieldGateway, target: Target | None = None) -> G
 def list_gateways(
     membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
 ) -> GatewayList:
-    """Screen 47: every target of the organization, with its gateway when it has one."""
+    """Screen 47: every target of the organization, with its gateway when it has one. An archived
+    target is left out (FR-2.6, M2), unless its gateway was never revoked: that one still sits in
+    the application's traffic, so it stays listed, marked as archived, and can be revoked."""
     targets = list(
         db.scalars(scoped_select(Target, membership.organization_id).order_by(Target.name))
     )
@@ -92,10 +95,21 @@ def list_gateways(
         gateway.target_id: gateway
         for gateway in db.scalars(scoped_select(ShieldGateway, membership.organization_id))
     }
+
+    def listed(target: Target) -> bool:
+        if target.status != TargetStatus.ARCHIVED:
+            return True
+        gateway = rows.get(target.id)
+        return gateway is not None and gateway.status != GatewayStatus.REVOKED
+
+    shown = [one for one in targets if listed(one)]
     return GatewayList(
-        rows=[_out(db, rows[one.id], one) for one in targets if one.id in rows],
+        rows=[_out(db, rows[one.id], one) for one in shown if one.id in rows],
+        # A gateway stands only in front of a verified target: the page offers "Connect" only there
         targets_without_gateway=[
-            {"id": str(one.id), "name": one.name} for one in targets if one.id not in rows
+            {"id": str(one.id), "name": one.name, "verified": one.status == TargetStatus.VERIFIED}
+            for one in shown
+            if one.id not in rows
         ],
         heartbeat_seconds=HEARTBEAT_SECONDS,
     )

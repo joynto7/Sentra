@@ -86,8 +86,7 @@ STOPPED_BY_ROLLBACK = (
     "verifying are not in the traffic any more."
 )
 CANCELLED_BY_ROLLBACK = (
-    "A rollback took the fixes out of the traffic again, so there was nothing left to verify "
-    "(UC-8.8)."
+    "A rollback took the fixes out of the traffic again, so there was nothing left to verify."
 )
 OUT_OF_DATE = "The policy version this retest verified was rolled back."
 IN_EFFECT = "Every fix of this proposal is in effect."
