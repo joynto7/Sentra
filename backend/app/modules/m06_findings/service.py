@@ -180,6 +180,23 @@ def closing(organization_id: uuid.UUID):
 
 
 SEVERITY_RANK = {severity.value: rank for rank, severity in enumerate(Severity)}  # critical first
+# The columns of Screen 38 the list can be sorted by (UC-6.4 step 2 sorts by severity unless the
+# user chooses another), and the lifecycle order the status column sorts in (report, Figure 2.6)
+SORTS = ("severity", "title", "category", "status", "reproducibility", "owner", "last_seen")
+STATUS_RANK = {
+    status.value: rank
+    for rank, status in enumerate(
+        (
+            FindingStatus.NEW,
+            FindingStatus.REQUIRES_CONFIRMATION,
+            FindingStatus.CONFIRMED,
+            FindingStatus.REOPENED,
+            FindingStatus.FIXED_AND_VERIFIED,
+            FindingStatus.FALSE_POSITIVE,
+            FindingStatus.MERGED,
+        )
+    )
+}
 _CODE = re.compile(r"F-(\d{1,9})", re.IGNORECASE)
 
 
@@ -382,19 +399,63 @@ def _target_names(db: Session, target_ids: set[uuid.UUID]) -> dict[uuid.UUID, st
     return dict(db.execute(select(Target.id, Target.name).where(Target.id.in_(target_ids))).all())
 
 
+def _ordered(
+    query: Select[tuple[Finding]], sort: str, direction: str, mine_first: uuid.UUID | None
+) -> Select[tuple[Finding]]:
+    """Screen 38's sorting, on the server, because the list comes one page at a time. "desc"
+    means the most severe, the most reproducible or the most recent first, and Z to A for a name.
+    UC-6.4, 2a1: for an AI Application Developer the findings they own come first, as long as the
+    list is in its usual order. Ties fall back to severity and the most recently seen."""
+    rank = case(SEVERITY_RANK, value=Finding.severity, else_=len(SEVERITY_RANK))
+    newest = direction == "desc"
+    keys = []
+    if mine_first is not None:
+        keys.append(case((Finding.owner_id == mine_first, 0), else_=1))
+    if sort == "severity":
+        keys.append(rank if newest else rank.desc())
+    elif sort == "title":
+        keys.append(func.lower(Finding.title).desc() if newest else func.lower(Finding.title))
+    elif sort == "category":
+        keys.append(Finding.category.desc() if newest else Finding.category)
+    elif sort == "status":
+        order = case(STATUS_RANK, value=Finding.status, else_=len(STATUS_RANK))
+        keys.append(order.desc() if newest else order)
+    elif sort == "reproducibility":
+        value = Finding.reproducibility
+        keys.append(value.desc().nulls_last() if newest else value.asc().nulls_last())
+    elif sort == "owner":
+        name = select(User.name).where(User.id == Finding.owner_id).scalar_subquery()
+        keys.append(name.desc().nulls_last() if newest else name.asc().nulls_last())
+    elif sort == "last_seen":
+        keys.append(Finding.last_seen_at.desc() if newest else Finding.last_seen_at)
+    return query.order_by(*keys, rank, Finding.last_seen_at.desc(), Finding.number.desc())
+
+
 def list_findings(
-    db: Session, organization_id: uuid.UUID, filters: FindingFilters, page: int, page_size: int
+    db: Session,
+    organization_id: uuid.UUID,
+    filters: FindingFilters,
+    page: int,
+    page_size: int,
+    *,
+    sort: str = "severity",
+    direction: str = "desc",
+    mine_first: uuid.UUID | None = None,
 ) -> dict:
     """UC-6.4 steps 2-4: the organization's findings, the most severe first and then the most
-    recently seen, one page at a time (NFR-6.2), and how many each quick view has."""
+    recently seen unless another column is chosen, one page at a time (NFR-6.2), how many each
+    quick view has, and how many of each severity the strip above the table offers."""
     query = _filtered(organization_id, filters)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
-    rank = case(SEVERITY_RANK, value=Finding.severity, else_=len(SEVERITY_RANK))
     found = db.scalars(
-        query.order_by(rank, Finding.last_seen_at.desc(), Finding.number.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        _ordered(query, sort, direction, mine_first).offset((page - 1) * page_size).limit(page_size)
     ).all()
+    # The severity strip counts the view and every filter but the severity itself, so each of
+    # its numbers is what choosing that severity would show
+    others = _filtered(organization_id, replace(filters, severity="")).subquery()
+    severities = dict(
+        db.execute(select(others.c.severity, func.count()).group_by(others.c.severity)).all()
+    )
     everything = _filtered(organization_id, filters, view=False).subquery()
     statuses = dict(
         db.execute(select(everything.c.status, func.count()).group_by(everything.c.status)).all()
@@ -420,6 +481,12 @@ def list_findings(
         "page": page,
         "page_size": page_size,
         "counts": counts,
+        "severity_counts": {
+            severity.value: severities.get(severity.value, 0) for severity in Severity
+        },
+        "sort": sort,
+        "direction": direction,
+        "mine_first": mine_first is not None,
         # UC-6.6 and Screen 37: of the findings of one campaign run, how many were new, seen
         # again with the same root cause (FR-6.6) or reopened as a regression
         "in_run_counts": _in_run_counts(db, organization_id, filters) if filters.run_id else None,
