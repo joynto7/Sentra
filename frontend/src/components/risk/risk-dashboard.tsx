@@ -8,7 +8,8 @@ import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { ReportDialog } from "@/components/reports/report-dialog"
 import { CategoryTable } from "@/components/risk/category-table"
-import { RiskTiles } from "@/components/risk/risk-tiles"
+import { NeedsAttention } from "@/components/risk/needs-attention"
+import { Delta, RiskTiles } from "@/components/risk/risk-tiles"
 import { ScoreMethod } from "@/components/risk/score-method"
 import { TrendCharts } from "@/components/risk/trend-charts"
 import { FilterSelect } from "@/components/sentra/filter-select"
@@ -35,6 +36,8 @@ const DEFAULT_DAYS = "90"
 // What "Last campaign run" says while a run of the target is going on (FR-5.6, M5).
 const LIVE: Record<string, string> = { running: "Running now", paused: "Paused", queued: "Waiting to start" }
 
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+
 /** "Findings by status" (UC-7.3 step 3): the lifecycle of the findings, each status a link. */
 function ByStatus({
   byStatus,
@@ -53,7 +56,7 @@ function ByStatus({
       <li key={status}>
         <Link
           href={`/findings?${query}${targetQuery}`}
-          className="group flex min-h-6 items-baseline gap-3 rounded-[5px] px-1 py-1 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="group flex min-h-8 items-center gap-3 rounded-[5px] px-1 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <span className="w-44">
             <StatusBadge status={status} />
@@ -75,22 +78,83 @@ function ByStatus({
         Findings by status
       </h2>
       <h3 className="mt-3 text-[13px] font-medium text-muted-foreground">Open</h3>
-      <ul className="mt-1 space-y-0.5">{OPEN_STATUSES.map((status) => row(status, "open"))}</ul>
-      <h3 className="mt-4 text-[13px] font-medium text-muted-foreground">
-        Closed in the last {periodDays} days
-      </h3>
-      <ul className="mt-1 space-y-0.5">{CLOSED_STATUSES.map((status) => row(status, "closed"))}</ul>
+      <ul className="mt-1">{OPEN_STATUSES.map((status) => row(status, "open"))}</ul>
+      <h3 className="mt-3 text-[13px] font-medium text-muted-foreground">Closed in the last {periodDays} days</h3>
+      <ul className="mt-1">{CLOSED_STATUSES.map((status) => row(status, "closed"))}</ul>
+      <p className="mt-3 text-xs text-muted-foreground">Bars share one scale of 0 to {most} findings.</p>
     </section>
   )
 }
 
-/** The "Target risk" table (UC-7.3 step 2): a score per target, with the date of its last run. */
-function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boolean | undefined }) {
+/** The change of a target's score since the start of the period (FR-7.2 keeps every score); the
+ * column's header names the date. */
+function ScoreChange({ row, since }: { row: TargetRiskRow; since: string }) {
+  if (row.score === null) return null
+  if (row.score_then === null || row.score_then === undefined) {
+    return (
+      <p className="text-xs whitespace-nowrap text-muted-foreground">
+        First score<span className="sr-only">: no score on {since}</span>
+      </p>
+    )
+  }
+  const change = row.score - row.score_then
+  return (
+    <Delta
+      change={change}
+      worseWhen="up"
+      against={change === 0 ? "Same" : ""}
+      spoken={
+        change === 0
+          ? `The same score as on ${since}.`
+          : `${Math.abs(change)} points ${change > 0 ? "higher" : "lower"} than on ${since}, when it was ${row.score_then}.`
+      }
+      className="text-xs whitespace-nowrap"
+    />
+  )
+}
+
+/** The targets without a score, folded into one row: what each one needs before it can have one. */
+function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boolean | undefined }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={5} className="text-[13px] whitespace-normal">
+        <span className="font-medium">
+          {rows.length} {rows.length === 1 ? "target isn't" : "targets aren't"} scored yet:
+        </span>{" "}
+        {rows.map((row, index) => (
+          <span key={row.id}>
+            {index > 0 && "; "}
+            <Link href={`/targets/${row.id}`} className="text-link underline underline-offset-2">
+              {row.name}
+            </Link>
+            <span className="text-muted-foreground"> — {notScoredText(row.not_scored_reason).replace(/^Not scored — /, "")}</span>
+            {row.not_scored_reason === "ownership_not_verified" && canVerify && (
+              <>
+                {" · "}
+                <Link href={`/targets/${row.id}/verify`} className="text-link underline underline-offset-2">
+                  Verify ownership
+                </Link>
+              </>
+            )}
+          </span>
+        ))}
+      </TableCell>
+    </TableRow>
+  )
+}
+
+/** The "Target risk" table (UC-7.3 step 2): a score per target, with its change and its last run. */
+function TargetRisk({ rows, canVerify, since }: { rows: TargetRiskRow[]; canVerify: boolean | undefined; since: string }) {
+  const scored = rows.filter((row) => row.score !== null && row.band !== null)
+  const unscored = rows.filter((row) => row.score === null || row.band === null)
   return (
     <section aria-labelledby="target-risk" className="min-w-0 rounded-[10px] border bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
         <h2 id="target-risk" className="text-[15px] font-semibold">
           Target risk
+          <span className="tabular ml-2 text-[13px] font-normal text-muted-foreground">
+            {rows.length} {rows.length === 1 ? "target" : "targets"}
+          </span>
         </h2>
         <ScoreMethod />
       </div>
@@ -105,52 +169,37 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
         <TableHeader className="bg-muted">
           <TableRow>
             <TableHead scope="col" className="text-xs">Target</TableHead>
-            <TableHead scope="col" className="text-xs">Risk score</TableHead>
+            <TableHead scope="col" className="text-xs">
+              Risk score <span className="font-normal text-muted-foreground">· change since {since}</span>
+            </TableHead>
             <TableHead scope="col" className="text-xs">Open findings</TableHead>
             <TableHead scope="col" className="text-xs">Awaiting confirmation</TableHead>
             <TableHead scope="col" className="text-xs">Last campaign run</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
+          {scored.map((row) => (
             <TableRow key={row.id}>
               <TableCell>
-                <Link href={`/targets/${row.id}`} className="inline-block py-1 font-medium text-link hover:underline">
+                <Link href={`/targets/${row.id}`} className="inline-flex min-h-6 items-center font-medium text-link hover:underline">
                   {row.name}
                 </Link>
                 <span className="block text-xs text-muted-foreground">
-                  {row.environment}
-                  {/* Every tested target; Attack Paths itself says why a target has no path. */}
-                  {row.score !== null && (
-                    <>
-                      {" · "}
-                      <Link
-                        href={`/attack-paths?target=${row.id}`}
-                        className="inline-flex min-h-6 items-center text-link underline underline-offset-2"
-                        aria-label={`Attack paths of ${row.name}`}
-                      >
-                        Attack paths
-                      </Link>
-                    </>
-                  )}
+                  {row.environment} ·{" "}
+                  <Link
+                    href={`/attack-paths?target=${row.id}`}
+                    className="inline-flex min-h-6 items-center text-link underline underline-offset-2"
+                    aria-label={`Attack paths of ${row.name}`}
+                  >
+                    Attack paths
+                  </Link>
                 </span>
               </TableCell>
               <TableCell>
-                {row.score !== null && row.band !== null ? (
-                  <RiskScore score={row.score} band={row.band} />
-                ) : (
-                  <div className="min-w-44">
-                    <span className="block text-[13px] text-muted-foreground">{notScoredText(row.not_scored_reason)}</span>
-                    {row.not_scored_reason === "ownership_not_verified" && canVerify && (
-                      <Link
-                        href={`/targets/${row.id}/verify`}
-                        className="mt-0.5 inline-block py-1 text-[13px] text-link hover:underline"
-                      >
-                        Verify ownership
-                      </Link>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-start gap-3">
+                  <RiskScore score={row.score as number} band={row.band!} className="min-w-32" />
+                  <ScoreChange row={row} since={since} />
+                </div>
               </TableCell>
               <TableCell>
                 <Link
@@ -166,6 +215,7 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
                   <Link
                     href={`/findings?view=requires_confirmation&target_id=${row.id}`}
                     className="inline-block min-w-6 py-1 text-center text-link hover:underline"
+                    aria-label={`${row.awaiting_confirmation} findings of ${row.name} await confirmation`}
                   >
                     {row.awaiting_confirmation}
                   </Link>
@@ -196,16 +246,100 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
               </TableCell>
             </TableRow>
           ))}
+          {unscored.length > 0 && <NotScored rows={unscored} canVerify={canVerify} />}
         </TableBody>
       </Table>
-      <p className="tabular border-t p-3 text-sm text-muted-foreground">
-        {rows.length} {rows.length === 1 ? "target" : "targets"}
-      </p>
     </section>
   )
 }
 
-/** Screen 42: the organization's risk at a glance (UC-7.3), and the score of UC-7.2 per target. */
+/** "Critical and high findings" (Screen 42; UC-7.3 step 6 leads to UC-6.4): the most serious
+ * open findings first, as the screen lists them. */
+function TopFindings({ data, targetQuery }: { data: Dashboard["top_findings"]; targetQuery: string }) {
+  return (
+    <section aria-labelledby="top-findings" className="min-w-0 rounded-[10px] border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+        <h2 id="top-findings" className="text-[15px] font-semibold">
+          Critical and high findings
+          <span className="ml-2 text-[13px] font-normal text-muted-foreground">Most serious first</span>
+        </h2>
+        <span className="tabular text-sm text-muted-foreground">
+          {Math.min(data.items.length, data.total)} of {data.total} ·{" "}
+          <Link href={`/findings?view=open${targetQuery}`} className="text-link underline underline-offset-2">
+            View all
+          </Link>
+        </span>
+      </div>
+      {data.total === 0 ? (
+        <p className="p-4 text-sm text-muted-foreground">
+          Nothing critical or high is open. The medium and low findings are under Findings.
+        </p>
+      ) : (
+        <Table
+          container={{
+            tabIndex: 0,
+            role: "group",
+            "aria-label": "Critical and high findings",
+            className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          }}
+        >
+          <TableHeader className="bg-muted">
+            <TableRow>
+              <TableHead scope="col" className="text-xs">Finding</TableHead>
+              <TableHead scope="col" className="text-xs">Severity</TableHead>
+              <TableHead scope="col" className="text-xs">Reproducibility</TableHead>
+              <TableHead scope="col" className="text-xs">Status</TableHead>
+              <TableHead scope="col" className="text-xs">Owner</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((finding) => (
+              <TableRow key={finding.code}>
+                <TableCell className="max-w-lg">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <Link
+                      href={`/findings/${finding.code}`}
+                      className="inline-flex min-h-6 shrink-0 items-center font-medium text-link hover:underline"
+                    >
+                      {finding.code}
+                    </Link>
+                    <span className="truncate text-[13px]" title={finding.title}>
+                      {finding.title}
+                    </span>
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {finding.target.name}
+                    {finding.category && <span className="font-mono"> · {finding.category}</span>}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <SeverityBadge severity={finding.severity} />
+                  {finding.provisional && <span className="mt-1 block text-xs text-muted-foreground">Provisional</span>}
+                </TableCell>
+                <TableCell>
+                  <Reproducibility value={finding.reproducibility} />
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={finding.status} />
+                </TableCell>
+                <TableCell className="text-[13px]">
+                  {finding.owner ?? <span className="text-muted-foreground">Nobody yet</span>}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Screen 42: the organization's risk at a glance (UC-7.3), and the score of UC-7.2 per target. The
+ * page reads top to bottom as the questions come: what needs me now, how much is open and is it
+ * more or less than before, which targets are worst and moving which way, by status and by
+ * category, how it developed, and the most serious findings themselves.
+ */
 export function RiskDashboard() {
   const canVerify = useCan("verify_targets")
   const canReport = useCan("generate_reports")
@@ -245,6 +379,7 @@ export function RiskDashboard() {
   const targetQuery = target ? `&target_id=${target}` : ""
   // Before any run has ended, a run that is going on is what there is to see
   const firstRun = data?.targets.find((row) => row.live_run)
+  const since = data ? shortDate(data.changes.since) : ""
 
   return (
     <>
@@ -282,7 +417,7 @@ export function RiskDashboard() {
         onDone={() => undefined}
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <FilterSelect
           label="Target"
           value={target}
@@ -328,148 +463,92 @@ export function RiskDashboard() {
 
       {!data && !error && (
         <div className="space-y-3" role="status" aria-label="Loading the dashboard">
+          <Skeleton className="h-[76px] w-full" />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full" />
+              <Skeleton key={i} className="h-32 w-full" />
             ))}
           </div>
           <Skeleton className="h-64 w-full" />
         </div>
       )}
 
-      {data && data.last_run_at === null && firstRun && (
-        <EmptyState
-          title="The first campaign run is going on"
-          description={`${firstRun.name}: ${firstRun.live_run?.code}. Its findings, severities and risk scores appear here as soon as it has ended.`}
-          action={
-            <Button asChild className="h-9 hover:bg-primary-hover">
-              <Link href={`/campaigns/${firstRun.live_run?.campaign}/runs/${firstRun.live_run?.number}`}>
-                Open the live monitor
-              </Link>
-            </Button>
-          }
-        />
-      )}
-
-      {data && data.last_run_at === null && !firstRun && (
-        <EmptyState
-          title="No campaign results yet"
-          description={
-            canRegister
-              ? "Register a target and verify that you own it; a Security Analyst then runs a campaign against it. Its findings, severities and risk scores appear here as soon as the first run has ended."
-              : canRun
-                ? "Run a campaign against a verified target. Its findings, severities and risk scores appear here as soon as the first run has ended."
-                : "Findings, severities and risk scores appear here after the first campaign run. An AI Application Developer registers and verifies a target, and a Security Analyst runs the campaign."
-          }
-          action={
-            canRegister ? (
-              <Button asChild className="h-9 hover:bg-primary-hover">
-                <Link href="/targets/new">Register target</Link>
-              </Button>
-            ) : canRun ? (
-              <Button asChild className="h-9 hover:bg-primary-hover">
-                <Link href="/campaigns/new">Create campaign</Link>
-              </Button>
-            ) : undefined
-          }
-        />
-      )}
-
-      {data && data.last_run_at !== null && (
+      {data && (
         <div className="space-y-3">
-          <RiskTiles
-            openTotal={data.open_total}
-            openBySeverity={data.open_by_severity}
-            awaitingTriage={data.awaiting_triage}
-            awaitingRemediation={data.awaiting_remediation}
-            fixedAndVerified={data.fixed_and_verified}
-            byStatus={data.by_status}
-            periodDays={data.period_days}
-            targetQuery={targetQuery}
-          />
-          {data.category_filtered && (
-            <p className="text-[13px] text-muted-foreground">
-              Every count on this page is narrowed to {data.category}. A risk score covers all of a
-              target&apos;s findings, so the scores and their lines stay as they are.
-            </p>
-          )}
-          <TargetRisk rows={data.targets} canVerify={canVerify} />
-          <TrendCharts trends={data.trends} periodDays={data.period_days} />
-          <CategoryTable
-            rows={data.by_category}
-            targetQuery={targetQuery}
-            chosen={data.category}
-            onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
-          />
-          <div className="grid gap-3 lg:grid-cols-3">
-            <ByStatus byStatus={data.by_status} periodDays={data.period_days} targetQuery={targetQuery} />
-            <section aria-labelledby="top-findings" className="min-w-0 rounded-[10px] border bg-card lg:col-span-2">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
-                <h2 id="top-findings" className="text-[15px] font-semibold">
-                  Critical and high findings
-                </h2>
-                <span className="tabular text-sm text-muted-foreground">
-                  {Math.min(data.top_findings.items.length, data.top_findings.total)} of {data.top_findings.total} ·{" "}
-                  <Link href={`/findings?view=open${targetQuery}`} className="text-link underline underline-offset-2">
-                    View all
+          <NeedsAttention filtered={target !== "" || category !== ""} />
+
+          {data.last_run_at === null && firstRun && (
+            <EmptyState
+              title="The first campaign run is going on"
+              description={`${firstRun.name}: ${firstRun.live_run?.code}. Its findings, severities and risk scores appear here as soon as it has ended.`}
+              action={
+                <Button asChild className="h-9 hover:bg-primary-hover">
+                  <Link href={`/campaigns/${firstRun.live_run?.campaign}/runs/${firstRun.live_run?.number}`}>
+                    Open the live monitor
                   </Link>
-                </span>
-              </div>
-              {data.top_findings.total === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">
-                  Nothing critical or high is open. The medium and low findings are under Findings.
+                </Button>
+              }
+            />
+          )}
+
+          {data.last_run_at === null && !firstRun && (
+            <EmptyState
+              title="No campaign results yet"
+              description={
+                canRegister
+                  ? "Register a target and verify that you own it; a Security Analyst then runs a campaign against it. Its findings, severities and risk scores appear here as soon as the first run has ended."
+                  : canRun
+                    ? "Run a campaign against a verified target. Its findings, severities and risk scores appear here as soon as the first run has ended."
+                    : "Findings, severities and risk scores appear here after the first campaign run. An AI Application Developer registers and verifies a target, and a Security Analyst runs the campaign."
+              }
+              action={
+                canRegister ? (
+                  <Button asChild className="h-9 hover:bg-primary-hover">
+                    <Link href="/targets/new">Register target</Link>
+                  </Button>
+                ) : canRun ? (
+                  <Button asChild className="h-9 hover:bg-primary-hover">
+                    <Link href="/campaigns/new">Create campaign</Link>
+                  </Button>
+                ) : undefined
+              }
+            />
+          )}
+
+          {data.last_run_at !== null && (
+            <>
+              <RiskTiles
+                openTotal={data.open_total}
+                openBySeverity={data.open_by_severity}
+                awaitingTriage={data.awaiting_triage}
+                awaitingRemediation={data.awaiting_remediation}
+                fixedAndVerified={data.fixed_and_verified}
+                byStatus={data.by_status}
+                periodDays={data.period_days}
+                targetQuery={targetQuery}
+                changes={data.changes}
+              />
+              {data.category_filtered && (
+                <p className="text-[13px] text-muted-foreground">
+                  Every count on this page is narrowed to {data.category}. A risk score covers all of a
+                  target&apos;s findings, so the scores and their lines stay as they are.
                 </p>
-              ) : (
-                <Table
-                  container={{
-                    tabIndex: 0,
-                    role: "group",
-                    "aria-label": "Critical and high findings",
-                    className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                  }}
-                >
-                  <TableHeader className="bg-muted">
-                    <TableRow>
-                      <TableHead scope="col" className="text-xs">Finding</TableHead>
-                      <TableHead scope="col" className="text-xs">Severity</TableHead>
-                      <TableHead scope="col" className="text-xs">Reproducibility</TableHead>
-                      <TableHead scope="col" className="text-xs">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.top_findings.items.map((finding) => (
-                      <TableRow key={finding.code}>
-                        <TableCell>
-                          <Link
-                            href={`/findings/${finding.code}`}
-                            className="inline-block py-1 font-medium text-link hover:underline"
-                          >
-                            {finding.code}
-                          </Link>
-                          <span className="block max-w-xs truncate text-[13px]" title={finding.title}>
-                            {finding.title}
-                          </span>
-                          <span className="block text-xs text-muted-foreground">{finding.target.name}</span>
-                        </TableCell>
-                        <TableCell>
-                          <SeverityBadge severity={finding.severity} />
-                          {finding.provisional && (
-                            <span className="mt-1 block text-xs text-muted-foreground">Provisional</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Reproducibility value={finding.reproducibility} />
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={finding.status} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
               )}
-            </section>
-          </div>
+              <TargetRisk rows={data.targets} canVerify={canVerify} since={since} />
+              <div className="grid items-start gap-3 lg:grid-cols-3">
+                <ByStatus byStatus={data.by_status} periodDays={data.period_days} targetQuery={targetQuery} />
+                <CategoryTable
+                  className="lg:col-span-2"
+                  rows={data.by_category}
+                  targetQuery={targetQuery}
+                  chosen={data.category}
+                  onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
+                />
+              </div>
+              <TrendCharts trends={data.trends} periodDays={data.period_days} />
+              <TopFindings data={data.top_findings} targetQuery={targetQuery} />
+            </>
+          )}
         </div>
       )}
     </>

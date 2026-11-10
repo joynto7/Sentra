@@ -36,6 +36,8 @@ class TargetRiskRow(BaseModel):
     calculated_at: datetime | None
     last_run_at: datetime | None
     live_run: LiveRun | None = None  # the dashboard says when a run is going on now
+    score_then: int | None = None  # the score at the start of the period; None: not scored then
+    score_then_at: datetime | None = None
     open_total: int
     open_by_severity: dict[str, int]
     awaiting_confirmation: int
@@ -45,9 +47,11 @@ class TargetRiskRow(BaseModel):
 class TopFindingItem(BaseModel):
     code: str
     title: str
+    category: str | None = None  # LLM01 to LLM10
     severity: str
     status: str
     target: TargetRef
+    owner: str | None = None  # nobody owns it yet: None (FR-6.5)
     reproducibility: str | None  # None until the finding has been rated (FR-7.1)
     provisional: bool
     last_seen_at: datetime
@@ -260,6 +264,30 @@ class DismissIn(BaseModel):
     reason: str = Field(min_length=paths.MIN_REASON, max_length=300)
 
 
+class Changes(BaseModel):
+    """What the tiles compare with (UC-7.3): the start of the period and the period before it."""
+
+    since: datetime  # the start of the period
+    open_then: int | None  # open findings then; None while a category is chosen
+    fixed_before: int  # fixed and verified in the period of the same length before this one
+
+
+class AttentionItem(BaseModel):
+    key: str  # what it is, such as new_findings: the page words it and links it
+    count: int
+    one: dict = Field(default_factory=dict)  # the campaign, run or target when there is just one
+    detail: dict = Field(default_factory=dict)
+
+
+class AttentionOut(BaseModel):
+    """Screen 42's "Needs attention": what this person can do next, at most five things, and how
+    many more there are."""
+
+    role: str
+    items: list[AttentionItem]
+    more: int
+
+
 class DashboardOut(BaseModel):
     """UC-7.3 steps 2-5 (Screen 42). The attack paths of Screen 44 are AttackPathsOut, and the
     matrix of Screen 43 is CoverageOut."""
@@ -278,6 +306,7 @@ class DashboardOut(BaseModel):
     top_findings: TopFindings
     by_category: list[CategoryRow]
     trends: Trends
+    changes: Changes
 
 
 class ScoreHistoryItem(BaseModel):

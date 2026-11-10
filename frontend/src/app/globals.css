@@ -151,6 +151,10 @@
   --destructive: #f97066;
   --destructive-foreground: #0a0e17;
   --confirm: #b794f4;
+  /* The first two chart series, stepped for dark panels: at least 3:1 on them (WCAG 1.4.11),
+     and still apart for colour-blind readers. */
+  --chart-1: #5f7ff5;
+  --chart-2: #33a97d;
 }
 
 @layer base {
