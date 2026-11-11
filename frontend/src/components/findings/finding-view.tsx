@@ -214,7 +214,7 @@ export function FindingView({ code }: { code: string }) {
           </div>
         }
       />
-      <FindingTabs code={finding.code} active="summary" />
+      <FindingTabs code={finding.code} active="summary" evidence={finding.evidence_count} />
 
       <TriagePanel
         finding={finding}

@@ -354,3 +354,67 @@ def latest(db: Session, finding_ids: set[uuid.UUID]) -> dict[uuid.UUID, Score]:
         )
         for row in rows
     }
+
+
+# ---------------------------------------------------------------- the attempts behind the score
+
+
+@dataclass(frozen=True)
+class Counted:
+    """One attempt behind a finding's reproducibility score (FR-6.4, M6), as Screen 40 lists it."""
+
+    attempt_id: uuid.UUID
+    run_id: uuid.UUID
+    attempt_no: int
+    sent_at: datetime | None
+    outcome: str  # the verdict of UC-6.1: met or not_met
+    mine: bool  # its evidence belongs to the finding, which makes it a success
+    repeat: bool  # sent again to measure the finding (step 1), not planned by the campaign
+
+
+def counted(db: Session, finding: Finding) -> list[Counted]:
+    """The attempts a finding's reproducibility score counts, in the order they were sent: every
+    evaluated attempt of the finding's test against its target, in any of its campaign runs, whose
+    verdict is met or not met (UC-6.1 step 5). An attempt the LLM judge hasn't answered yet isn't
+    counted. A success is an attempt whose evidence belongs to the finding.
+
+    The severity rating counts exactly these attempts (m07_risk/rating.py, FR-7.1, M7), so the score
+    a finding carries and the attempts Screen 40 lists under it are always the same ones."""
+    rows = db.execute(
+        select(
+            Attempt.id,
+            Attempt.campaign_run_id,
+            Attempt.attempt_no,
+            Attempt.sent_at,
+            DetectionVerdict.outcome,
+            Attempt.repeat_of_id,
+        )
+        .join(CampaignRun, CampaignRun.id == Attempt.campaign_run_id)
+        .join(DetectionVerdict, DetectionVerdict.attempt_id == Attempt.id)
+        .where(
+            Attempt.organization_id == finding.organization_id,
+            Attempt.test_code == finding.test_code,
+            CampaignRun.target_id == finding.target_id,
+            DetectionVerdict.outcome.in_((Outcome.MET, Outcome.NOT_MET)),
+        )
+        .order_by(Attempt.sent_at, Attempt.attempt_no)
+    ).all()
+    mine = set(
+        db.scalars(
+            select(Evidence.attempt_id).where(
+                Evidence.finding_id == finding.id, Evidence.kind == EvidenceKind.ATTEMPT
+            )
+        )
+    )
+    return [
+        Counted(
+            attempt_id=row.id,
+            run_id=row.campaign_run_id,
+            attempt_no=row.attempt_no,
+            sent_at=row.sent_at,
+            outcome=str(row.outcome),
+            mine=row.id in mine,
+            repeat=row.repeat_of_id is not None,
+        )
+        for row in rows
+    ]
