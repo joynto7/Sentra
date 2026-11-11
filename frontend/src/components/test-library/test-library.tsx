@@ -17,19 +17,20 @@ export function TestLibrary({ tab }: { tab: Tab }) {
   const router = useRouter()
   const organization = useSession().organization?.name ?? "Your organization"
   const [active, setActive] = useState<Tab>(tab)
-  const [coverage, setCoverage] = useState<CoverageRow[]>([])
+  // null while it loads: the tiles hold their place until then (UX task 3.4)
+  const [coverage, setCoverage] = useState<CoverageRow[] | null>(null)
   const [suites, setSuites] = useState<SuiteItem[] | null>(null)
 
   useEffect(() => {
     apiFetch<CoverageRow[]>("/v1/test-definitions/coverage")
       .then(setCoverage)
-      .catch(() => undefined)
+      .catch(() => setCoverage([]))
     listSuites()
       .then(setSuites)
       .catch(() => setSuites([]))
   }, [])
 
-  const testCount = coverage.length ? coverage.reduce((sum, row) => sum + row.tests, 0) : null
+  const testCount = coverage?.length ? coverage.reduce((sum, row) => sum + row.tests, 0) : null
 
   return (
     <Tabs
