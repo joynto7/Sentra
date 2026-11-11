@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
 import { type RemediationList as List, type RemediationRow, listRemediations } from "@/lib/remediation"
 import { formatDate } from "@/lib/targets"
 
@@ -98,20 +99,33 @@ const EMPTY: Record<RemediationTab, { title: string; description: string }> = {
 export function RemediationList() {
   const show = useSearchParams().get("show")
   const tab: RemediationTab = show === "approval" || show === "retesting" ? show : "all"
-  const [data, setData] = useState<List | null>(null)
+  // The answer kept for Back (UX task 3.0): coming back shows the list at once, and where the
+  // reader was in it, and refreshes it behind
+  const [kept, keep, drop] = useKeptAnswer<List>("remediation")
+  const [data, setData] = useState<List | null>(kept)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  useKeptScroll("remediation", `remediation?show=${tab}`, data !== null)
 
   useEffect(() => {
     const controller = new AbortController()
     listRemediations(controller.signal)
       .then((found) => {
         setData(found)
+        keep(found)
         setError(false)
       })
-      .catch(() => !controller.signal.aborted && setError(true))
+      .catch((problem) => {
+        if (controller.signal.aborted) return
+        // A list the reader may no longer read leaves the page and the memory (UX task 3.0)
+        if (refused(problem)) {
+          drop()
+          setData(null)
+        }
+        setError(true)
+      })
     return () => controller.abort()
-  }, [attempt])
+  }, [attempt, keep, drop])
 
   const again = useCallback(() => setAttempt((n) => n + 1), [])
 
@@ -147,7 +161,7 @@ export function RemediationList() {
         <Alert variant="destructive" role="alert">
           <AlertDescription className="flex items-center justify-between gap-4">
             The proposals could not be loaded.
-            <Button variant="outline" size="sm" onClick={again}>
+            <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={again}>
               Try again
             </Button>
           </AlertDescription>

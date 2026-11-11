@@ -24,6 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSession } from "@/components/session-provider"
+import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
 import { useCan } from "@/lib/permissions"
 import { type TargetRiskRow, getRiskDashboard, notScoredText } from "@/lib/risk"
 import { initials } from "@/lib/session"
@@ -53,8 +54,22 @@ export function TargetsList() {
   const [environment, setEnvironment] = useState("")
   const [ownership, setOwnership] = useState("")
   const [page, setPage] = useState(1)
-  const [data, setData] = useState<TargetList | null>(null)
-  const [risk, setRisk] = useState<Record<string, TargetRiskRow> | null>(null)
+  // What the API is asked for: also the key of the answer kept for Back (UX task 3.0)
+  const request = (() => {
+    const params = new URLSearchParams({ tab, page: String(page), page_size: String(PAGE_SIZE) })
+    if (search.trim()) params.set("search", search.trim())
+    if (type) params.set("type", type)
+    if (environment) params.set("environment", environment)
+    if (ownership) params.set("ownership", ownership)
+    return params.toString()
+  })()
+  const [kept, keep, drop] = useKeptAnswer<TargetList>(`targets?${request}`)
+  const [keptRisk, keepRisk, dropRisk] = useKeptAnswer<Record<string, TargetRiskRow>>("targets-risk")
+  const [data, setData] = useState<TargetList | null>(kept)
+  const [risk, setRisk] = useState<Record<string, TargetRiskRow> | null>(keptRisk)
+  // The tab and filters aren't in the address yet (task 4.5), so Back opens the first view, and
+  // brings the reader back to where they were only if they left from it
+  useKeptScroll("targets", `targets?${request}`, data !== null)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
@@ -62,32 +77,44 @@ export function TargetsList() {
   useEffect(() => {
     const controller = new AbortController()
     getRiskDashboard(undefined, controller.signal)
-      .then((dashboard) => setRisk(Object.fromEntries(dashboard.targets.map((row) => [row.id, row]))))
-      .catch(() => setRisk({}))
+      .then((dashboard) => {
+        const rows = Object.fromEntries(dashboard.targets.map((row) => [row.id, row]))
+        setRisk(rows)
+        keepRisk(rows)
+      })
+      .catch((problem) => {
+        if (controller.signal.aborted) return // a cancelled request keeps what is shown
+        if (refused(problem)) dropRisk()
+        setRisk({})
+      })
     return () => controller.abort()
-  }, [attempt])
+  }, [attempt, keepRisk, dropRisk])
 
   useEffect(() => {
     const controller = new AbortController()
     // Wait briefly while the user is typing, then ask the API once.
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ tab, page: String(page), page_size: String(PAGE_SIZE) })
-      if (search.trim()) params.set("search", search.trim())
-      if (type) params.set("type", type)
-      if (environment) params.set("environment", environment)
-      if (ownership) params.set("ownership", ownership)
-      listTargets(params, controller.signal)
+      listTargets(new URLSearchParams(request), controller.signal)
         .then((result) => {
           setData(result)
+          keep(result)
           setError(false)
         })
-        .catch(() => !controller.signal.aborted && setError(true))
+        .catch((problem) => {
+          if (controller.signal.aborted) return
+          // A list the reader may no longer read leaves the page and the memory (UX task 3.0)
+          if (refused(problem)) {
+            drop()
+            setData(null)
+          }
+          setError(true)
+        })
     }, 200)
     return () => {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [tab, search, type, environment, ownership, page, attempt])
+  }, [request, keep, drop, attempt])
 
   /** UC-2.6, 1a1: the target comes back unverified, so the list reloads with its new status. */
   const restore = useCallback(async (target: Target) => {
@@ -177,7 +204,7 @@ export function TargetsList() {
           <Alert variant="destructive" role="alert">
             <AlertDescription className="flex items-center justify-between gap-4">
               The targets could not be loaded.
-              <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={() => setAttempt((n) => n + 1)}>
                 Try again
               </Button>
             </AlertDescription>

@@ -22,6 +22,7 @@ import {
   registerAndAccept,
 } from "@/lib/members"
 import { initials } from "@/lib/session"
+import { forgetKeptLists } from "@/lib/kept-lists"
 
 const NO_LONGER_VALID = "This invitation is no longer valid. Ask your Organization Administrator to send a new one."
 
@@ -90,6 +91,7 @@ export function AcceptInvitation({ token }: { token?: string }) {
 
   async function switchAccount() {
     await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
+    forgetKeptLists() // Back to a list keeps nothing of this person (UX task 3.0)
     moveFocus.current = true
     setState("loading")
     load()

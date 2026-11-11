@@ -205,8 +205,8 @@ export type CampaignInput = {
 
 const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
 
-export const listCampaigns = (params?: URLSearchParams) =>
-  apiFetch<CampaignItem[]>(`/v1/campaigns${params?.size ? `?${params}` : ""}`)
+export const listCampaigns = (params?: URLSearchParams, signal?: AbortSignal) =>
+  apiFetch<CampaignItem[]>(`/v1/campaigns${params?.size ? `?${params}` : ""}`, { signal })
 export const getCampaign = (code: string) => apiFetch<CampaignDetail>(`/v1/campaigns/${encodeURIComponent(code)}`)
 export const estimateCampaign = (input: { target_id: string | null; suites: string[]; attempt_budget: number | null }) =>
   apiFetch<Estimate>("/v1/campaigns/estimate", post(input))

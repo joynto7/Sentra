@@ -31,6 +31,7 @@ import { useSession } from "@/components/session-provider"
 import { platformNavigation, visibleNavigation } from "@/config/navigation"
 import { apiFetch } from "@/lib/api"
 import { initials } from "@/lib/session"
+import { forgetKeptLists } from "@/lib/kept-lists"
 
 /** The sidebar of the app, or with `platform` of the Platform Administrator's pages, whose menu
  * has only the PLATFORM group and whose switcher reads "Sentra platform" (UI plan, Screen 61). */
@@ -46,6 +47,7 @@ export function AppSidebar({ platform = false }: { platform?: boolean }) {
 
   async function logOut() {
     await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
+    forgetKeptLists() // Back to a list keeps nothing of this person (UX task 3.0)
     router.replace("/login")
   }
 

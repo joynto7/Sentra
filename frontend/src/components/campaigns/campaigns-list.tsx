@@ -26,6 +26,7 @@ import {
   listCampaigns,
   listOrganizationRuns,
 } from "@/lib/campaigns"
+import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
 import { useCan } from "@/lib/permissions"
 import { formatDate } from "@/lib/test-library"
 import { type Environment, formatDateTime } from "@/lib/targets"
@@ -47,26 +48,54 @@ export function CreateCampaignButton({ targetId }: { targetId?: string }) {
 /** Screen 33, the campaigns of the organization: the entry to UC-5.1 to UC-5.7. */
 export function CampaignsList({ targetId }: { targetId?: string } = {}) {
   const canCreate = useCan("manage_campaigns")
-  const [all, setCampaigns] = useState<CampaignItem[] | null>(null)
-  const [runs, setRuns] = useState<RunOverviewItem[]>([])
+  // The answers kept for Back (UX task 3.0): coming back shows the campaigns at once, and where the
+  // reader was among them, and refreshes them behind
+  const runsRequest = `runs?limit=100${targetId ? `&target_id=${targetId}` : ""}`
+  const [keptCampaigns, keepCampaigns, dropCampaigns] = useKeptAnswer<CampaignItem[]>("campaigns")
+  const [keptRuns, keepRuns, dropRuns] = useKeptAnswer<RunOverviewItem[]>(runsRequest)
+  const [all, setCampaigns] = useState<CampaignItem[] | null>(keptCampaigns)
+  const [runs, setRuns] = useState<RunOverviewItem[]>(keptRuns ?? [])
+  // The tab is part of the view: Back brings the reader back to where they were only into the tab
+  // they left (it isn't in the address yet, task 4.5, so after Back the list opens on Campaigns)
+  const [tab, setTab] = useState("campaigns")
+  useKeptScroll(`campaigns${targetId ? `:${targetId}` : ""}`, `campaigns?tab=${tab}`, all !== null)
   const [failed, setFailed] = useState(false)
   const [search, setSearch] = useState("")
   const [target, setTarget] = useState("")
 
   useEffect(() => {
     const controller = new AbortController()
-    listCampaigns()
-      .then(setCampaigns)
-      .catch(() => setFailed(true))
+    listCampaigns(undefined, controller.signal)
+      .then((found) => {
+        setCampaigns(found)
+        keepCampaigns(found)
+      })
+      .catch((problem) => {
+        if (controller.signal.aborted) return
+        // Campaigns the reader may no longer read leave the page and the memory (UX task 3.0)
+        if (refused(problem)) {
+          dropCampaigns()
+          dropRuns()
+          setCampaigns(null)
+        }
+        setFailed(true)
+      })
     // The organization's runs, or inside a target's tabs that target's runs, newest first: the
     // last run of each campaign and the runs tab.
     const asked = new URLSearchParams({ limit: "100" })
     if (targetId) asked.set("target_id", targetId)
     listOrganizationRuns(asked, controller.signal)
-      .then(setRuns)
-      .catch(() => setRuns([]))
+      .then((found) => {
+        setRuns(found)
+        keepRuns(found)
+      })
+      .catch((problem) => {
+        if (controller.signal.aborted) return
+        if (refused(problem)) dropRuns()
+        setRuns([])
+      })
     return () => controller.abort()
-  }, [targetId])
+  }, [targetId, keepCampaigns, keepRuns, dropCampaigns, dropRuns])
 
   if (failed) {
     return (
@@ -285,7 +314,7 @@ export function CampaignsList({ targetId }: { targetId?: string } = {}) {
         </ul>
       )}
 
-      <Tabs defaultValue="campaigns" className="gap-4">
+      <Tabs value={tab} onValueChange={setTab} className="gap-4">
         <TabsList variant="line" aria-label="Campaigns and their runs" className="h-10 w-full justify-start gap-6 border-b px-0">
           <TabsTrigger value="campaigns" className="flex-none gap-2 px-0.5">
             Campaigns
