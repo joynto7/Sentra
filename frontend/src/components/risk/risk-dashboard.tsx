@@ -8,6 +8,7 @@ import { RefreshCw } from "lucide-react"
 import { StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
 import { ReportDialog } from "@/components/reports/report-dialog"
+import { BreakdownCharts } from "@/components/risk/breakdown-charts"
 import { CategoryTable } from "@/components/risk/category-table"
 import { CriticalFindings } from "@/components/risk/critical-findings"
 import { DEFAULT_DAYS, DashboardFilters, focusFilters } from "@/components/risk/dashboard-filters"
@@ -387,6 +388,7 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
                 periodDays={data.period_days}
                 filterQuery={filterQuery}
               />
+              <BreakdownCharts key={`${target}|${days}|${category}`} data={data} filterQuery={filterQuery} targetQuery={targetQuery} />
               <div className="grid items-start gap-3 @min-[58rem]/dash:grid-cols-3">
                 <ByStatus
                   byStatus={data.by_status}

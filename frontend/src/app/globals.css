@@ -108,6 +108,18 @@
   --chart-4: #7a47c9;
   --chart-5: #667085;
 
+  /* Colours for series that are not severities (statuses, categories, measures): none of them is red,
+     orange, amber or grey, which belong to the severities. Text on them is --series-ink. */
+  --series-1: #2b4fd8;
+  --series-2: #0e7490;
+  --series-3: #7a47c9;
+  --series-4: #0f7a55;
+  --series-5: #a21caf;
+  --series-6: #0369a1;
+  --series-7: #4338ca;
+  --series-8: #4d7c0f;
+  --series-ink: #ffffff;
+
   --sidebar: #0e1322;
   --sidebar-foreground: #c3cad8;
   --sidebar-label: #8c96aa;
@@ -121,6 +133,15 @@
 }
 
 .dark {
+  --series-1: #6c8cff;
+  --series-2: #2dd4bf;
+  --series-3: #b794f6;
+  --series-4: #34d399;
+  --series-5: #e879f9;
+  --series-6: #38bdf8;
+  --series-7: #818cf8;
+  --series-8: #a3e635;
+  --series-ink: #0a0e17;
   --background: #0a0e17;
   --foreground: #e8ebf2;
   --card: #111726;
