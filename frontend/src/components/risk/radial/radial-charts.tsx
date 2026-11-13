@@ -163,7 +163,8 @@ function Centre({ big, small, extra }: { big: string | number; small: string; ex
 }
 
 const FRAME = "relative size-60 shrink-0"
-const STAGE = "flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-10"
+// Beside or under its legend by the width of the card it is in, not of the window: a card beside a table is narrow
+const STAGE = "flex flex-col items-center gap-6 @min-[30rem]/chart:flex-row @min-[30rem]/chart:items-center @min-[30rem]/chart:gap-10"
 
 type Props = { slices: Slice[]; total: number; what: string }
 

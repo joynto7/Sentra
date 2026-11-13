@@ -7,6 +7,7 @@ import { SEVERITY_LABEL, type Severity } from "@/components/sentra/severity-badg
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { COUNTED, notScoredText, type TargetRiskRow } from "@/lib/risk"
 import { formatDate } from "@/lib/targets"
+import { cn } from "@/lib/utils"
 
 // What "Last campaign run" says while a run of the target is going on (FR-5.6, M5).
 const LIVE: Record<string, string> = { running: "Running now", paused: "Paused", queued: "Waiting to start" }
@@ -75,11 +76,11 @@ function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: bool
  * run. Numbers are right-aligned in columns of their own, so that a column reads as a column; a
  * zero is a zero (muted), "First score" is not a change, and a target without a score is not low risk.
  */
-export function TargetRisk({ rows, canVerify, since }: { rows: TargetRiskRow[]; canVerify: boolean | undefined; since: string }) {
+export function TargetRisk({ rows, canVerify, since, className }: { rows: TargetRiskRow[]; canVerify: boolean | undefined; since: string; className?: string }) {
   const scored = rows.filter((row) => row.score !== null && row.band !== null)
   const unscored = rows.filter((row) => row.score === null || row.band === null)
   return (
-    <section aria-labelledby="target-risk" className="@container/targets min-w-0 rounded-[10px] border bg-card">
+    <section aria-labelledby="target-risk" className={cn("@container/targets min-w-0 rounded-[10px] border bg-card", className)}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
         <h2 id="target-risk" className="text-[15px] font-semibold">
           Target risk

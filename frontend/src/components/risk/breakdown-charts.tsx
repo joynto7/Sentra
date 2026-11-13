@@ -10,18 +10,23 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { FINDING_STATUS_LABEL, type FindingStatus } from "@/lib/findings"
 import { CLOSED_STATUSES, COUNTED, OPEN_STATUSES, type RiskDashboard as Dashboard } from "@/lib/risk"
 
-/** The eight styles, in the order of the picker. */
-const STYLES = [
-  { id: "pie", label: "Pie", read: "Each slice is a share of the open findings; a slice moves out when you point at it or tab to it. Select a slice to open its findings." },
+type Style = { id: string; label: string; read: string }
+
+/** The styles of each section's chart, in the order of its picker. */
+const SEVERITY_STYLES = [
   { id: "donut", label: "Donut", read: "Each part of the ring is a share of the open findings; the middle says the total or the part you are on. Select a part to open its findings." },
+  { id: "pie", label: "Pie", read: "Each slice is a share of the open findings; a slice moves out when you point at it or tab to it. Select a slice to open its findings." },
   { id: "tilted", label: "3D ring", read: "The same ring with depth, tilted. It is a way of looking, not more data: the legend and the table have the numbers. Select a part to open its findings." },
   { id: "gauge", label: "Gauge", read: "Half a ring for the same shares, for a place with little height. Select a part, or a name under it, to open its findings." },
-  { id: "nested", label: "Two rings", read: "The outer ring is the open findings by severity, the inner ring the same findings by status. Select a part of either to open its findings." },
   { id: "rose", label: "Rose", read: "Every severity has the same angle, and each petal's area is proportional to its count, so a small count stays small but easy to select. Areas are hard to compare by eye: read the numbers too." },
+] as const satisfies readonly Style[]
+const STATUS_STYLES = [
+  { id: "donut", label: "Donut", read: "Each part of the ring is a status of the open findings; the middle says the total or the part you are on. Select a part to open its findings." },
+  { id: "nested", label: "Two rings", read: "The outer ring is the open findings by severity, the inner ring the same findings by status. Select a part of either to open its findings." },
   { id: "rings", label: "Rings", read: "Each ring is how much of its own whole a measure is; the line under its name says which whole. They are not parts of one total." },
-  { id: "sunburst", label: "Sunburst", read: "The inner ring is the OWASP categories (the number in a part is the category's), the outer ring each one's severities. Press an inner part to zoom into its category; a part of the outer ring opens its findings." },
-] as const
-type StyleId = (typeof STYLES)[number]["id"]
+] as const satisfies readonly Style[]
+const CATEGORY_READ =
+  "The inner ring is the OWASP categories (the number in a part is the category's), the outer ring each one's severities. Press an inner part to zoom into its category; a part of the outer ring opens its findings."
 
 const STORAGE = "sentra.dashboard.breakdown"
 // Colours of what is not a severity are the series colours of globals.css: none is red, orange, amber
@@ -34,49 +39,106 @@ const STATUS_COLOUR: Record<string, string> = {
   reopened: series(5),
 }
 
-const pct = (count: number, total: number) => (total === 0 ? 0 : Math.round((count / total) * 100))
-
 /**
- * The Breakdown of the dashboard (FR-7.4 (M7), UC-7.3): the open findings in eight chart styles, one at a time, in the
- * product's one chart card, with its Chart and Table. Every number is one the dashboard already has
- * (the severities, the statuses, the categories, the queues); the style is a choice of the person's,
- * remembered on this browser. Nothing here replaces the trends, which are a different question.
+ * The style a person chose for one chart, remembered on this browser. The choice is a convenience;
+ * the page works without it. The charts only ever render after the dashboard's answer has come, in
+ * the browser, so reading it in the initial state is safe.
  */
-export function BreakdownCharts({ data, filterQuery, targetQuery }: { data: Dashboard; filterQuery: string; targetQuery: string }) {
-  // The choice is a convenience of this browser; the page works without it. The panel only ever
-  // renders after the dashboard's answer has come, in the browser, so reading it here is safe.
-  const [style, setStyle] = useState<StyleId>(() => {
+function useStyle<T extends string>(section: string, styles: readonly { id: T }[]) {
+  const [style, setStyle] = useState<T>(() => {
     try {
-      const saved = window.localStorage.getItem(STORAGE)
-      return STYLES.some((one) => one.id === saved) ? (saved as StyleId) : "donut"
+      const saved = window.localStorage.getItem(`${STORAGE}.${section}`)
+      return styles.find((one) => one.id === saved)?.id ?? styles[0].id
     } catch {
-      return "donut"
+      return styles[0].id
     }
   })
-  const choose = (next: StyleId) => {
+  const choose = (next: T) => {
     setStyle(next)
     try {
-      window.localStorage.setItem(STORAGE, next)
+      window.localStorage.setItem(`${STORAGE}.${section}`, next)
     } catch {}
   }
+  return [style, choose] as const
+}
 
-  const total = data.open_total
-  const open = `/findings?view=open${filterQuery}`
-  const severities: Slice[] = COUNTED.map((severity) => ({
+function StylePicker<T extends string>({ styles, value, onChange, label }: { styles: readonly { id: T; label: string }[]; value: T; onChange: (next: T) => void; label: string }) {
+  return (
+    <div className="mb-3">
+      <ToggleGroup type="single" value={value} onValueChange={(next) => next && onChange(next as T)} variant="outline" aria-label={label} className="flex flex-wrap">
+        {styles.map((one) => (
+          <ToggleGroupItem key={one.id} value={one.id} className="h-8 px-3 text-[13px]">
+            {one.label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+    </div>
+  )
+}
+
+const what = "open findings"
+const severityColour = (severity: string) => `var(--severity-${severity === "informational" ? "info" : severity})`
+
+const pct = (count: number, total: number) => (total === 0 ? 0 : Math.round((count / total) * 100))
+
+const severitySlices = (data: Dashboard, filterQuery: string): Slice[] =>
+  COUNTED.map((severity) => ({
     id: severity,
     label: SEVERITY_LABEL[severity as Severity],
     count: data.open_by_severity[severity] ?? 0,
-    color: `var(--severity-${severity === "informational" ? "info" : severity})`,
-    href: `${open}&severity=${severity}`,
+    color: severityColour(severity),
+    href: `/findings?view=open${filterQuery}&severity=${severity}`,
     severity: severity as Severity,
   }))
-  const statuses: Slice[] = OPEN_STATUSES.map((status) => ({
+
+const statusSlices = (data: Dashboard, filterQuery: string): Slice[] =>
+  OPEN_STATUSES.map((status) => ({
     id: status,
     label: FINDING_STATUS_LABEL[status as FindingStatus],
     count: data.by_status[status] ?? 0,
     color: STATUS_COLOUR[status],
     href: status === "requires_confirmation" ? `/findings?view=requires_confirmation${filterQuery}` : `/findings?view=open&status=${status}${filterQuery}`,
   }))
+
+const EMPTY = "Nothing is open for these filters, so there is nothing to draw. Choose another target or category, or reset the filters."
+
+/**
+ * The chart that sits beside Target risk (FR-7.4 (M7), UC-7.3): the open findings by severity in the
+ * product's one chart card, with its Chart and Table. Every number is one the dashboard already has;
+ * the style is a choice of the person's, remembered on this browser. It does not replace the trends,
+ * which are a different question.
+ */
+export function SeverityChart({ data, filterQuery, className }: { data: Dashboard; filterQuery: string; className?: string }) {
+  const [style, choose] = useStyle("severity", SEVERITY_STYLES)
+  const total = data.open_total
+  const severities = severitySlices(data, filterQuery)
+  const current = SEVERITY_STYLES.find((one) => one.id === style)!
+  return (
+    <ChartCard
+      className={className}
+      title="Severity chart"
+      unit="Open findings by severity"
+      howToRead={current.read}
+      state={total === 0 ? "empty" : "ready"}
+      emptyText={EMPTY}
+      table={<SliceTable caption="By severity" first="Severity" slices={severities} total={total} />}
+    >
+      <StylePicker styles={SEVERITY_STYLES} value={style} onChange={choose} label="Severity chart style" />
+      {style === "pie" && <ClassicPie slices={severities} total={total} what={what} />}
+      {style === "donut" && <Donut slices={severities} total={total} what={what} />}
+      {style === "tilted" && <Isometric slices={severities} total={total} what={what} />}
+      {style === "gauge" && <Gauge slices={severities} total={total} what={what} />}
+      {style === "rose" && <Rose slices={severities} total={total} what={what} />}
+    </ChartCard>
+  )
+}
+
+/** The chart that sits beside "Findings by status": the same statuses, drawn. */
+export function StatusChart({ data, filterQuery, className }: { data: Dashboard; filterQuery: string; className?: string }) {
+  const [style, choose] = useStyle("status", STATUS_STYLES)
+  const total = data.open_total
+  const severities = severitySlices(data, filterQuery)
+  const statuses = statusSlices(data, filterQuery)
   const closedTotal = CLOSED_STATUSES.reduce((sum, status) => sum + (data.by_status[status] ?? 0), 0)
   const since = encodeURIComponent(data.changes.since)
   const rings: Progress[] = [
@@ -92,24 +154,7 @@ export function BreakdownCharts({ data, filterQuery, targetQuery }: { data: Dash
       href: `/findings?view=closed&status=fixed_and_verified&closed_from=${since}${filterQuery}`,
     },
   ]
-  // The category the page is narrowed to is the only one it shows
-  const rows = data.by_category.filter((row) => row.open_total > 0 && (!data.category || row.code === data.category))
-  const branches: Branch[] = rows.map((row) => ({
-    id: row.code,
-    label: `${row.code}${row.name ? ` ${row.name}` : ""}`,
-    total: row.open_total,
-    color: series(Number(row.code.replace(/\D/g, "")) || 1),
-    parts: COUNTED.map((severity) => ({
-      id: severity,
-      label: SEVERITY_LABEL[severity as Severity],
-      count: row.open_by_severity[severity] ?? 0,
-      color: `var(--severity-${severity === "informational" ? "info" : severity})`,
-      href: "",
-    })),
-  }))
-  const current = STYLES.find((one) => one.id === style)!
-  const what = "open findings"
-
+  const current = STATUS_STYLES.find((one) => one.id === style)!
   const table =
     style === "rings" ? (
       <Table container={{ className: "rounded-[7px]" }}>
@@ -132,72 +177,90 @@ export function BreakdownCharts({ data, filterQuery, targetQuery }: { data: Dash
           ))}
         </TableBody>
       </Table>
-    ) : style === "sunburst" ? (
-      <Table container={{ className: "rounded-[7px]" }}>
-        <TableHeader className="bg-muted">
-          <TableRow>
-            <TableHead className="text-xs">Category</TableHead>
-            <TableHead className="text-right text-xs">Open</TableHead>
-            {COUNTED.map((severity) => (
-              <TableHead key={severity} className="text-right text-xs">
-                {SEVERITY_LABEL[severity as Severity]}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {branches.map((branch) => (
-            <TableRow key={branch.id}>
-              <TableCell className="text-[13px] whitespace-normal">{branch.label}</TableCell>
-              <TableCell className="tabular text-right text-[13px] font-medium">{branch.total}</TableCell>
-              {branch.parts.map((part) => (
-                <TableCell key={part.id} className="tabular text-right text-[13px] text-text-secondary">
-                  {part.count}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
     ) : (
-      <div className="grid gap-3 @min-[40rem]/dash:grid-cols-2">
-        <SliceTable caption="By severity" first="Severity" slices={severities} total={total} />
-        {style === "nested" && <SliceTable caption="By status" first="Status" slices={statuses} total={total} />}
+      <div className="grid gap-3">
+        <SliceTable caption="By status" first="Status" slices={statuses} total={total} />
+        {style === "nested" && <SliceTable caption="By severity" first="Severity" slices={severities} total={total} />}
       </div>
     )
-
   return (
     <ChartCard
-      title="Breakdown"
-      unit={style === "rings" ? "Findings out of their own whole" : style === "sunburst" ? "Open findings by OWASP category and severity" : style === "nested" ? "Open findings by severity and by status" : "Open findings by severity"}
+      className={className}
+      title="Status chart"
+      unit={style === "rings" ? "Findings out of their own whole" : style === "nested" ? "Open findings by severity and by status" : "Open findings by status"}
       howToRead={current.read}
-      state={total === 0 ? "empty" : "ready"}
-      emptyText="Nothing is open for these filters, so there is nothing to break down. Choose another target or category, or reset the filters."
+      state={total === 0 && style !== "rings" ? "empty" : "ready"}
+      emptyText={EMPTY}
       table={table}
     >
-      <div className="mb-3">
-        <ToggleGroup type="single" value={style} onValueChange={(next) => next && choose(next as StyleId)} variant="outline" aria-label="Chart style" className="flex flex-wrap">
-          {STYLES.map((one) => (
-            <ToggleGroupItem key={one.id} value={one.id} className="h-8 px-3 text-[13px]">
-              {one.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-      {style === "pie" && <ClassicPie slices={severities} total={total} what={what} />}
-      {style === "donut" && <Donut slices={severities} total={total} what={what} />}
-      {style === "tilted" && <Isometric slices={severities} total={total} what={what} />}
-      {style === "gauge" && <Gauge slices={severities} total={total} what={what} />}
+      <StylePicker styles={STATUS_STYLES} value={style} onChange={choose} label="Status chart style" />
+      {style === "donut" && <Donut slices={statuses} total={total} what={what} />}
       {style === "nested" && <Nested slices={severities} inner={statuses} total={total} what={what} />}
-      {style === "rose" && <Rose slices={severities} total={total} what={what} />}
       {style === "rings" && <Rings rings={rings} />}
-      {style === "sunburst" && (
-        <Sunburst
-          branches={branches}
-          what={what}
-          linkFor={(code, severity) => `/findings?view=open&category=${code}${severity ? `&severity=${severity}` : ""}${targetQuery}`}
-        />
-      )}
+    </ChartCard>
+  )
+}
+
+/** The chart that sits beside "Open findings by OWASP category": the categories and their severities. */
+export function CategoryChart({ data, targetQuery, className }: { data: Dashboard; targetQuery: string; className?: string }) {
+  // The category the page is narrowed to is the only one it shows
+  const rows = data.by_category.filter((row) => row.open_total > 0 && (!data.category || row.code === data.category))
+  const branches: Branch[] = rows.map((row) => ({
+    id: row.code,
+    label: `${row.code}${row.name ? ` ${row.name}` : ""}`,
+    total: row.open_total,
+    color: series(Number(row.code.replace(/\D/g, "")) || 1),
+    parts: COUNTED.map((severity) => ({
+      id: severity,
+      label: SEVERITY_LABEL[severity as Severity],
+      count: row.open_by_severity[severity] ?? 0,
+      color: severityColour(severity),
+      href: "",
+    })),
+  }))
+  const table = (
+    <Table container={{ className: "rounded-[7px]" }}>
+      <TableHeader className="bg-muted">
+        <TableRow>
+          <TableHead className="text-xs">Category</TableHead>
+          <TableHead className="text-right text-xs">Open</TableHead>
+          {COUNTED.map((severity) => (
+            <TableHead key={severity} className="text-right text-xs">
+              {SEVERITY_LABEL[severity as Severity]}
+            </TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {branches.map((branch) => (
+          <TableRow key={branch.id}>
+            <TableCell className="text-[13px] whitespace-normal">{branch.label}</TableCell>
+            <TableCell className="tabular text-right text-[13px] font-medium">{branch.total}</TableCell>
+            {branch.parts.map((part) => (
+              <TableCell key={part.id} className="tabular text-right text-[13px] text-text-secondary">
+                {part.count}
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+  return (
+    <ChartCard
+      className={className}
+      title="Category chart"
+      unit="Open findings by OWASP category and severity"
+      howToRead={CATEGORY_READ}
+      state={data.open_total === 0 ? "empty" : "ready"}
+      emptyText={EMPTY}
+      table={table}
+    >
+      <Sunburst
+        branches={branches}
+        what={what}
+        linkFor={(code, severity) => `/findings?view=open&category=${code}${severity ? `&severity=${severity}` : ""}${targetQuery}`}
+      />
     </ChartCard>
   )
 }
