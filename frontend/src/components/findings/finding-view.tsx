@@ -337,7 +337,7 @@ export function FindingView({ code }: { code: string }) {
                   </div>
                 )}
               </Row>
-              <Row term="Owner">{finding.owner ? finding.owner.name : "Nobody yet"}</Row>
+              <Row term="Owner">{finding.owner ? finding.owner.name : "Unassigned"}</Row>
               <Row term="Remediation">
                 {remediation?.current ? (
                   <Link href={`/findings/${finding.code}/remediation`} className="text-link hover:underline">
