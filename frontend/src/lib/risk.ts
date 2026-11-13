@@ -74,6 +74,33 @@ export type TopFinding = {
   last_seen_at: string
 }
 
+/** The open findings at one moment of the period, rebuilt from each finding's own history. */
+export type OverviewStep = {
+  at: string
+  new: number
+  requires_confirmation: number
+  confirmed: number
+  reopened: number
+  open: number
+  /** Fixed and verified from the start of the period up to this moment */
+  fixed: number
+}
+
+export type HeatColumn = { starts_at: string; ends_at: string }
+export type HeatCell = { new: number; closed: number }
+export type HeatRow = { target: { id: string; name: string }; cells: HeatCell[] }
+
+/** What the overview draws over the period: nothing here is predicted. */
+export type Overview = {
+  steps: OverviewStep[]
+  columns: HeatColumn[]
+  rows: HeatRow[]
+  days_to_confirm: number | null
+  confirmed: number
+  days_to_fix: number | null
+  fixed: number
+}
+
 export type RiskDashboard = {
   period_days: number
   last_run_at: string | null
@@ -88,6 +115,7 @@ export type RiskDashboard = {
   /** FR-7.4 (M7): the trends of the period and the OWASP categories (Screen 42). */
   by_category: CategoryRow[]
   trends: Trends
+  overview: Overview
   category: string | null
   /** True while a category is chosen: the finding counts follow it, the risk scores don't. */
   category_filtered: boolean

@@ -1,9 +1,10 @@
 import Link from "next/link"
 import { ArrowDown, ArrowUp, Minus } from "lucide-react"
 
+import { Sparkline } from "@/components/risk/overview/sparkline"
 import { RiskSummaryCard } from "@/components/risk/risk-summary-card"
 import { SeverityBreakdown } from "@/components/risk/severity-breakdown"
-import { type SeverityCounts } from "@/lib/risk"
+import { type Overview, type SeverityCounts } from "@/lib/risk"
 import { cn } from "@/lib/utils"
 
 /**
@@ -46,6 +47,27 @@ export function Delta({
   )
 }
 
+/** The same change as a pill at the top of a card: the arrow, the sign and the colour together. */
+export function DeltaPill({ change, worseWhen, against, spoken }: { change: number; worseWhen: "up" | "down"; against: string; spoken: string }) {
+  const worse = change !== 0 && (change > 0) === (worseWhen === "up")
+  const Icon = change > 0 ? ArrowUp : change < 0 ? ArrowDown : Minus
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+        change === 0 ? "bg-muted text-muted-foreground" : worse ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success",
+      )}
+    >
+      <Icon className="size-3 shrink-0" aria-hidden="true" />
+      <span aria-hidden="true" className="tabular">
+        {change !== 0 && `${change > 0 ? "+" : "−"}${Math.abs(change)} `}
+        {against}
+      </span>
+      <span className="sr-only">{spoken}</span>
+    </span>
+  )
+}
+
 /**
  * The four tiles of Screen 42 (UC-7.3 steps 2-3): what is open, what waits for a person, what
  * waits for a fix and what was fixed and verified in the period. Every number opens the findings
@@ -61,7 +83,9 @@ export function RiskTiles({
   periodDays,
   filterQuery,
   changes,
+  overview,
 }: {
+  overview: Overview
   openTotal: number
   openBySeverity: SeverityCounts
   awaitingTriage: number
@@ -85,26 +109,37 @@ export function RiskTiles({
       <span className="tabular">{count}</span> {label}
     </Link>
   )
+  const steps = overview.steps
+  const trend = (label: string, pick: (step: Overview["steps"][number]) => number, color: string) => (
+    <Sparkline className="mt-auto pt-3" label={`${label} over the last ${periodDays} days`} color={color} points={steps.map((step) => ({ at: step.at, value: pick(step) }))} />
+  )
   return (
     <div className="grid grid-cols-1 gap-3 @min-[28rem]/dash:grid-cols-2 @min-[56rem]/dash:grid-cols-4">
-      <RiskSummaryCard title="Open findings" count={openTotal} href={open}>
-        {opened !== null && (
-          <Delta
-            change={opened}
-            worseWhen="up"
-            against={opened === 0 ? `Same as on ${since}` : `since ${since}`}
-            spoken={
-              opened === 0
-                ? `As many open findings as on ${since}.`
-                : `${Math.abs(opened)} ${opened > 0 ? "more" : "fewer"} open findings than on ${since}.`
-            }
-          />
-        )}
+      <RiskSummaryCard
+        title="Open findings"
+        count={openTotal}
+        href={open}
+        badge={
+          opened !== null && (
+            <DeltaPill
+              change={opened}
+              worseWhen="up"
+              against={opened === 0 ? `same as ${since}` : `since ${since}`}
+              spoken={
+                opened === 0
+                  ? `As many open findings as on ${since}.`
+                  : `${Math.abs(opened)} ${opened > 0 ? "more" : "fewer"} open findings than on ${since}.`
+              }
+            />
+          )
+        }
+      >
         {openTotal > 0 ? (
           <SeverityBreakdown counts={openBySeverity} total={openTotal} href={open} />
         ) : (
           <p className="mt-2 text-[13px] text-muted-foreground">Nothing is open.</p>
         )}
+        {trend("Open findings", (step) => step.open, "var(--chart-1)")}
       </RiskSummaryCard>
       <RiskSummaryCard title="Awaiting triage" count={awaitingTriage} href={`/findings?view=awaiting_triage${filterQuery}`}>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[13px]">
@@ -116,6 +151,7 @@ export function RiskTiles({
             `/findings?view=requires_confirmation${filterQuery}`,
           )}
         </p>
+        {trend("Awaiting triage", (step) => step.new + step.requires_confirmation, "var(--series-1)")}
       </RiskSummaryCard>
       <RiskSummaryCard
         title="Awaiting remediation"
@@ -127,21 +163,27 @@ export function RiskTiles({
           <span className="text-muted-foreground" aria-hidden="true">·</span>
           {part("reopened", byStatus.reopened ?? 0, `/findings?view=open&status=reopened${filterQuery}`)}
         </p>
+        {trend("Awaiting remediation", (step) => step.confirmed + step.reopened, "var(--series-2)")}
       </RiskSummaryCard>
-      <RiskSummaryCard title="Fixed and verified" count={fixedAndVerified} href={`${closedInPeriod}&status=fixed_and_verified`}>
-        <Delta
-          change={fixed}
-          worseWhen="down"
-          against={fixed === 0 ? `Same as the ${periodDays} days before` : `vs the ${periodDays} days before`}
-          spoken={
-            fixed === 0
-              ? `As many as in the ${periodDays} days before.`
-              : `${Math.abs(fixed)} ${fixed > 0 ? "more" : "fewer"} than in the ${periodDays} days before.`
-          }
-        />
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Closed by a retest in the last {periodDays} days.
-        </p>
+      <RiskSummaryCard
+        title="Fixed and verified"
+        count={fixedAndVerified}
+        href={`${closedInPeriod}&status=fixed_and_verified`}
+        badge={
+          <DeltaPill
+            change={fixed}
+            worseWhen="down"
+            against={fixed === 0 ? `same as prior ${periodDays}d` : `vs prior ${periodDays}d`}
+            spoken={
+              fixed === 0
+                ? `As many as in the ${periodDays} days before.`
+                : `${Math.abs(fixed)} ${fixed > 0 ? "more" : "fewer"} than in the ${periodDays} days before.`
+            }
+          />
+        }
+      >
+        <p className="mt-1.5 text-[13px] text-muted-foreground">Closed by a retest in the last {periodDays} days.</p>
+        {trend("Fixed and verified, added up", (step) => step.fixed, "var(--series-4)")}
       </RiskSummaryCard>
     </div>
   )
