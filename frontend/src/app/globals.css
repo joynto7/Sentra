@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *):not(:is(.landing-light, .landing-light *)));
 
 @theme inline {
   --color-background: var(--background);
@@ -119,6 +119,71 @@
   --series-7: #4338ca;
   --series-8: #4d7c0f;
   --series-ink: #ffffff;
+
+  --sidebar: #0e1322;
+  --sidebar-foreground: #c3cad8;
+  --sidebar-label: #8c96aa;
+  --sidebar-primary: #2b4fd8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a2136;      /* hover */
+  --sidebar-active: #242d48;      /* active item */
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a2136;
+  --sidebar-ring: #2b4fd8;
+}
+
+/* The public page is white and blue for everybody: inside it every token has its light value, and the
+   dark: variants stay off even when the reader's theme is dark (components/landing). */
+.landing-light {
+  color-scheme: light;
+  /* Sentra design tokens (UI plan, Screen 00). Light theme is the default. */
+  --background: #f4f5f7;          /* page */
+  --foreground: #101828;          /* text */
+  --card: #ffffff;                /* panels */
+  --card-foreground: #101828;
+  --popover: #ffffff;
+  --popover-foreground: #101828;
+  --primary: #2b4fd8;             /* Sentra cobalt */
+  --primary-hover: #2141c0;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f8fa;
+  --secondary-foreground: #344054;
+  --muted: #f7f8fa;               /* sunken areas, table headers */
+  --muted-foreground: #596273;    /* muted text */
+  --text-secondary: #344054;
+  --accent: #ebeffd;              /* cobalt tint */
+  --accent-foreground: #2443c4;
+  --link: #2443c4;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #0f7a55;
+  --warning: #8a5a00;
+  --confirm: #7a47c9;             /* "requires confirmation" */
+  --border: #e3e6eb;
+  --border-strong: #d0d5dd;
+  --input: #868e9e;               /* at least 3:1 on panels and the page, WCAG 1.4.11 */
+  --ring: #2b4fd8;
+  --radius: 0.625rem;             /* 10 px cards */
+
+  --severity-critical: #b42318;
+  --severity-critical-text: #9f1c12;
+  --severity-critical-bg: #feeceb;
+  --severity-high: #e0610e;
+  --severity-high-text: #a3440a;
+  --severity-high-bg: #fef0e6;
+  --severity-medium: #e3a008;
+  --severity-medium-text: #7a5300;
+  --severity-medium-bg: #fef7e1;
+  --severity-low: #667085;
+  --severity-low-text: #475467;
+  --severity-low-bg: #eef0f4;
+  --severity-info: #7c8698;       /* the ring is the whole mark, so at least 3:1 */
+
+  --chart-1: #2b4fd8;
+  --chart-2: #0f7a55;
+  --chart-3: #e3a008;
+  --chart-4: #7a47c9;
+  --chart-5: #667085;
 
   --sidebar: #0e1322;
   --sidebar-foreground: #c3cad8;

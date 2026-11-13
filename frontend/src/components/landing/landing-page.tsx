@@ -39,17 +39,21 @@ const SAFETY_ICON: LucideIcon[] = [Fingerprint, Gauge, UserCheck, ScrollText, Lo
 
 const CONTAINER = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8"
 const KICKER = "text-sm font-medium tracking-wide text-link"
+// The washes of blue between the white sections, and the glow behind the hero
+const BAND = "bg-[linear-gradient(180deg,#f2f6ff_0%,#ffffff_100%)]"
+const GLOW =
+  "bg-[radial-gradient(52rem_30rem_at_82%_-4rem,rgba(91,124,255,0.34),transparent),radial-gradient(38rem_26rem_at_4%_8%,rgba(147,197,253,0.5),transparent),linear-gradient(180deg,#eaf1ff_0%,#ffffff_78%)]"
 const H2 = "text-3xl leading-tight font-semibold tracking-tight text-balance sm:text-4xl"
 
 /**
- * The public page of Sentra, for people who have not logged in. It is always in the dark theme of
- * the product (the wrapper's `dark` class gives every token its dark value), and every button and
+ * The public page of Sentra, for people who have not logged in. White, with a radiant blue from the
+ * product's own cobalt (the hero's glow, the washes between sections and the closing panel), and every button and
  * link goes somewhere real: the registration page, the log in page, a place on this page, or the
  * source. There is no form: Sentra has no demo or contact service, so none is pretended.
  */
 export function LandingPage() {
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="landing-light min-h-screen overflow-x-clip bg-white text-[#0b1330]">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
@@ -63,7 +67,7 @@ export function LandingPage() {
         <section aria-labelledby="hero-title" className="relative overflow-hidden border-b border-border/60">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-[34rem] bg-[radial-gradient(60rem_28rem_at_75%_-8rem,color-mix(in_oklch,var(--primary)_16%,transparent),transparent)]"
+            className={`pointer-events-none absolute inset-0 ${GLOW}`}
           />
           <div className={`${CONTAINER} relative grid items-center gap-12 py-16 sm:py-20 lg:grid-cols-12 lg:gap-10 lg:py-24`}>
             <div className="lg:col-span-5">
@@ -72,20 +76,23 @@ export function LandingPage() {
                 id="hero-title"
                 className="mt-4 text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-5xl lg:text-[3.1rem]"
               >
-                Find, prove and fix the weaknesses in your AI applications.
+                Find, prove and fix{" "}
+                <span className="bg-gradient-to-r from-[#1d3fc4] to-[#2f6df6] bg-clip-text text-transparent">
+                  the weaknesses in your AI applications.
+                </span>
               </h1>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-text-secondary">
                 Sentra tests the chatbots, RAG systems and tool-using agents that you own or are allowed to test.
                 Every finding has its evidence behind it, every fix is approved by a person, and every fix is tested again.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Button asChild className="h-11 px-5 text-base">
+                <Button asChild className="h-11 bg-gradient-to-b from-[#3b5cf0] to-[#2443c4] px-5 text-base shadow-[0_10px_30px_-10px_rgba(43,79,216,0.7)] hover:from-[#2f50e0] hover:to-[#1d3fc4]">
                   <Link href="/register">
                     Create an account
                     <ArrowRight aria-hidden="true" />
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="h-11 px-5 text-base">
+                <Button asChild variant="outline" className="h-11 border-[#c9d6ff] bg-white px-5 text-base hover:bg-[#eef3ff]">
                   <a href="#how-it-works">See how it works</a>
                 </Button>
               </div>
@@ -130,9 +137,9 @@ export function LandingPage() {
               </div>
             </div>
 
-            <ol className="mt-14 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
+            <ol className="mt-14 grid gap-px overflow-hidden rounded-xl border border-[#d4defc] bg-[#d4defc] shadow-[0_20px_60px_-30px_rgba(43,79,216,0.35)] md:grid-cols-3">
               {PHASES.map((phase, index) => (
-                <li key={phase.name} className="bg-background p-6 sm:p-8">
+                <li key={phase.name} className="bg-white p-6 sm:p-8">
                   <p className="font-mono text-sm text-muted-foreground">0{index + 1}</p>
                   <h3 className="mt-2 text-xl font-semibold tracking-tight">{phase.name}</h3>
                   <ul className="mt-5 space-y-3">
@@ -150,7 +157,7 @@ export function LandingPage() {
         </section>
 
         {/* Capabilities */}
-        <section aria-labelledby="capabilities-title" className="border-y border-border/60 bg-card/40">
+        <section aria-labelledby="capabilities-title" className={`border-y border-border/60 ${BAND}`}>
           <div className={`${CONTAINER} py-20 lg:py-28`}>
             <p className={KICKER}>What it does</p>
             <h2 id="capabilities-title" className={`${H2} mt-3 max-w-3xl`}>
@@ -165,7 +172,7 @@ export function LandingPage() {
                   <article key={capability.id} className="grid items-center gap-10 py-14 lg:grid-cols-12 lg:gap-14 lg:py-20">
                     <div className={`lg:col-span-5 ${reversed ? "lg:order-2" : ""}`}>
                       <p className="inline-flex items-center gap-2 text-sm font-medium text-link">
-                        <span className="grid size-8 place-items-center rounded-md border border-border bg-background">
+                        <span className="grid size-8 place-items-center rounded-md border border-[#c9d6ff] bg-[#eef3ff]">
                           <Icon className="size-4" aria-hidden="true" />
                         </span>
                         {capability.kicker}
@@ -231,7 +238,7 @@ export function LandingPage() {
         </section>
 
         {/* Use cases */}
-        <section id="use-cases" aria-labelledby="use-title" className="scroll-mt-20 border-y border-border/60 bg-card/40">
+        <section id="use-cases" aria-labelledby="use-title" className={`scroll-mt-20 border-y border-border/60 ${BAND}`}>
           <div className={`${CONTAINER} grid gap-12 py-20 lg:grid-cols-12 lg:py-28`}>
             <div className="lg:col-span-4">
               <p className={KICKER}>Use cases</p>
@@ -265,7 +272,7 @@ export function LandingPage() {
                 const Icon = SAFETY_ICON[index] ?? ShieldCheck
                 return (
                   <li key={item.title}>
-                    <span className="grid size-10 place-items-center rounded-lg border border-border bg-card">
+                    <span className="grid size-10 place-items-center rounded-lg border border-[#c9d6ff] bg-[#eef3ff]">
                       <Icon className="size-5 text-link" aria-hidden="true" />
                     </span>
                     <h3 className="mt-4 text-lg font-semibold tracking-tight">{item.title}</h3>
@@ -278,7 +285,7 @@ export function LandingPage() {
         </section>
 
         {/* FAQ */}
-        <section id="faq" aria-labelledby="faq-title" className="scroll-mt-20 border-t border-border/60 bg-card/40">
+        <section id="faq" aria-labelledby="faq-title" className={`scroll-mt-20 border-t border-border/60 ${BAND}`}>
           <div className={`${CONTAINER} grid gap-12 py-20 lg:grid-cols-12 lg:py-28`}>
             <div className="lg:col-span-4">
               <p className={KICKER}>Questions</p>
@@ -314,22 +321,22 @@ export function LandingPage() {
         {/* The next step */}
         <section aria-labelledby="start-title" className="border-t border-border/60">
           <div className={`${CONTAINER} py-20 lg:py-28`}>
-            <div className="rounded-2xl border border-border bg-card px-6 py-14 text-center sm:px-12 lg:py-20">
+            <div className="rounded-2xl bg-[radial-gradient(40rem_20rem_at_85%_-4rem,rgba(147,197,253,0.55),transparent),radial-gradient(30rem_18rem_at_0%_110%,rgba(56,189,248,0.35),transparent),linear-gradient(135deg,#1d3fc4_0%,#2b4fd8_55%,#3b5cf0_100%)] px-6 py-14 text-center text-white shadow-[0_30px_80px_-30px_rgba(43,79,216,0.6)] sm:px-12 lg:py-20">
               <h2 id="start-title" className="mx-auto max-w-2xl text-3xl leading-tight font-semibold tracking-tight text-balance sm:text-4xl">
                 Start with one application you own.
               </h2>
-              <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-text-secondary">
+              <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-white/90">
                 Create an account, register a target, prove it is yours, and run your first campaign. Then fix what it
                 finds, and test again.
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-                <Button asChild className="h-11 px-5 text-base">
+                <Button asChild className="h-11 px-5 text-base !bg-white !text-[#1d3fc4] hover:!bg-white/90">
                   <Link href="/register">
                     Create an account
                     <ArrowRight aria-hidden="true" />
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="h-11 px-5 text-base">
+                <Button asChild variant="outline" className="h-11 px-5 text-base !border-white/70 !bg-transparent !text-white hover:!bg-white/10">
                   <Link href="/login">Log in</Link>
                 </Button>
               </div>

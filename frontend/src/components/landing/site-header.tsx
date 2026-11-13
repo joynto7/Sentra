@@ -25,7 +25,7 @@ export function SiteHeader() {
   }, [open])
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/75">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
@@ -54,7 +54,7 @@ export function SiteHeader() {
           >
             Log in
           </Link>
-          <Button asChild className="hidden h-9 px-4 sm:inline-flex">
+          <Button asChild className="hidden h-9 bg-gradient-to-b from-[#3b5cf0] to-[#2443c4] px-4 hover:from-[#2f50e0] hover:to-[#1d3fc4] sm:inline-flex">
             <Link href="/register">Create account</Link>
           </Button>
           <Button
@@ -72,7 +72,7 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <nav id="mobile-nav" aria-label="Main" className="border-t border-border/70 bg-background md:hidden">
+        <nav id="mobile-nav" aria-label="Main" className="border-t border-border/70 bg-white md:hidden">
           <ul className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3 sm:px-6">
             {NAV.map((item) => (
               <li key={item.href}>

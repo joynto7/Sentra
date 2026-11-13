@@ -28,7 +28,7 @@ export function ProductShot({
 }) {
   return (
     <figure className={className}>
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl ring-1 shadow-black/40 ring-white/5">
+      <div className="overflow-hidden rounded-xl border border-[#d4defc] bg-white shadow-[0_30px_80px_-24px_rgba(43,79,216,0.45)] ring-1 ring-[#2b4fd8]/10">
         <Image src={src} alt={alt} width={width} height={height} priority={priority} sizes={sizes} className="h-auto w-full" />
       </div>
       <figcaption className={cn("mt-3 text-sm text-muted-foreground")}>
