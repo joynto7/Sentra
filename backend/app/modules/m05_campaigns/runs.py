@@ -405,6 +405,40 @@ def list_organization_runs(
     return rows
 
 
+def last_runs(db: Session, organization_id: uuid.UUID) -> dict[uuid.UUID, dict]:
+    """The newest run of every campaign of the organization, by the campaign's id: Screen 33's
+    Last run column and its order, however old the run is (UX task 4.5)."""
+    latest_number = (
+        select(CampaignRun.campaign_id, func.max(CampaignRun.number).label("number"))
+        .where(CampaignRun.organization_id == organization_id, CampaignRun.campaign_id.is_not(None))
+        .group_by(CampaignRun.campaign_id)
+        .subquery()
+    )
+    newest = list(
+        db.scalars(
+            scoped_select(CampaignRun, organization_id).join(
+                latest_number,
+                (CampaignRun.campaign_id == latest_number.c.campaign_id)
+                & (CampaignRun.number == latest_number.c.number),
+            )
+        )
+    )
+    campaigns = {
+        c.id: c
+        for c in db.scalars(
+            scoped_select(Campaign, organization_id).where(
+                Campaign.id.in_({run.campaign_id for run in newest})
+            )
+        )
+    }
+    names = _names(db, newest)
+    return {
+        run.campaign_id: _row(run, campaigns[run.campaign_id], names)
+        for run in newest
+        if run.campaign_id in campaigns
+    }
+
+
 def run_detail(db: Session, campaign: Campaign, run: CampaignRun) -> dict:
     """Step 2 and 5: the run's state, its progress and limits, and when it has ended its summary.
     `last_event_id` is where the monitor follows the live events from (step 3)."""

@@ -18,7 +18,7 @@ from app.modules.m05_campaigns.schemas import (
     AttemptPage,
     CampaignDetail,
     CampaignIn,
-    CampaignListItem,
+    CampaignRowOut,
     EstimateIn,
     EstimateOut,
     RunDetail,
@@ -43,10 +43,19 @@ def list_campaigns(
     target_id: uuid.UUID | None = None,
     membership: Membership = Depends(current_membership),
     db: Session = Depends(get_db),
-) -> list[CampaignListItem]:
-    """The campaigns page (Screen 33); every member may read it."""
-    rows = service.list_campaigns(db, membership.organization_id, suite, target_id)
-    return [CampaignListItem.model_validate(row) for row in rows]
+) -> list[CampaignRowOut]:
+    """The campaigns page (Screen 33); every member may read it. Each campaign comes with who
+    approved it and its newest run (UX task 4.5)."""
+    organization_id = membership.organization_id
+    rows = service.list_campaigns(db, organization_id, suite, target_id)
+    approved = approval.approvers(db, organization_id)
+    latest = runs.last_runs(db, organization_id)
+    return [
+        CampaignRowOut.model_validate(
+            {**row, "approved_by": approved.get(row["id"]), "last_run": latest.get(row["id"])}
+        )
+        for row in rows
+    ]
 
 
 @router.post("/estimate")

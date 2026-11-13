@@ -2,13 +2,31 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Rocket, RotateCcw, Search } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  FlaskConical,
+  Lock,
+  type LucideIcon,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Rocket,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  TriangleAlert,
+  Unplug,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
+import { SortHeader, type SortDirection } from "@/components/sentra/sort-header"
 import { EnvironmentBadge, OwnershipBadge } from "@/components/targets/target-badges"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -25,53 +43,154 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSession } from "@/components/session-provider"
 import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
+import { useUrlState } from "@/hooks/use-url-state"
 import { useCan } from "@/lib/permissions"
-import { type TargetRiskRow, getRiskDashboard, notScoredText } from "@/lib/risk"
+import { type TargetRiskRow, getRiskDashboard } from "@/lib/risk"
 import { initials } from "@/lib/session"
 import {
   ENVIRONMENT_LABEL,
+  SHIELD_LABEL,
+  type ShieldState,
   TYPE_LABEL,
   type Target,
   type TargetList,
+  type TargetListItem,
   formatDate,
   listTargets,
   restoreTarget,
 } from "@/lib/targets"
+import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 20
 type Tab = "active" | "archived"
+type SortKey = "name" | "risk" | "last_run"
+const SORT_KEYS: SortKey[] = ["name", "risk", "last_run"]
+// A column's first direction when it is chosen: names A to Z, the highest risk and the latest run first
+const FIRST_DIRECTION: Record<SortKey, SortDirection> = { name: "asc", risk: "desc", last_run: "desc" }
+
+// Which columns show at which width of the table's own frame (a container query), so that the
+// targets' names keep room: all ten from 1,120 px (a window of 1,440 px), Last campaign run and
+// Owner from 896 (1,280 px), Ownership and Sentra Shield from 704 (1,024 px). While a column is
+// hidden, what it says shows under the target's name.
+const SHOW = {
+  wide: "hidden @min-[70rem]/targets:table-cell",
+  run: "hidden @min-[56rem]/targets:table-cell",
+  state: "hidden @min-[44rem]/targets:table-cell",
+}
+
+const SHIELD_ICON: Record<ShieldState, LucideIcon> = {
+  active: ShieldCheck,
+  not_reporting: TriangleAlert,
+  not_in_path: TriangleAlert,
+  pending: Clock,
+  not_connected: Unplug,
+}
+
+/** Screen 16's Sentra Shield column: icon and words, and a problem in the warning colour too. */
+function ShieldStatus({ shield }: { shield: TargetListItem["shield"] }) {
+  const Icon = SHIELD_ICON[shield.status]
+  const problem = shield.status === "not_reporting" || shield.status === "not_in_path"
+  return (
+    <span
+      className={cn(
+        "inline-flex items-start gap-1.5 text-[13px]",
+        problem ? "font-medium text-warning" : shield.status === "active" ? "text-foreground" : "text-muted-foreground",
+      )}
+    >
+      <Icon className={cn("mt-0.5 size-3.5 shrink-0", shield.status === "active" && "text-success")} aria-hidden="true" />
+      {shield.label}
+    </span>
+  )
+}
+
+/** "Register target" and "Deploy a lab target" in the page header, for the roles that may. */
+function HeaderActions({ register }: { register: React.ReactNode }) {
+  const canLab = useCan("use_security_lab")
+  if (!canLab && !register) return null
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {canLab && (
+        <Button asChild variant="ghost" className="h-9 gap-1.5 text-link hover:text-link">
+          <Link href="/lab">
+            <FlaskConical aria-hidden="true" />
+            Deploy a lab target
+          </Link>
+        </Button>
+      )}
+      {register}
+    </div>
+  )
+}
 
 /** Screen 16: the organization's targets, the entry to UC-2.1 to UC-2.7. */
 export function TargetsList() {
+  // When the address changes without the list (the menu's Targets link, Back or Forward), the
+  // list starts again from the new address, as if the page had just been opened
+  const [opened, setOpened] = useState(0)
+  return <ListFromAddress key={opened} onOutside={() => setOpened((count) => count + 1)} />
+}
+
+function ListFromAddress({ onOutside }: { onOutside: () => void }) {
   const organization = useSession().organization
   const canManage = useCan("manage_targets")
   const canCampaign = useCan("manage_campaigns") // "Create campaign" on a target (UC-5.1 trigger)
   const canVerify = useCan("verify_targets") // the inline "Verify ownership" of an unverified target
-  const [tab, setTab] = useState<Tab>("active")
+  // The list starts as its address says: a reload, Back, or a link somebody shared
+  const query = useSearchParams()
+  const [tab, setTab] = useState<Tab>(query.get("tab") === "archived" ? "archived" : "active")
   const hasActions = (canManage || canCampaign) && (tab === "active" || canManage === true)
   const [search, setSearch] = useState("")
-  const [type, setType] = useState("")
-  const [environment, setEnvironment] = useState("")
-  const [ownership, setOwnership] = useState("")
-  const [page, setPage] = useState(1)
+  const [type, setType] = useState(query.get("type") ?? "")
+  const [environment, setEnvironment] = useState(query.get("environment") ?? "")
+  const [ownership, setOwnership] = useState(query.get("ownership") ?? "")
+  const [shield, setShield] = useState(query.get("shield") ?? "")
+  const askedSort = query.get("sort") as SortKey | null
+  const [sort, setSort] = useState<SortKey>(askedSort && SORT_KEYS.includes(askedSort) ? askedSort : "risk")
+  const [direction, setDirection] = useState<SortDirection>(() => {
+    const value = query.get("direction")
+    return value === "asc" || value === "desc" ? value : FIRST_DIRECTION[sort]
+  })
+  const [page, setPage] = useState(() => Math.max(1, Number(query.get("page")) || 1))
   // What the API is asked for: also the key of the answer kept for Back (UX task 3.0)
   const request = (() => {
-    const params = new URLSearchParams({ tab, page: String(page), page_size: String(PAGE_SIZE) })
+    const params = new URLSearchParams({ tab, page: String(page), page_size: String(PAGE_SIZE), sort, direction })
     if (search.trim()) params.set("search", search.trim())
     if (type) params.set("type", type)
     if (environment) params.set("environment", environment)
-    if (ownership) params.set("ownership", ownership)
+    if (ownership && tab === "active") params.set("ownership", ownership)
+    if (shield) params.set("shield", shield)
     return params.toString()
   })()
   const [kept, keep, drop] = useKeptAnswer<TargetList>(`targets?${request}`)
   const [keptRisk, keepRisk, dropRisk] = useKeptAnswer<Record<string, TargetRiskRow>>("targets-risk")
   const [data, setData] = useState<TargetList | null>(kept)
   const [risk, setRisk] = useState<Record<string, TargetRiskRow> | null>(keptRisk)
-  // The tab and filters aren't in the address yet (task 4.5), so Back opens the first view, and
-  // brings the reader back to where they were only if they left from it
+  // The tab, filters, order and page are in the address, so Back opens the same view of the list
+  // and brings the reader back to where they were in it
   useKeptScroll("targets", `targets?${request}`, data !== null)
   const [error, setError] = useState(false)
+  // The list was refused: the reader may no longer read it (401, 403), which is not a failure to retry
+  const [denied, setDenied] = useState(false)
+  // The scores are a second request: when it fails the table says so, it never calls a scored target "Not scored"
+  const [riskFailed, setRiskFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+
+  // Everything but the search words goes in the address: what people search for stays out of the
+  // browser's history, as on the Findings list. A sort's own first direction is left out.
+  useUrlState(
+    {
+      tab,
+      type,
+      environment,
+      ownership: tab === "active" ? ownership : "",
+      shield,
+      sort,
+      direction,
+      page: String(page),
+    },
+    { tab: "active", sort: "risk", direction: FIRST_DIRECTION[sort], page: "1" },
+    onOutside,
+  )
 
   // The risk score and the open findings of every target come from Module 7, in one request.
   useEffect(() => {
@@ -81,11 +200,13 @@ export function TargetsList() {
         const rows = Object.fromEntries(dashboard.targets.map((row) => [row.id, row]))
         setRisk(rows)
         keepRisk(rows)
+        setRiskFailed(false)
       })
       .catch((problem) => {
         if (controller.signal.aborted) return // a cancelled request keeps what is shown
         if (refused(problem)) dropRisk()
-        setRisk({})
+        setRisk(null)
+        setRiskFailed(true)
       })
     return () => controller.abort()
   }, [attempt, keepRisk, dropRisk])
@@ -96,9 +217,15 @@ export function TargetsList() {
     const timer = setTimeout(() => {
       listTargets(new URLSearchParams(request), controller.signal)
         .then((result) => {
+          // A page beyond the last one (an old link, or a list that shrank) opens the last page
+          if (!result.items.length && result.total > 0 && result.page > 1) {
+            setPage(Math.ceil(result.total / result.page_size))
+            return
+          }
           setData(result)
           keep(result)
           setError(false)
+          setDenied(false)
         })
         .catch((problem) => {
           if (controller.signal.aborted) return
@@ -106,6 +233,7 @@ export function TargetsList() {
           if (refused(problem)) {
             drop()
             setData(null)
+            setDenied(true)
           }
           setError(true)
         })
@@ -122,17 +250,30 @@ export function TargetsList() {
       await restoreTarget(target.id)
       toast.success(`${target.name} is restored. Add credentials and verify its ownership again.`)
       setAttempt((count) => count + 1)
+      // The restored target leaves this tab, and with its row the focus: it goes to the tabs
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus())
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
   }, [])
 
-  const filtered = Boolean(search.trim() || type || environment || ownership)
+  function sortBy(column: SortKey) {
+    if (column === sort) setDirection((now) => (now === "asc" ? "desc" : "asc"))
+    else {
+      setSort(column)
+      setDirection(FIRST_DIRECTION[column])
+    }
+    setPage(1)
+  }
+  const sortProps = { sort, direction, onSort: sortBy }
+
+  const filtered = Boolean(search.trim() || type || environment || (ownership && tab === "active") || shield)
   const clearFilters = useCallback(() => {
     setSearch("")
     setType("")
     setEnvironment("")
     setOwnership("")
+    setShield("")
     setPage(1)
   }, [])
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
@@ -145,65 +286,116 @@ export function TargetsList() {
     </Button>
   ) : undefined
 
-  const panel = (
-    <section aria-label={tab === "active" ? "Active targets" : "Archived targets"} className="rounded-[10px] border bg-card">
-      <div className="flex flex-wrap items-center gap-2 border-b p-3">
-        <label className="relative block w-full sm:w-72">
-          <span className="sr-only">Search targets</span>
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setPage(1)
-            }}
-            placeholder="Search targets"
-            className="h-9 w-full rounded-[7px] border border-input bg-card pr-3 pl-8 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          />
-        </label>
-        <FilterSelect
-          label="Type"
-          value={type}
-          onChange={(v) => {
-            setType(v)
-            setPage(1)
-          }}
-          options={Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label }))}
-        />
-        <FilterSelect
-          label="Environment"
-          value={environment}
-          onChange={(v) => {
-            setEnvironment(v)
-            setPage(1)
-          }}
-          options={Object.entries(ENVIRONMENT_LABEL).map(([value, label]) => ({ value, label }))}
-        />
-        {tab === "active" && (
-          <FilterSelect
-            label="Ownership"
-            value={ownership}
-            onChange={(v) => {
-              setOwnership(v)
-              setPage(1)
-            }}
-            options={[
-              { value: "verified", label: "Verified" },
-              { value: "unverified", label: "Unverified" },
-            ]}
-          />
-        )}
-        <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
-          {data ? `${data.total} ${data.total === 1 ? "target" : "targets"}` : ""}
+  /** A target without a score: not tested yet, and the way to make it testable when there is one. */
+  function notScored(target: Target, row: TargetRiskRow | undefined) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 text-[13px]">
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <Lock className="size-3.5 shrink-0" aria-hidden="true" />
+          {row ? "Not scored · no runs" : "Not scored"}
         </span>
+        {target.status === "unverified" && canVerify && (
+          <Link
+            href={`/targets/${target.id}/verify`}
+            className="inline-flex min-h-6 items-center text-link hover:underline"
+          >
+            Verify ownership
+          </Link>
+        )}
       </div>
+    )
+  }
+
+  const filters = (
+    <div className="flex flex-wrap items-center gap-2 border-b p-3">
+      <label className="relative block w-full sm:w-72">
+        <span className="sr-only">Search targets</span>
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setPage(1)
+          }}
+          placeholder="Search targets"
+          className="h-9 w-full rounded-[7px] border border-input bg-card pr-3 pl-8 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        />
+      </label>
+      <FilterSelect
+        label="Type"
+        value={type}
+        onChange={(v) => {
+          setType(v)
+          setPage(1)
+        }}
+        options={Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label }))}
+      />
+      <FilterSelect
+        label="Environment"
+        value={environment}
+        onChange={(v) => {
+          setEnvironment(v)
+          setPage(1)
+        }}
+        options={Object.entries(ENVIRONMENT_LABEL).map(([value, label]) => ({ value, label }))}
+      />
+      {tab === "active" && (
+        <FilterSelect
+          label="Ownership"
+          value={ownership}
+          onChange={(v) => {
+            setOwnership(v)
+            setPage(1)
+          }}
+          options={[
+            { value: "verified", label: "Verified" },
+            { value: "unverified", label: "Unverified" },
+          ]}
+        />
+      )}
+      <FilterSelect
+        label="Sentra Shield"
+        value={shield}
+        onChange={(v) => {
+          setShield(v)
+          setPage(1)
+        }}
+        options={Object.entries(SHIELD_LABEL).map(([value, label]) => ({ value, label }))}
+      />
+      <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
+        {data ? `${data.total} ${data.total === 1 ? "target" : "targets"}` : ""}
+      </span>
+    </div>
+  )
+
+  const panel = (
+    <section
+      aria-label={tab === "active" ? "Active targets" : "Archived targets"}
+      className="@container/targets rounded-[10px] border bg-card"
+    >
+      {filters}
 
       {error && (
         <div className="p-4">
           <Alert variant="destructive" role="alert">
             <AlertDescription className="flex items-center justify-between gap-4">
-              The targets could not be loaded.
+              {denied
+                ? "You can no longer see the targets of this organization. Ask an Organization Administrator for access."
+                : "The targets could not be loaded."}
+              <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={() => { setDenied(false); setAttempt((n) => n + 1) }}>
+                Try again
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
+      {riskFailed && !error && (
+        <div className="p-4 pb-0">
+          <Alert variant="destructive" role="alert">
+            <AlertDescription className="flex items-center justify-between gap-4">
+              The risk scores could not be loaded.
               <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={() => setAttempt((n) => n + 1)}>
                 Try again
               </Button>
@@ -239,7 +431,7 @@ export function TargetsList() {
               title="No targets yet"
               description={
                 canManage
-                  ? "Register an AI application that your organization owns or is allowed to test."
+                  ? "Register an AI application you own, or deploy a lab target to practise."
                   : "An AI Application Developer of your organization registers the applications to test."
               }
               action={register}
@@ -250,89 +442,133 @@ export function TargetsList() {
 
       {data && data.total > 0 && (
         <>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-muted">
-                <TableRow>
-                  <TableHead className="text-xs">Target</TableHead>
-                  <TableHead className="text-xs">Type</TableHead>
-                  <TableHead className="text-xs">Environment</TableHead>
-                  <TableHead className="text-xs">Ownership</TableHead>
-                  <TableHead className="text-xs">Risk Score</TableHead>
-                  <TableHead className="text-xs">Open findings</TableHead>
-                  <TableHead className="text-xs">Last campaign run</TableHead>
-                  <TableHead className="text-xs">Owner</TableHead>
-                  {hasActions && (
-                    <TableHead className="w-12 text-xs">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.items.map((target) => (
+          {/* Fixed widths on the header's cells, each measured on its longest content; the
+              target's name takes what is left, and a hidden header cell takes its column along */}
+          <Table className="table-fixed">
+            <TableHeader className="bg-muted">
+              <TableRow>
+                <SortHeader column="name" label="Target" {...sortProps} />
+                <TableHead scope="col" className={cn("w-[116px] text-xs", SHOW.wide)}>
+                  Type
+                </TableHead>
+                <TableHead scope="col" className={cn("w-[112px] text-xs", SHOW.wide)}>
+                  Environment
+                </TableHead>
+                <TableHead scope="col" className={cn("w-[112px] text-xs", SHOW.state)}>
+                  Ownership
+                </TableHead>
+                <SortHeader column="risk" label="Risk score" className="w-[112px]" {...sortProps} />
+                <TableHead scope="col" className="w-[160px] text-xs">
+                  Open findings
+                </TableHead>
+                <SortHeader
+                  column="last_run"
+                  label="Last campaign run"
+                  className={cn("w-[104px] whitespace-normal", SHOW.run)}
+                  {...sortProps}
+                />
+                <TableHead scope="col" className={cn("w-[136px] text-xs", SHOW.state)}>
+                  Sentra Shield
+                </TableHead>
+                <TableHead scope="col" className={cn("w-[56px] text-xs", SHOW.run)}>
+                  Owner
+                </TableHead>
+                {hasActions && (
+                  <TableHead className="w-12 text-xs">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((target) => {
+                const row = risk?.[target.id]
+                const lastRun = row?.last_run_at ? formatDate(row.last_run_at) : "No run yet"
+                return (
                   <TableRow key={target.id}>
-                    <TableCell className="py-2.5">
+                    <TableCell className="py-2.5 whitespace-normal">
                       <Link
                         href={`/targets/${target.id}`}
-                        className="text-[13px] font-medium text-link hover:underline"
+                        className="inline-block min-h-6 text-[13px] leading-6 font-medium text-link hover:underline"
                       >
                         {target.name}
                       </Link>
-                      <div className="font-mono text-xs text-muted-foreground">{target.endpoint_host}</div>
+                      <div className="truncate font-mono text-xs text-muted-foreground" title={target.endpoint_host}>
+                        {target.endpoint_host}
+                      </div>
+                      {/* What the hidden columns say, each while its column is hidden */}
+                      <div className="text-xs text-muted-foreground @min-[70rem]/targets:hidden">
+                        {TYPE_LABEL[target.type]} · {ENVIRONMENT_LABEL[target.environment]}
+                        <span className="@min-[56rem]/targets:hidden"> · Last run: {lastRun}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 @min-[44rem]/targets:hidden">
+                        <OwnershipBadge status={target.status} />
+                        <ShieldStatus shield={target.shield} />
+                      </div>
                     </TableCell>
-                    <TableCell className="text-[13px]">{TYPE_LABEL[target.type]}</TableCell>
-                    <TableCell>
+                    <TableCell className={SHOW.wide}>
+                      <span className="text-[13px]">{TYPE_LABEL[target.type]}</span>
+                    </TableCell>
+                    <TableCell className={SHOW.wide}>
                       <EnvironmentBadge environment={target.environment} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={SHOW.state}>
                       <OwnershipBadge status={target.status} />
                     </TableCell>
-                    <TableCell>
-                      {(() => {
-                        const row = risk?.[target.id]
-                        if (!risk) return <Skeleton className="h-8 w-24" />
-                        if (!row || row.score === null) {
-                          return (
-                            <div className="space-y-1">
-                              <span className="text-[13px] text-muted-foreground">
-                                {row ? notScoredText(row.not_scored_reason) : "Not scored"}
-                              </span>
-                              {target.status === "unverified" && canVerify && (
-                                <Link
-                                  href={`/targets/${target.id}/verify`}
-                                  className="block text-[13px] text-link hover:underline"
-                                >
-                                  Verify ownership
-                                </Link>
-                              )}
-                            </div>
-                          )
-                        }
-                        return <RiskScore score={row.score} band={row.band ?? "none"} />
-                      })()}
+                    {riskFailed ? (
+                      // The scores are unknown: say so, and let nothing call this target "Not scored"
+                      <>
+                        <TableCell colSpan={3} className={cn("whitespace-normal", SHOW.run)}>
+                          <span className="text-[13px] text-muted-foreground">Risk score unavailable</span>
+                        </TableCell>
+                        <TableCell colSpan={2} className="whitespace-normal @min-[56rem]/targets:hidden">
+                          <span className="text-[13px] text-muted-foreground">Risk score unavailable</span>
+                        </TableCell>
+                      </>
+                    ) : !risk ? (
+                      <>
+                        <TableCell>
+                          <Skeleton className="h-8 w-20" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-5 w-28" />
+                        </TableCell>
+                        <TableCell className={SHOW.run}>
+                          <Skeleton className="h-5 w-14" />
+                        </TableCell>
+                      </>
+                    ) : row && row.score !== null ? (
+                      <>
+                        <TableCell>
+                          <RiskScore score={row.score} band={row.band ?? "none"} className="min-w-0" />
+                        </TableCell>
+                        <TableCell>
+                          <SeverityCountsStrip counts={row.open_by_severity} className="gap-2" />
+                        </TableCell>
+                        <TableCell className={cn("text-[13px]", SHOW.run)}>{lastRun}</TableCell>
+                      </>
+                    ) : (
+                      // Not tested yet: one cell across the score, the findings and the last run
+                      // (Screen 16), or across the first two while the last run's column is hidden
+                      <>
+                        <TableCell colSpan={3} className={cn("whitespace-normal", SHOW.run)}>
+                          {notScored(target, row)}
+                        </TableCell>
+                        <TableCell colSpan={2} className="whitespace-normal @min-[56rem]/targets:hidden">
+                          {notScored(target, row)}
+                        </TableCell>
+                      </>
+                    )}
+                    <TableCell className={cn("whitespace-normal", SHOW.state)}>
+                      <ShieldStatus shield={target.shield} />
                     </TableCell>
-                    <TableCell>
-                      {risk?.[target.id] ? (
-                        <SeverityCountsStrip counts={risk[target.id].open_by_severity} />
-                      ) : (
-                        <span className="text-[13px] text-muted-foreground">–</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-[13px]">
-                      {risk?.[target.id]?.last_run_at ? (
-                        formatDate(risk[target.id].last_run_at as string)
-                      ) : (
-                        <span className="text-muted-foreground">No run yet</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className={SHOW.run}>
                       {target.owner && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Avatar tabIndex={0} className="size-8">
                               <AvatarFallback className="text-xs font-medium">{initials(target.owner.name)}</AvatarFallback>
-                              <span className="sr-only">{target.owner.name}</span>
+                              <span className="sr-only">Registered by {target.owner.name}</span>
                             </Avatar>
                           </TooltipTrigger>
                           <TooltipContent>Registered by {target.owner.name}</TooltipContent>
@@ -378,10 +614,10 @@ export function TargetsList() {
                       </TableCell>
                     )}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                )
+              })}
+            </TableBody>
+          </Table>
           <nav aria-label="Pages" className="flex items-center justify-end gap-3 border-t px-4 py-2.5 text-sm">
             <span className="tabular text-muted-foreground">
               Page {data.page} of {pages}
@@ -403,7 +639,7 @@ export function TargetsList() {
       <PageHeader
         title="Targets"
         description={`AI applications ${organization?.name ?? "your organization"} is allowed to test.`}
-        action={register}
+        action={<HeaderActions register={register} />}
       />
 
       <Tabs

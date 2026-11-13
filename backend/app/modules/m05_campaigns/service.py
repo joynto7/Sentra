@@ -269,6 +269,7 @@ def _row(
     schedule: dict | None = None,
 ) -> dict:
     return {
+        "id": campaign.id,
         "code": campaign.code,
         "name": campaign.name,
         "target": {

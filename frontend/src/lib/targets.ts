@@ -56,8 +56,22 @@ export type Target = {
 /** The campaign run that is going on, while which the endpoint and credentials stay put. */
 export type ActiveRun = { id: string; code: string; number: number; campaign: string | null }
 
+/** Screen 16's Sentra Shield column: the state of the gateway in front of a target (FR-8.3, M8). */
+export type ShieldState = "active" | "not_reporting" | "pending" | "not_in_path" | "not_connected"
+
+export const SHIELD_LABEL: Record<ShieldState, string> = {
+  active: "Active",
+  not_reporting: "Not reporting",
+  pending: "Waiting for the gateway",
+  not_in_path: "Not in the traffic path",
+  not_connected: "Not connected",
+}
+
+/** A row of the targets page: the target and its Sentra Shield state. */
+export type TargetListItem = Target & { shield: { status: ShieldState; label: string } }
+
 export type TargetList = {
-  items: Target[]
+  items: TargetListItem[]
   total: number
   page: number
   page_size: number
