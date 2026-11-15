@@ -13,6 +13,13 @@
   --color-primary-hover: var(--primary-hover);
   --color-text-secondary: var(--text-secondary);
   --color-link: var(--link);
+  --color-lp-wash: var(--lp-wash);
+  --color-lp-line: var(--lp-line);
+  --color-lp-ink: var(--lp-ink);
+  --color-lp-muted: var(--lp-muted);
+  --color-lp-navy: var(--lp-navy);
+  --color-lp-navy-2: var(--lp-navy-2);
+  --color-lp-sky: var(--lp-sky);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-confirm: var(--confirm);
@@ -195,6 +202,37 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #1a2136;
   --sidebar-ring: #2b4fd8;
+
+  /* The public page's own palette (design approved 15 Nov 2026): a pale blue wash under white cards,
+     deep navy bands, one cobalt accent. Pairs checked for WCAG 2.2 AA in the task note. */
+  --lp-wash: #f3f6fe;             /* page wash; cobalt on it is 6.0:1 */
+  --lp-line: #dfe5f6;             /* card and divider lines */
+  --lp-ink: #0b1220;              /* headings and body */
+  --lp-muted: #5b6478;            /* supporting text; 5.5:1 on the wash */
+  --lp-navy: #0b1b3f;             /* dark bands */
+  --lp-navy-2: #10244f;           /* cards on a dark band */
+  --lp-sky: #8fa7ff;              /* eyebrow and marks on navy */
+}
+
+/* The hero cards float: up and down with a slight sway and tilt, each card on its own path. Only played
+   under motion-safe (the page respects "reduce motion"). */
+@keyframes lp-float-a {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25% { transform: translate3d(5px, -9px, 0) rotate(0.35deg); }
+  50% { transform: translate3d(0, -16px, 0) rotate(0deg); }
+  75% { transform: translate3d(-5px, -8px, 0) rotate(-0.35deg); }
+}
+@keyframes lp-float-b {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  30% { transform: translate3d(-6px, -10px, 0) rotate(-0.4deg); }
+  55% { transform: translate3d(0, -18px, 0) rotate(0deg); }
+  80% { transform: translate3d(6px, -7px, 0) rotate(0.4deg); }
+}
+
+/* The typing caret in the hero cards; only played under motion-safe and gone when the typing ends */
+@keyframes lp-caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .dark {

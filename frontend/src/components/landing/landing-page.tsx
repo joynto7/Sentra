@@ -19,11 +19,12 @@ import {
   CAPABILITIES,
   FAQ,
   NAV,
-  PHASES,
   SAFETY,
   STEPS,
   USE_CASES,
 } from "@/components/landing/landing-content"
+import { HeroCards } from "@/components/landing/hero-cards"
+import { Pillars } from "@/components/landing/pillars"
 import { ProductShot } from "@/components/landing/product-shot"
 import { SiteHeader } from "@/components/landing/site-header"
 import { SentraLogo } from "@/components/layout/sentra-logo"
@@ -38,11 +39,9 @@ const CAPABILITY_ICON: Record<string, LucideIcon> = {
 const SAFETY_ICON: LucideIcon[] = [Fingerprint, Gauge, UserCheck, ScrollText, Lock, Server]
 
 const CONTAINER = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8"
-const KICKER = "text-sm font-medium tracking-wide text-link"
-// The washes of blue between the white sections, and the glow behind the hero
+const KICKER = "text-xs font-medium tracking-[0.12em] text-link uppercase"
+// The wash of blue between the white sections
 const BAND = "bg-[linear-gradient(180deg,#f2f6ff_0%,#ffffff_100%)]"
-const GLOW =
-  "bg-[radial-gradient(52rem_30rem_at_82%_-4rem,rgba(91,124,255,0.34),transparent),radial-gradient(38rem_26rem_at_4%_8%,rgba(147,197,253,0.5),transparent),linear-gradient(180deg,#eaf1ff_0%,#ffffff_78%)]"
 const H2 = "text-3xl leading-tight font-semibold tracking-tight text-balance sm:text-4xl"
 
 /**
@@ -64,95 +63,49 @@ export function LandingPage() {
 
       <main id="main-content">
         {/* Hero */}
-        <section aria-labelledby="hero-title" className="relative overflow-hidden border-b border-border/60">
-          <div
-            aria-hidden="true"
-            className={`pointer-events-none absolute inset-0 ${GLOW}`}
-          />
-          <div className={`${CONTAINER} relative grid items-center gap-12 py-16 sm:py-20 lg:grid-cols-12 lg:gap-10 lg:py-24`}>
-            <div className="lg:col-span-5">
-              <p className={KICKER}>AI security testing platform</p>
+        <section aria-labelledby="hero-title" className="border-b border-lp-line bg-lp-wash">
+          <div className={`${CONTAINER} grid items-center gap-12 pt-12 pb-16 sm:pt-16 sm:pb-20 lg:grid-cols-12 lg:gap-10 lg:pt-20 lg:pb-24`}>
+            <div className="lg:col-span-6">
               <h1
                 id="hero-title"
-                className="mt-4 text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-5xl lg:text-[3.1rem]"
+                className="text-4xl leading-[1.08] font-medium tracking-tight text-balance text-lp-ink sm:text-5xl lg:text-[3.25rem]"
               >
-                Find, prove and fix{" "}
-                <span className="bg-gradient-to-r from-[#1d3fc4] to-[#2f6df6] bg-clip-text text-transparent">
-                  the weaknesses in your AI applications.
-                </span>
+                Find, prove and fix the weaknesses in your AI applications.
               </h1>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-text-secondary">
                 Sentra tests the chatbots, RAG systems and tool-using agents that you own or are allowed to test.
                 Every finding has its evidence behind it, every fix is approved by a person, and every fix is tested again.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Button asChild className="h-11 bg-gradient-to-b from-[#3b5cf0] to-[#2443c4] px-5 text-base shadow-[0_10px_30px_-10px_rgba(43,79,216,0.7)] hover:from-[#2f50e0] hover:to-[#1d3fc4]">
+                <Button asChild className="h-11 px-5 text-base">
                   <Link href="/register">
                     Create an account
                     <ArrowRight aria-hidden="true" />
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="h-11 border-[#c9d6ff] bg-white px-5 text-base hover:bg-[#eef3ff]">
+                <Button asChild variant="outline" className="h-11 border-lp-line bg-white px-5 text-base hover:bg-white/70">
                   <a href="#how-it-works">See how it works</a>
                 </Button>
               </div>
-              <p className="mt-6 max-w-md text-sm leading-relaxed text-muted-foreground">
-                Built-in tests are mapped to the OWASP Top 10 for LLM Applications and to MITRE ATLAS. Nothing runs
-                against an application until you have proved that it is yours.
-              </p>
             </div>
 
-            <ProductShot
-              className="lg:col-span-7"
-              src="/landing/dashboard.jpg"
-              alt="The Sentra Risk Dashboard: a list of what needs attention, counts of open, untriaged and fixed findings, and a risk score for each target."
-              caption="The Risk Dashboard: what needs attention, and the risk score of each target."
-              width={2880}
-              height={1800}
-              priority
-              sizes="(min-width: 1280px) 760px, (min-width: 1024px) 58vw, 100vw"
-            />
+            <HeroCards className="lg:col-span-6" />
           </div>
         </section>
 
-        {/* The problem and the approach */}
-        <section id="platform" aria-labelledby="platform-title" className="scroll-mt-20">
+        {/* Find, prove, fix */}
+        <section id="platform" aria-labelledby="platform-title" className="scroll-mt-20 bg-white">
           <div className={`${CONTAINER} py-20 lg:py-28`}>
-            <div className="grid gap-10 lg:grid-cols-12">
-              <div className="lg:col-span-6">
-                <p className={KICKER}>The problem</p>
-                <h2 id="platform-title" className={`${H2} mt-3`}>
-                  AI applications fail in ways ordinary testing never looks for.
-                </h2>
-              </div>
-              <div className="space-y-4 text-lg leading-relaxed text-text-secondary lg:col-span-6">
-                <p>
-                  A chatbot can be talked out of its instructions. A retrieval system can return a document the question
-                  never asked for. An agent can call a tool it should not. Prompt injection, leaked system prompts and
-                  confidential documents, and the misuse of tools are not found by a scan of the code.
-                </p>
-                <p>
-                  Sentra covers the whole path in one place, from the first request to the fix that has been checked.
-                </p>
-              </div>
+            <div className="mx-auto max-w-3xl text-center">
+              <h2 id="platform-title" className={`${H2} font-medium`}>
+                AI applications fail in ways ordinary testing never looks for.
+              </h2>
+              <p className="mt-5 text-lg leading-relaxed text-balance text-text-secondary">
+                Sentra covers the whole path in one place, from the first request to the fix that has been checked.
+              </p>
             </div>
-
-            <ol className="mt-14 grid gap-px overflow-hidden rounded-xl border border-[#d4defc] bg-[#d4defc] shadow-[0_20px_60px_-30px_rgba(43,79,216,0.35)] md:grid-cols-3">
-              {PHASES.map((phase, index) => (
-                <li key={phase.name} className="bg-white p-6 sm:p-8">
-                  <p className="font-mono text-sm text-muted-foreground">0{index + 1}</p>
-                  <h3 className="mt-2 text-xl font-semibold tracking-tight">{phase.name}</h3>
-                  <ul className="mt-5 space-y-3">
-                    {phase.steps.map((step) => (
-                      <li key={step} className="flex gap-3 text-[15px] leading-snug text-text-secondary">
-                        <Check className="mt-0.5 size-4 shrink-0 text-link" aria-hidden="true" />
-                        {step}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ol>
+            <Pillars />
+            <p className="mt-8 text-center text-sm text-lp-muted">Sample data from a fictional organization.</p>
           </div>
         </section>
 

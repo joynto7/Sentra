@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Menu, X } from "lucide-react"
 
 import { NAV } from "@/components/landing/landing-content"
-import { SentraLogo } from "@/components/layout/sentra-logo"
+import { SentraWordmark } from "@/components/layout/sentra-logo"
 import { Button } from "@/components/ui/button"
 
 /**
@@ -25,14 +25,14 @@ export function SiteHeader() {
   }, [open])
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/75">
+    <header className="sticky top-0 z-40 border-b border-lp-line/70 bg-lp-wash/95 backdrop-blur supports-[backdrop-filter]:bg-lp-wash/80">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="flex items-center gap-2.5 rounded-md text-lg font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Sentra, home"
+          className="rounded-md text-lp-ink outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <SentraLogo size={30} />
-          Sentra
+          <SentraWordmark size={17} />
         </Link>
 
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
@@ -54,7 +54,7 @@ export function SiteHeader() {
           >
             Log in
           </Link>
-          <Button asChild className="hidden h-9 bg-gradient-to-b from-[#3b5cf0] to-[#2443c4] px-4 hover:from-[#2f50e0] hover:to-[#1d3fc4] sm:inline-flex">
+          <Button asChild className="hidden h-9 px-4 sm:inline-flex">
             <Link href="/register">Create account</Link>
           </Button>
           <Button
@@ -72,7 +72,7 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <nav id="mobile-nav" aria-label="Main" className="border-t border-border/70 bg-white md:hidden">
+        <nav id="mobile-nav" aria-label="Main" className="border-t border-border/70 bg-lp-wash md:hidden">
           <ul className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3 sm:px-6">
             {NAV.map((item) => (
               <li key={item.href}>

@@ -11,19 +11,37 @@ export const NAV = [
   { href: "#faq", label: "FAQ" },
 ] as const
 
-/** The three phases of the core loop, as the README names it. */
-export const PHASES = [
+/** The three jobs of the core loop, as the README names its phases: find, prove, fix. */
+export const PILLARS = [
   {
-    name: "Know the target",
-    steps: ["Register the application and prove you own it", "Map its components: tools, knowledge sources, prompts", "Model the threats and pick what to test"],
+    id: "find",
+    name: "Find",
+    text: "Sentra learns what your application is made of and tests it, inside limits you set.",
+    steps: [
+      "Register the application and prove you own it",
+      "Map its tools, knowledge sources and prompts",
+      "Run versioned security tests within your limits",
+    ],
   },
   {
-    name: "Test it",
-    steps: ["Run versioned security tests within limits you set", "Keep the evidence of every attempt", "Score the risk of each target"],
+    id: "prove",
+    name: "Prove",
+    text: "A finding is only useful when you can trust it, so each one carries its evidence.",
+    steps: [
+      "Keep the evidence of every attempt",
+      "Repeat each test to see how often it works",
+      "Score the risk of each target",
+    ],
   },
   {
-    name: "Fix and verify",
-    steps: ["Review fixes that Sentra proposes", "Enforce policy fixes at the Sentra Shield gateway", "Retest, and compare before and after"],
+    id: "fix",
+    name: "Fix",
+    text: "Sentra proposes the fix, a person approves it, and the test runs again.",
+    steps: [
+      "Review the fixes that Sentra proposes",
+      "Enforce policy fixes at the Sentra Shield gateway",
+      "Retest, and compare before and after",
+    ],
   },
 ] as const
 
