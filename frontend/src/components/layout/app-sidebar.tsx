@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { OrganizationSwitcher } from "@/components/layout/organization-switcher"
-import { SentraLogo } from "@/components/layout/sentra-logo"
+import { SentraLogo, SentraWordmark } from "@/components/layout/sentra-logo"
 import { useSession } from "@/components/session-provider"
 import { platformNavigation, visibleNavigation } from "@/config/navigation"
 import { apiFetch } from "@/lib/api"
@@ -54,11 +54,10 @@ export function AppSidebar({ platform = false }: { platform?: boolean }) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="gap-3 px-3 pt-4">
-        <Link href={platform ? "/platform" : "/dashboard"} className="flex items-center gap-2.5 px-1" aria-label="Sentra home">
+        <Link href={platform ? "/platform" : "/dashboard"} className="flex h-7 items-center gap-2.5 px-1" aria-label="Sentra home">
+          {/* The icon beside the wordmark; collapsed to icons, only the icon stays. */}
           <SentraLogo />
-          <span className="text-[17px] font-semibold tracking-tight text-white group-data-[collapsible=icon]:hidden">
-            Sentra
-          </span>
+          <SentraWordmark size={18} onDark className="text-white group-data-[collapsible=icon]:hidden" />
         </Link>
         <OrganizationSwitcher current={platform ? null : organization} />
       </SidebarHeader>

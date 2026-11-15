@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { LogOut } from "lucide-react"
 
-import { SentraLogo } from "@/components/layout/sentra-logo"
+import { SentraLogo, SentraWordmark } from "@/components/layout/sentra-logo"
 import { useSession } from "@/components/session-provider"
 import {
   DropdownMenu,
@@ -30,10 +30,10 @@ export function FocusedHeader() {
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-card px-6">
-      <span className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5">
         <SentraLogo />
-        <span className="text-[17px] font-semibold tracking-tight">Sentra</span>
-      </span>
+        <SentraWordmark size={18} className="text-foreground" />
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger className="flex items-center gap-2 rounded-md p-1 hover:bg-muted" aria-label={`Account menu for ${user.name}`}>
           <span className="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-semibold" aria-hidden="true">
