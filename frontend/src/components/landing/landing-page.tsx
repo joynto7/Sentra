@@ -60,15 +60,15 @@ export function LandingPage() {
       <main id="main-content">
         {/* Hero */}
         <section aria-labelledby="hero-title" className="border-b border-lp-line bg-lp-wash">
-          <div className={`${CONTAINER} grid items-center gap-12 pt-12 pb-16 sm:pt-16 sm:pb-20 lg:grid-cols-12 lg:gap-10 lg:pt-20 lg:pb-24`}>
+          <div className={`${CONTAINER} grid items-center gap-12 pt-12 pb-16 sm:pt-16 sm:pb-20 lg:grid-cols-12 lg:gap-10 lg:pt-24 lg:pb-28`}>
             <div className="lg:col-span-6">
               <h1
                 id="hero-title"
-                className="text-4xl leading-[1.08] font-medium tracking-tight text-balance text-lp-ink sm:text-5xl lg:text-[3.25rem]"
+                className="text-4xl leading-[1.08] font-medium tracking-tight text-balance text-lp-ink sm:text-5xl lg:text-[3.5rem]"
               >
                 Find, prove and fix the weaknesses in your AI applications.
               </h1>
-              <p className="mt-6 max-w-xl text-lg leading-relaxed text-text-secondary">
+              <p className="mt-6 max-w-xl text-lg leading-relaxed text-text-secondary sm:text-xl">
                 Sentra tests your AI applications, proves each weakness with evidence, and checks every fix.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
