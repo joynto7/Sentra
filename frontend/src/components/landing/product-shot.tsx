@@ -32,7 +32,7 @@ export function ProductShot({
         <Image src={src} alt={alt} width={width} height={height} priority={priority} sizes={sizes} className="h-auto w-full" />
       </div>
       <figcaption className={cn("mt-3 text-sm text-muted-foreground")}>
-        {caption} <span className="text-text-secondary">Sample data from a fictional organization.</span>
+        {caption} <span className="text-text-secondary">Fictional sample data.</span>
       </figcaption>
     </figure>
   )

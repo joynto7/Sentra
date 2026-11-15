@@ -28,8 +28,7 @@ export function Pillars() {
 
               <Picture id={pillar.id} />
 
-              <p className="mt-6 leading-relaxed text-text-secondary">{pillar.text}</p>
-              <ul className="mt-5 space-y-3 border-t border-lp-line pt-5">
+              <ul className="mt-6 space-y-3">
                 {pillar.steps.map((step) => (
                   <li key={step} className="flex gap-3 text-[15px] leading-snug text-lp-ink">
                     <Check className="mt-0.5 size-4 shrink-0 text-link" aria-hidden="true" />
@@ -82,11 +81,8 @@ function Picture({ id }: { id: string }) {
       )}
 
       {id === "prove" && (
-        <div className="flex h-full flex-col justify-between">
-          <div>
-            <p className="text-[13px] font-medium text-lp-ink">Prompt injection leaks the system prompt</p>
-            <p className="mt-1 text-xs text-lp-muted">Repeated three times</p>
-          </div>
+        <div className="flex h-full flex-col justify-center gap-4">
+          <p className="text-[13px] font-medium text-lp-ink">Prompt injection</p>
           <div className="flex items-center gap-2">
             {[0, 1, 2].map((n) => (
               <span key={n} className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground">
@@ -95,9 +91,6 @@ function Picture({ id }: { id: string }) {
             ))}
             <span className="ml-1 text-sm font-medium text-lp-ink">3 of 3 worked</span>
           </div>
-          <p className="rounded-md bg-lp-wash px-2.5 py-1.5 font-mono text-[11px] text-lp-muted">
-            stored read-only, checksummed
-          </p>
         </div>
       )}
 
@@ -105,7 +98,7 @@ function Picture({ id }: { id: string }) {
         <ul className="flex h-full flex-col justify-center gap-3 text-[13px]">
           <li className="flex items-center gap-2.5 text-lp-ink">
             <Wrench className="size-5 shrink-0 text-lp-muted" />
-            Fix proposed for the system prompt
+            Fix proposed
           </li>
           <li className="flex items-center gap-2.5 font-medium text-lp-ink">
             <CircleCheck className="size-5 shrink-0 text-success" />

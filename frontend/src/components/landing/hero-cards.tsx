@@ -110,7 +110,7 @@ export function HeroCards({ className }: { className?: string }) {
         </div>
       </div>
       <figcaption className="mt-4 text-center text-sm text-lp-muted lg:text-left">
-        Sample data from a fictional organization.
+        Fictional sample data.
       </figcaption>
     </figure>
   )
