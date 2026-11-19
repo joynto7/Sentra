@@ -1,18 +1,18 @@
 import type { Role } from "@/config/navigation"
 
+/** The logged-in user, as returned by GET /api/v1/auth/me. */
 export type SessionUser = {
+  id: string
   name: string
-  role: Role
-  roleLabel: string
-  organization: string
+  email: string
+  status: string
 }
 
 /**
- * Placeholder for the logged-in user until login is built (FR-1.1, M1).
+ * Placeholder until organizations and roles exist (FR-1.4, FR-1.6).
  * Fictional sample data, the same as in the UI prototype.
  */
-export const currentUser: SessionUser = {
-  name: "Tom Becker",
+export const placeholderMembership: { role: Role; roleLabel: string; organization: string } = {
   role: "org_admin",
   roleLabel: "Organization Administrator",
   organization: "Halcyon Bank",
@@ -21,6 +21,7 @@ export const currentUser: SessionUser = {
 export function initials(name: string): string {
   return name
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
