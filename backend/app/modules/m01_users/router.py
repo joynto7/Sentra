@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.models import Organization
 from app.modules.m01_users import organizations, service
 from app.modules.m01_users.deps import current_session, current_user
+from app.modules.m01_users.member_routes import router as member_router
 from app.modules.m01_users.models import User, UserSession
 from app.modules.m01_users.organization_routes import organization_out
 from app.modules.m01_users.organization_routes import router as organization_router
@@ -128,3 +129,4 @@ def reset_password(
 router = APIRouter()
 router.include_router(auth_router)
 router.include_router(organization_router)
+router.include_router(member_router)
