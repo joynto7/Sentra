@@ -5,6 +5,8 @@ from collections.abc import Iterator
 os.environ.setdefault("EMAIL_BACKEND", "memory")
 os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("RUN_STARTUP_HOOKS", "false")
+# A fixed AES-256 key for the tests only (FR-2.2). Real deployments set their own.
+os.environ.setdefault("CREDENTIALS_KEY", "c2VudHJhLXRlc3RzLW9ubHktbm90LWEtcmVhbC1rZXk=")
 
 import pytest
 from fastapi.testclient import TestClient
