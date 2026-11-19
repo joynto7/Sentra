@@ -13,11 +13,21 @@ class AppError(Exception):
     status_code = 400
     code = "bad_request"
 
-    def __init__(self, message: str, *, code: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        status_code: int | None = None,
+        details: list[dict] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
+        self.details = details
         if code:
             self.code = code
+        if status_code:
+            self.status_code = status_code
 
 
 class NotFoundError(AppError):
@@ -35,6 +45,21 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class NotAuthenticatedError(AppError):
+    status_code = 401
+    code = "not_authenticated"
+
+
+class FieldValidationError(AppError):
+    """Invalid input found by business rules, reported like request validation errors."""
+
+    status_code = 422
+    code = "validation_error"
+
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__("Some fields are invalid.", details=[{"field": field, "message": message}])
+
+
 def _body(code: str, message: str, details: list | None = None) -> dict:
     error: dict = {"code": code, "message": message}
     if details:
@@ -45,7 +70,7 @@ def _body(code: str, message: str, details: list | None = None) -> dict:
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error(_: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(_body(exc.code, exc.message), status_code=exc.status_code)
+        return JSONResponse(_body(exc.code, exc.message, exc.details), status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
