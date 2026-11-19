@@ -1,21 +1,22 @@
 import type { Role } from "@/config/navigation"
 
+/** The organization this browser works in, with the user's role in it (FR-1.4). */
+export type CurrentOrganization = {
+  id: string
+  name: string
+  slug: string
+  role: Role
+  role_label: string
+  is_current: boolean
+}
+
 /** The logged-in user, as returned by GET /api/v1/auth/me. */
 export type SessionUser = {
   id: string
   name: string
   email: string
   status: string
-}
-
-/**
- * Placeholder until organizations and roles exist (FR-1.4, FR-1.6).
- * Fictional sample data, the same as in the UI prototype.
- */
-export const placeholderMembership: { role: Role; roleLabel: string; organization: string } = {
-  role: "org_admin",
-  roleLabel: "Organization Administrator",
-  organization: "Halcyon Bank",
+  organization: CurrentOrganization | null
 }
 
 export function initials(name: string): string {
