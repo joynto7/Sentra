@@ -8,8 +8,17 @@ import type { SessionUser } from "@/lib/session"
 
 const SessionContext = createContext<SessionUser | null>(null)
 
-/** Loads the logged-in user. Without a valid session, it sends the browser to the login page. */
-export function SessionProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Loads the logged-in user. Without a valid session, it sends the browser to the login page.
+ * Pages inside the app also need an organization; without one, the user creates it first.
+ */
+export function SessionProvider({
+  children,
+  requireOrganization = true,
+}: {
+  children: React.ReactNode
+  requireOrganization?: boolean
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<SessionUser | null>(null)
@@ -18,7 +27,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
     apiFetch<SessionUser>("/v1/auth/me")
       .then((me) => {
-        if (!cancelled) setUser(me)
+        if (cancelled) return
+        if (requireOrganization && !me.organization) {
+          router.replace("/organizations/new")
+          return
+        }
+        setUser(me)
       })
       .catch(async (error) => {
         if (cancelled || !(error instanceof ApiError) || error.status !== 401) return
@@ -29,7 +43,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [router, pathname])
+  }, [router, pathname, requireOrganization])
 
   if (!user) {
     return (
