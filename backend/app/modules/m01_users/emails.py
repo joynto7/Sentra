@@ -46,3 +46,13 @@ def password_changed(name: str) -> tuple[str, str]:
         "If you did not do this, reset your password immediately and contact your "
         "organization administrator.\n",
     )
+
+
+def role_changed(name: str, organization: str, role: str) -> tuple[str, str]:
+    return (
+        f"Your role in {organization} has changed",
+        f"Hello {name},\n\n"
+        f"Your role in {organization} on Sentra is now: {role}.\n"
+        "It applies from your next action in Sentra.\n\n"
+        "If you have questions, contact your organization administrator.\n",
+    )
