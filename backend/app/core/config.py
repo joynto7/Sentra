@@ -13,6 +13,23 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://sentra:sentra@localhost:5432/sentra"
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
+    web_url: str = "http://localhost:3000"
+
+    # E-mail: "smtp" sends through SMTP (Mailpit in development); "memory" keeps
+    # messages in app.core.email.outbox (used by the tests).
+    email_backend: str = "smtp"
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    mail_from: str = "Sentra <no-reply@sentra.local>"
+
+    # Sessions (NFR-3.5)
+    session_cookie_name: str = "sentra_session"
+    session_idle_minutes: int = 30
+    cookie_secure: bool = True
+
+    # Slowing down repeated failed logins (UC-1.2)
+    login_max_failures: int = 5
+    login_lock_minutes: int = 15
 
 
 @lru_cache
