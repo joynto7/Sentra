@@ -39,3 +39,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   return body as T
 }
+
+/** Field errors of a validation error, keyed by field name ("email", "password", …). */
+export function fieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError) || !error.details) return {}
+  return Object.fromEntries(error.details.map((d) => [d.field, d.message]))
+}
+
+/** Only allow redirects to paths inside Sentra (prevents open redirects). */
+export function safeNextPath(next: string | undefined): string {
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"
+}
