@@ -46,7 +46,15 @@ export type Target = {
   verification_method: VerificationMethod | null
   last_connection_test: ConnectionSummaryOut | null
   profile_status: ProfileStatus | null
+  /** When it was retired and by whom (FR-2.6; UC-2.6) */
+  archived_at: string | null
+  archived_by: { id: string; name: string } | null
+  /** Only on one target, not in the list: the run that keeps the endpoint and credentials fixed */
+  active_run: ActiveRun | null
 }
+
+/** The campaign run that is going on, while which the endpoint and credentials stay put. */
+export type ActiveRun = { id: string; code: string; number: number; campaign: string | null }
 
 export type TargetList = {
   items: Target[]
@@ -353,4 +361,107 @@ export function formatDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+
+// ---------------------------------------------------------------- the lifecycle (FR-2.6)
+
+/** What a campaign scheduled against the target would lose when it is archived (UC-2.6 step 2). */
+export type ScheduleToCancel = {
+  id: string
+  campaign: string
+  name: string
+  schedule: string
+  next_run_at: string | null
+  created_by: string | null
+}
+
+export type ArchiveConsequences = {
+  target: { id: string; name: string; status: TargetStatus }
+  /** Why it can't be archived now (UC-2.6, 2a1); empty when nothing is running */
+  running: string
+  schedules: ScheduleToCancel[]
+  credentials: string[]
+  runs_kept: number
+  findings_kept: number
+}
+
+export type HistoryKind =
+  | "registration"
+  | "verification"
+  | "configuration"
+  | "profile"
+  | "campaign_run"
+  | "retest"
+  | "shield_policy"
+
+export type HistoryEvent = {
+  at: string
+  kind: HistoryKind
+  action: string
+  summary: string
+  actor: string
+  by_sentra: boolean
+  details: Record<string, unknown>
+  run: { id: string; code: string; number: number; campaign: string | null } | null
+  /** UC-2.7, 5a1: the details were deleted at the end of their retention period */
+  details_deleted: boolean
+}
+
+export type HistoryScore = {
+  at: string
+  score: number
+  band: string
+  trigger: string
+  open_by_severity: Record<string, number>
+  open_total: number
+}
+
+export type TargetHistory = {
+  target: { id: string; name: string; status: TargetStatus }
+  period_days: number
+  kinds: HistoryKind[]
+  /** 2a1: without a campaign run the page suggests creating one */
+  has_runs: boolean
+  events: HistoryEvent[]
+  scores: HistoryScore[]
+}
+
+export const HISTORY_KIND_LABEL: Record<HistoryKind, string> = {
+  registration: "Registration",
+  verification: "Verification",
+  configuration: "Configuration",
+  profile: "Profile",
+  campaign_run: "Campaign runs",
+  retest: "Retests",
+  shield_policy: "Shield Policy",
+}
+
+export const HISTORY_PERIODS = [
+  { days: 30, label: "Last 30 days" },
+  { days: 90, label: "Last 3 months" },
+  { days: 180, label: "Last 6 months" },
+  { days: 365, label: "Last year" },
+  { days: 3650, label: "Everything" },
+]
+
+export function getTargetHistory(id: string, periodDays: number, kind: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ period_days: String(periodDays) })
+  if (kind) params.set("kind", kind)
+  return apiFetch<TargetHistory>(`/v1/targets/${id}/history?${params}`, { signal })
+}
+
+export function getArchiveConsequences(id: string, signal?: AbortSignal) {
+  return apiFetch<ArchiveConsequences>(`/v1/targets/${id}/archive`, { signal })
+}
+
+export function archiveTarget(id: string, password: string) {
+  return apiFetch<Target>(`/v1/targets/${id}/archive`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function restoreTarget(id: string) {
+  return apiFetch<Target>(`/v1/targets/${id}/restore`, { method: "POST" })
 }

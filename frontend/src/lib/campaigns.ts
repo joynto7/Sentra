@@ -19,8 +19,66 @@ export type CampaignItem = {
   attempt_budget: number
   request_rate: number
   approval_status: string
+  /** When it runs by itself (FR-5.3); null when it only runs when someone launches it */
+  schedule: Schedule | null
   created_by: string | null
   created_at: string
+}
+
+// ---------------------------------------------------------------- the schedule (FR-5.3)
+
+export type ScheduleKind = "immediately" | "once" | "recurring"
+export type Frequency = "daily" | "weekly" | "monthly"
+export type ScheduleStatus = "active" | "paused" | "finished" | "cancelled"
+export type ScheduleResult = "launched" | "skipped" | "missed"
+
+export type Schedule = {
+  kind: "once" | "recurring"
+  frequency: Frequency | null
+  run_at: string | null
+  at_time: string | null
+  weekday: number | null
+  day_of_month: number | null
+  status: ScheduleStatus
+  /** In words, e.g. "Every Monday at 02:00 (Asia/Dhaka)" */
+  summary: string
+  next_run_at: string | null
+  last_run_at: string | null
+  last_result: ScheduleResult | null
+  last_message: string
+  last_run: string | null
+  created_by: string | null
+}
+
+/** What the builder and the campaign page send (UC-5.1 step 5). */
+export type ScheduleInput = {
+  kind: ScheduleKind
+  frequency?: Frequency | null
+  run_at?: string | null
+  at_time?: string | null
+  weekday?: number | null
+  day_of_month?: number | null
+}
+
+export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+export const FREQUENCY_LABEL: Record<Frequency, string> = {
+  daily: "Every day",
+  weekly: "Every week",
+  monthly: "Every month",
+}
+
+export const SCHEDULE_STATUS_LABEL: Record<ScheduleStatus, string> = {
+  active: "Active",
+  paused: "Paused",
+  finished: "Finished",
+  cancelled: "Cancelled",
+}
+
+export const SCHEDULE_RESULT_LABEL: Record<ScheduleResult, string> = {
+  launched: "Launched",
+  skipped: "Didn't launch",
+  missed: "Missed",
 }
 
 /** UC-5.1 step 6: the tests that will run against the target and the attempts they need. */
@@ -47,6 +105,9 @@ export type Estimate = {
 }
 
 export type CampaignDetail = CampaignItem & {
+  /** Only in the answer to "create", when the campaign runs immediately (UC-5.1 step 7) */
+  launched_run?: RunItem | null
+  launch_error?: string | null
   adaptive_agent: boolean
   repetitions: number
   window_start: string | null
@@ -67,6 +128,8 @@ export type CampaignInput = {
   window_start: string | null
   window_end: string | null
   time_zone: string
+  /** UC-5.1 step 5; "immediately" launches the first run instead of saving a schedule */
+  schedule: ScheduleInput | null
 }
 
 const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
@@ -244,3 +307,23 @@ export const formatCount = (value: number) => value.toLocaleString("en-US")
 export function windowText(start: string | null, end: string | null, timeZone: string): string {
   return start && end ? `${start.slice(0, 5)}–${end.slice(0, 5)} (${timeZone})` : "Any time"
 }
+
+
+/** The campaign's schedule (FR-5.3): read it, replace it, pause it, start it again or remove it. */
+export const getSchedule = (code: string, signal?: AbortSignal) =>
+  apiFetch<Schedule | null>(`/v1/campaigns/${encodeURIComponent(code)}/schedule`, { signal })
+
+export const saveSchedule = (code: string, input: ScheduleInput) =>
+  apiFetch<Schedule>(`/v1/campaigns/${encodeURIComponent(code)}/schedule`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  })
+
+export const pauseSchedule = (code: string) =>
+  apiFetch<Schedule>(`/v1/campaigns/${encodeURIComponent(code)}/schedule/pause`, post({}))
+
+export const resumeSchedule = (code: string) =>
+  apiFetch<Schedule>(`/v1/campaigns/${encodeURIComponent(code)}/schedule/resume`, post({}))
+
+export const removeSchedule = (code: string) =>
+  apiFetch<void>(`/v1/campaigns/${encodeURIComponent(code)}/schedule`, { method: "DELETE" })
