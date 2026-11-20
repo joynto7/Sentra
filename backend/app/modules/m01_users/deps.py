@@ -39,6 +39,12 @@ def current_membership(
     """
     membership = organizations.current(db, session)
     if membership is None:
+        if names := organizations.suspended_in(db, session.user_id):
+            raise PermissionDeniedError(
+                f"Your access to {', '.join(names)} is suspended. "
+                "Contact its Organization Administrator.",
+                code="membership_suspended",
+            )
         raise PermissionDeniedError(
             "Create an organization or accept an invitation first.", code="no_organization"
         )

@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import audit
-from app.core.errors import FieldValidationError, NotFoundError
+from app.core.errors import FieldValidationError, NotFoundError, PermissionDeniedError
 from app.core.models import Organization
-from app.modules.m01_users.models import Membership, Role, User, UserSession
+from app.modules.m01_users.models import Membership, MembershipStatus, Role, User, UserSession
 
 NAME_REQUIRED = "Enter an organization name."
 NAME_TOO_LONG = "Use at most 120 characters."
@@ -64,6 +64,8 @@ def switch(db: Session, user: User, session: UserSession, organization_id: uuid.
     membership = _membership(db, user.id, organization_id)
     if membership is None:
         raise NotFoundError("Organization not found.")
+    if not membership.active:  # UC-10.2 step 4
+        raise PermissionDeniedError(_suspended(db, organization_id), code="membership_suspended")
     _open(user, session, organization_id)
     db.commit()
     return membership
@@ -71,21 +73,42 @@ def switch(db: Session, user: User, session: UserSession, organization_id: uuid.
 
 def current(db: Session, session: UserSession) -> Membership | None:
     """The organization this browser works in: the one opened in this session, else the one
-    used last, else the oldest membership. None if the user belongs to no organization."""
+    used last, else the oldest membership. Only active memberships count: a suspended one opens
+    nothing (UC-10.2). None if the user has no active membership."""
     user = db.get_one(User, session.user_id)
     for candidate in (session.organization_id, user.last_organization_id):
-        if candidate is not None and (m := _membership(db, user.id, candidate)) is not None:
+        m = _membership(db, user.id, candidate) if candidate is not None else None
+        if m is not None and m.active:
             if session.organization_id != candidate:
                 _open(user, session, candidate)
                 db.commit()
             return m
     first = db.scalar(
-        select(Membership).where(Membership.user_id == user.id).order_by(Membership.created_at)
+        select(Membership)
+        .where(Membership.user_id == user.id, Membership.status == MembershipStatus.ACTIVE)
+        .order_by(Membership.created_at)
     )
     if first is not None:
         _open(user, session, first.organization_id)
         db.commit()
     return first
+
+
+def suspended_in(db: Session, user_id: uuid.UUID) -> list[str]:
+    """The names of the organizations in which the user is suspended."""
+    return list(
+        db.scalars(
+            select(Organization.name)
+            .join(Membership, Membership.organization_id == Organization.id)
+            .where(Membership.user_id == user_id, Membership.status == MembershipStatus.SUSPENDED)
+            .order_by(Organization.name)
+        )
+    )
+
+
+def _suspended(db: Session, organization_id: uuid.UUID) -> str:
+    name = db.get_one(Organization, organization_id).name
+    return f"Your access to {name} is suspended. Contact its Organization Administrator."
 
 
 def mfa_required_by(db: Session, user: User) -> list[str]:
