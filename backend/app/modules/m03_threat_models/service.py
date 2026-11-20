@@ -11,7 +11,7 @@ from app.core.tenancy import scoped_select
 from app.modules.m01_users.models import User
 from app.modules.m02_targets import profile as target_profiles
 from app.modules.m02_targets.models import ProfileStatus, Target, TargetProfile, TargetStatus
-from app.modules.m03_threat_models import frameworks, generation
+from app.modules.m03_threat_models import frameworks, generation, recommendations, versions
 from app.modules.m03_threat_models.models import (
     JobStatus,
     Threat,
@@ -20,9 +20,17 @@ from app.modules.m03_threat_models.models import (
     ThreatModelStatus,
 )
 from app.modules.m03_threat_models.schemas import (
+    ChangedThreat,
+    ComparedThreat,
+    CompareOut,
     ComponentOut,
     FrameworkRef,
+    GapOut,
     JobOut,
+    Recommendations,
+    RunRef,
+    SelectionOut,
+    SuiteRecommendation,
     TargetRef,
     ThreatModelList,
     ThreatModelPage,
@@ -62,7 +70,14 @@ def _counts(db: Session, model_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
     return dict(rows)
 
 
-def summary(model: ThreatModel, names: dict, count: int) -> VersionSummary:
+def runs_based_on(db: Session, model_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[RunRef]]:
+    """UC-3.4 step 2: the campaign runs that were based on each version. Campaign runs come with
+    FR-5.4 (Sprint 2, task 4), which records the version each run uses; until this code is moved
+    onto that task there are none."""
+    return {}
+
+
+def summary(model: ThreatModel, names: dict, count: int, runs: int = 0) -> VersionSummary:
     return VersionSummary(
         version=model.version,
         status=model.status,
@@ -73,6 +88,7 @@ def summary(model: ThreatModel, names: dict, count: int) -> VersionSummary:
         approved_at=model.approved_at,
         approved_by=names.get(model.approved_by_id),
         threat_count=count,
+        runs=runs,
     )
 
 
@@ -111,7 +127,7 @@ def threat_out(threat: Threat, names: dict) -> ThreatOut:
     )
 
 
-def version_out(db: Session, model: ThreatModel) -> VersionOut:
+def version_out(db: Session, model: ThreatModel, runs: int = 0) -> VersionOut:
     threats = list(model.threats)
     names = _names(
         db,
@@ -130,7 +146,7 @@ def version_out(db: Session, model: ThreatModel) -> VersionOut:
     parts = list(model.components) + list({(e["kind"], e["name"]): e for e in extra}.values())
     info = model.generation or {}
     return VersionOut(
-        **summary(model, names, len(active)).model_dump(),
+        **summary(model, names, len(active), runs).model_dump(),
         based_on_version=model.based_on_version,
         profile_version=model.profile_version,
         trigger=info.get("trigger"),
@@ -220,14 +236,15 @@ def page(db: Session, target: Target, version: int | None = None) -> ThreatModel
         + [job.requested_by_id if job else None],
     )
     counts = {m.id: sum(not t.removed for t in m.threats) for m in models}
+    runs = {key: len(value) for key, value in runs_based_on(db, [m.id for m in models]).items()}
     problem = generation.blocker(target, target_profiles.find(db, target.id))
     return ThreatModelPage(
         target=target_ref(target),
         blocker=problem[1] if problem else None,
         blocker_code=problem[0] if problem else None,
         job=job_out(job, names) if job else None,
-        versions=[summary(m, names, counts[m.id]) for m in models],
-        current=version_out(db, current) if current else None,
+        versions=[summary(m, names, counts[m.id], runs.get(m.id, 0)) for m in models],
+        current=version_out(db, current, runs.get(current.id, 0)) if current else None,
     )
 
 
@@ -244,6 +261,7 @@ def overview(db: Session, organization_id: uuid.UUID) -> ThreatModelList:
             select(ThreatModel)
             .where(ThreatModel.target_id.in_(ids))
             .order_by(ThreatModel.target_id, ThreatModel.version.desc())
+            .options(selectinload(ThreatModel.threats))
         ).all()
         if ids
         else []
@@ -271,6 +289,8 @@ def overview(db: Session, organization_id: uuid.UUID) -> ThreatModelList:
         if ids
         else {}
     )
+    runs = {key: len(value) for key, value in runs_based_on(db, [m.id for m in shown]).items()}
+    tests = recommendations.available_tests(db, organization_id, None) if ids else []
     rows = []
     for target in targets:
         problem = generation.blocker(target, profiles.get(target.id))
@@ -280,11 +300,23 @@ def overview(db: Session, organization_id: uuid.UUID) -> ThreatModelList:
             ThreatModelRow(
                 target=target_ref(target),
                 profile_reviewed=profile is not None and profile.status == ProfileStatus.REVIEWED,
-                latest=summary(latest, names, counts.get(latest.id, 0)) if latest else None,
-                approved=summary(good, names, counts.get(good.id, 0)) if good else None,
+                latest=summary(latest, names, counts.get(latest.id, 0), runs.get(latest.id, 0))
+                if latest
+                else None,
+                approved=summary(good, names, counts.get(good.id, 0), runs.get(good.id, 0))
+                if good
+                else None,
                 job=job_out(jobs[target.id], names) if target.id in jobs else None,
                 blocker=problem[1] if problem else None,
                 blocker_code=problem[0] if problem else None,
+                without_test=sum(
+                    not codes
+                    for codes in recommendations.coverage(
+                        latest.threats, [t for t in tests if target.type in t.target_types]
+                    ).values()
+                )
+                if latest
+                else None,
             )
         )
     return ThreatModelList(
@@ -306,3 +338,50 @@ def get_job(db: Session, target_id: uuid.UUID, job_id: uuid.UUID) -> JobOut:
     if job is None:
         raise NotFoundError("Generation not found.")
     return job_out(job, _names(db, [job.requested_by_id]))
+
+
+def compare(db: Session, target: Target, base: int, other: int) -> CompareOut:
+    """UC-3.4 steps 3-4; 4a when the versions don't differ."""
+    old, new = versions.get(db, target.id, base), versions.get(db, target.id, other)
+    for number, model in ((base, old), (other, new)):
+        if model is None:
+            raise NotFoundError(f"Version {number} of this threat model doesn't exist.")
+    assert old is not None and new is not None
+    found = versions.differences(old, new)
+    names = _names(
+        db, [old.created_by_id, old.approved_by_id, new.created_by_id, new.approved_by_id]
+    )
+    runs = runs_based_on(db, [old.id, new.id])
+    return CompareOut(
+        base=summary(
+            old, names, sum(not t.removed for t in old.threats), len(runs.get(old.id, []))
+        ),
+        compare=summary(
+            new, names, sum(not t.removed for t in new.threats), len(runs.get(new.id, []))
+        ),
+        added=[ComparedThreat(**item) for item in found["added"]],
+        removed=[ComparedThreat(**item) for item in found["removed"]],
+        changed=[ChangedThreat(**item) for item in found["changed"]],
+        identical=not any(found.values()),
+        base_runs=runs.get(old.id, []),
+        compare_runs=runs.get(new.id, []),
+    )
+
+
+def recommendations_out(db: Session, target: Target) -> Recommendations:
+    """Screen 27."""
+    found = recommendations.recommendations(db, target)
+    model = found.pop("model")
+    names = found.pop("names")
+    runs = runs_based_on(db, [model.id])
+    count = sum(not t.removed for t in model.threats)
+    selection = found.pop("selection")
+    return Recommendations(
+        target=target_ref(target),
+        version=summary(model, names, count, len(runs.get(model.id, []))),
+        threats_total=found["threats_total"],
+        threats_covered=found["threats_covered"],
+        suites=[SuiteRecommendation(**item) for item in found["suites"]],
+        gaps=[GapOut(**item) for item in found["gaps"]],
+        selection=SelectionOut(**selection) if selection else None,
+    )
