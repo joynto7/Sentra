@@ -57,10 +57,10 @@ def ask(db, org, data="The bot said: hello", **kwargs):
     )
 
 
-def test_each_task_can_use_its_own_model(model):
+def test_each_task_can_use_its_own_model(db, model):
     model("anthropic/claude-sonnet-5-5", task_models={"llm_judge": "ollama/llama3.1"})
 
-    judge, agent = model_for(LLMTask.LLM_JUDGE), model_for(LLMTask.ADAPTIVE_TESTING)
+    judge, agent = model_for(db, LLMTask.LLM_JUDGE), model_for(db, LLMTask.ADAPTIVE_TESTING)
 
     assert (judge.model, judge.provider, judge.deployment) == ("ollama/llama3.1", "ollama", "local")
     assert (agent.provider, agent.deployment) == ("anthropic", "external")
