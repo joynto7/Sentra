@@ -163,6 +163,7 @@ const ITEM_TYPES: Record<string, string> = {
   report: "Report",
   suite: "Test suite",
   target: "Target",
+  threat_model: "Threat model",
   test: "Test definition",
   webhook: "Webhook",
 }
@@ -180,6 +181,11 @@ export function itemHref(scope: AuditScope, item: AuditItem): string | null {
   switch (item.type) {
     case "target":
       return id && `/targets/${id}`
+    case "threat_model": {
+      // The label ends with the version, e.g. "Internal HR Helpdesk, version 2".
+      const version = /version (\d+)$/.exec(item.label)?.[1]
+      return id && `/threat-models/${id}${version ? `?version=${version}` : ""}`
+    }
     case "test":
       return id && `/test-library/${id}`
     case "suite":
