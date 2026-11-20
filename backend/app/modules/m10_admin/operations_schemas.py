@@ -127,3 +127,60 @@ class UsageOverviewOut(BaseModel):
     warn_percent_default: int
     notice: str
     warn_at: str
+
+
+# ---------------------------------------------------------------- system health (UC-10.9)
+
+
+class ThresholdsIn(BaseModel):
+    """The "Alert thresholds" card of Screen 63 (UC-10.9 step 3)."""
+
+    queue_length: int = Field(ge=1, le=1_000_000)
+    error_rate_percent: float = Field(ge=1, le=100)
+    worker_load_percent: int = Field(ge=1, le=100)
+    storage_percent: int = Field(ge=1, le=100)
+    gateway_silence_minutes: int = Field(ge=1, le=1_440)
+
+
+class ComponentOut(BaseModel):
+    key: str
+    label: str
+    status: str  # "operational", "warning", "alert" or "unknown"
+    lines: list[str]  # what the card says about it
+
+
+class AlertOut(BaseModel):
+    id: uuid.UUID
+    component: str
+    component_label: str
+    kind: str
+    summary: str
+    effect: str
+    opened_at: datetime
+    last_seen_at: datetime
+    repeats: int
+    closed_at: datetime | None
+    closed_automatically: bool
+
+
+class ThresholdsOut(BaseModel):
+    queue_length: int
+    error_rate_percent: float
+    worker_load_percent: int
+    storage_percent: int
+    gateway_silence_minutes: int
+    custom: bool  # set by a Platform Administrator, instead of the platform's defaults
+    updated_at: datetime | None
+    set_by: str | None
+
+
+class HealthOut(BaseModel):
+    status: str
+    headline: str
+    components: list[ComponentOut]
+    open_alerts: list[AlertOut]
+    history: list[AlertOut]
+    thresholds: ThresholdsOut
+    grafana_url: str  # empty when the operator has configured none
+    logs_url: str
+    notice: str
