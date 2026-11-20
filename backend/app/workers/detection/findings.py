@@ -11,11 +11,13 @@ met verdict ends here, once:
    severity of the test definition (FR-4.2), the affected component, the campaign run and the
    observed behaviour. It is new, or requires confirmation when only the LLM judge supports it
    (NFR-9.3);
+2b. a finding that had been fixed and verified is reopened as a regression and its owner is told
+   (m06_findings/triage.py, FR-6.6); a finding detected again that is open, a false positive or a
+   merged duplicate keeps its status (report, Figure 2.6);
 3-4. the evidence is masked and stored once with its checksum (m06_findings/evidence.py);
 6. the finding is shown on the live campaign monitor, and the users are notified of a new critical
    or high finding (FR-9.3).
-Step 5, measuring the reproducibility, comes with FR-6.4, and reopening a fixed finding as a
-regression (2b) with FR-6.6. A finding detected again keeps its status (report, Figure 2.6).
+Step 5, measuring the reproducibility, comes with FR-6.4.
 
 When the judge answers after the attempt's evidence was stored, its answer is added as evidence of
 its own. A finding that can't be recorded leaves the attempt and its detection results as they
@@ -36,7 +38,7 @@ from app.modules.m04_tests.models import TestDefinition
 from app.modules.m04_tests.schema import DetectionMethod, RuleCheck, Severity
 from app.modules.m05_campaigns import lifecycle
 from app.modules.m05_campaigns.models import Attempt, CampaignRun
-from app.modules.m06_findings import evidence
+from app.modules.m06_findings import evidence, triage
 from app.modules.m06_findings.models import (
     ComponentKind,
     DetectionResult,
@@ -44,6 +46,7 @@ from app.modules.m06_findings.models import (
     Evidence,
     EvidenceKind,
     Finding,
+    FindingEventKind,
     FindingStatus,
     Outcome,
     component_label,
@@ -112,7 +115,9 @@ def _record(db: Session, attempt: Attempt, decided: DetectionVerdict) -> Finding
 
     target = db.get_one(Target, run.target_id)
     kind, name = affected_component(results, target)
-    finding, created = _finding(db, attempt, run, run_code, definition, kind, name, decided)
+    finding, created, reopened = _finding(
+        db, attempt, run, run_code, definition, kind, name, decided
+    )
     document = evidence.attempt_document(
         finding, run_code, attempt, definition, decided, results, now
     )
@@ -124,6 +129,8 @@ def _record(db: Session, attempt: Attempt, decided: DetectionVerdict) -> Finding
     _show(run, attempt, finding, created)
     if created:
         _notify(db, run, run_code, target, finding)
+    if reopened:  # 2b1: a regression of a finding that had been fixed and verified
+        triage.tell_regression(db, finding, run_code, target.name)
     return finding
 
 
@@ -169,9 +176,10 @@ def _finding(
     kind: str,
     name: str,
     decided: DetectionVerdict,
-) -> tuple[Finding, bool]:
-    """UC-6.2 steps 1-2 and 2a: the target's finding with the same root cause, locked so that its
-    evidence is numbered without gaps, or a new one. True when it is new."""
+) -> tuple[Finding, bool, bool]:
+    """UC-6.2 steps 1-2, 2a and 2b: the target's finding with the same root cause, locked so that
+    its evidence and its history are numbered without gaps, or a new one. The flags say whether
+    the finding is new, and whether it was reopened as a regression now (2b1)."""
     found = db.scalar(
         select(Finding)
         .where(
@@ -184,7 +192,10 @@ def _finding(
         .execution_options(populate_existing=True)
     )
     if found is not None:
-        return found, False
+        if found.status != FindingStatus.FIXED_AND_VERIFIED:
+            return found, False, False
+        triage.reopen_as_regression(db, found, run, run_code)  # 2b1
+        return found, False, True
     number = (
         db.scalar(
             select(func.max(Finding.number)).where(
@@ -223,7 +234,18 @@ def _finding(
     )
     db.add(finding)
     db.flush()  # the unique indexes refuse a second finding of this root cause, or this number
-    return finding, True
+    triage.record(
+        db,
+        finding,
+        FindingEventKind.DETECTED,
+        text=(
+            f"Attempt {attempt.attempt_no} of campaign run {run_code} met the success condition "
+            f"of {definition.code}."
+        ),
+        became=finding.status,
+        run=run,
+    )
+    return finding, True, False
 
 
 def _sentence(text: str) -> str:
