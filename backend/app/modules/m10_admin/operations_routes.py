@@ -14,10 +14,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.m01_users.deps import platform_admin, recent_password_confirmation
 from app.modules.m01_users.models import User
-from app.modules.m10_admin import llm_providers, usage_limits
+from app.modules.m10_admin import health, llm_providers, usage_limits
 from app.modules.m10_admin.operations_schemas import (
+    AlertOut,
     AssignmentIn,
     AssignmentOut,
+    ComponentOut,
+    HealthOut,
     LimitOut,
     LimitsIn,
     LLMConfigurationOut,
@@ -27,6 +30,8 @@ from app.modules.m10_admin.operations_schemas import (
     ProviderIn,
     ProviderOut,
     TestResultOut,
+    ThresholdsIn,
+    ThresholdsOut,
     UsageOverviewOut,
 )
 
@@ -193,3 +198,54 @@ def set_limits(
         confirmed=data.confirmed,
     )
     return _usage_out(row)
+
+
+# ---------------------------------------------------------------- system health (UC-10.9)
+
+
+def _health_out(found: health.Health) -> HealthOut:
+    return HealthOut(
+        status=found.status,
+        headline=found.headline,
+        components=[
+            ComponentOut(key=c.key, label=c.label, status=c.status, lines=c.lines)
+            for c in found.components
+        ],
+        open_alerts=[AlertOut(**alert.__dict__) for alert in found.open_alerts],
+        history=[AlertOut(**alert.__dict__) for alert in found.history],
+        thresholds=ThresholdsOut(**found.thresholds.__dict__),
+        grafana_url=found.grafana_url,
+        logs_url=found.logs_url,
+        notice=found.notice,
+    )
+
+
+@router.get("/health")
+def system_health(
+    admin: User = Depends(platform_admin), db: Session = Depends(get_db)
+) -> HealthOut:
+    """Screen 63 (UC-10.9 steps 1-2): every component's status as it is right now, the open
+    alerts with what they mean, the thresholds and the alert history."""
+    return _health_out(health.page(db))
+
+
+@router.put("/health/thresholds")
+def set_thresholds(
+    data: ThresholdsIn,
+    admin: User = Depends(platform_admin),
+    _session=confirmed,
+    db: Session = Depends(get_db),
+) -> HealthOut:
+    """UC-10.9 step 3: the thresholds the Monitoring component measures against."""
+    health.save_thresholds(
+        db,
+        admin,
+        health.Thresholds(
+            queue_length=data.queue_length,
+            error_rate_percent=data.error_rate_percent,
+            worker_load_percent=data.worker_load_percent,
+            storage_percent=data.storage_percent,
+            gateway_silence_minutes=data.gateway_silence_minutes,
+        ),
+    )
+    return _health_out(health.page(db))
