@@ -44,6 +44,8 @@ def test_a_schedule_says_when_its_next_report_is_due(team, run_with):  # noqa: F
     listed = team.client.get("/api/v1/reports").json()
     assert [one["name"] for one in listed["schedules"]] == ["Monthly executive report"]
     assert {one["name"] for one in listed["members"]} >= {"Arif", "Maya", "Sofia"}
+    # Screen 53's picker matches a typed address against these, so every member carries one.
+    assert all(one["email"] for one in listed["members"])
     entry = team.db.scalars(select(AuditLogEntry).order_by(AuditLogEntry.seq)).all()[-1]
     assert entry.action == "report_schedule.created"
 
@@ -149,6 +151,18 @@ def test_a_change_applies_from_the_next_report(team, run_with):  # noqa: F811
         entry.action for entry in team.db.scalars(select(AuditLogEntry).order_by(AuditLogEntry.seq))
     ]
     assert "report_schedule.changed" in actions
+
+
+def test_a_schedule_of_every_target_cannot_follow_the_campaign_runs(team, run_with):  # noqa: F811
+    """4a1 keeps the rule of step 2: without a target there are no runs the report can follow,
+    and Screen 53 only offers the frequency where it works."""
+    created = plan(team)
+
+    refused = team.client.patch(f"{URL}/{created['id']}", json={"frequency": "after_each_run"})
+
+    assert refused.status_code == 422
+    assert "needs a target to follow" in refused.json()["error"]["details"][0]["message"]
+    assert team.db.get(ReportSchedule, uuid.UUID(created["id"])).frequency == "monthly"
 
 
 def test_deleting_a_schedule_keeps_the_reports_it_produced(team, run_with):  # noqa: F811
