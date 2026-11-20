@@ -88,3 +88,34 @@ def removed_from(name: str, organization: str) -> tuple[str, str]:
         f"An administrator removed you from {organization} on Sentra, so you can no longer open "
         "its data. If you think this is a mistake, contact the organization's administrator.\n",
     )
+
+
+def email_change(name: str, new_email: str, token: str) -> tuple[str, str]:
+    link = f"{get_settings().web_url}/confirm-email?token={token}"
+    return (
+        "Confirm your new e-mail address for Sentra",
+        f"Hello {name},\n\n"
+        f"Confirm that {new_email} is the new e-mail address of your Sentra account:\n{link}\n\n"
+        "The link works once and is valid for 24 hours. Until then your old address stays in use.\n"
+        "If you did not ask for this, you can ignore this e-mail.\n",
+    )
+
+
+def email_changed(name: str, new_email: str) -> tuple[str, str]:
+    return (
+        "Your Sentra e-mail address was changed",
+        f"Hello {name},\n\n"
+        f"The e-mail address of your Sentra account is now {new_email}.\n"
+        "If you did not do this, contact your organization administrator immediately.\n",
+    )
+
+
+def password_changed_in_profile(name: str) -> tuple[str, str]:
+    return (
+        "Your Sentra password was changed",
+        f"Hello {name},\n\n"
+        "The password of your Sentra account was just changed in your profile, and your other "
+        "sessions were logged out.\n"
+        "If you did not do this, reset your password immediately and contact your "
+        "organization administrator.\n",
+    )
