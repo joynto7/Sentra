@@ -37,7 +37,13 @@ import {
   resumeRun,
   stopRun,
 } from "@/lib/campaigns"
-import { type FindingItem, listFindings } from "@/lib/findings"
+import {
+  FINDING_STATUS_LABEL,
+  IN_RUN_LABEL,
+  type FindingItem,
+  type InRunCounts,
+  listFindings,
+} from "@/lib/findings"
 import { useCan } from "@/lib/permissions"
 import type { SeverityCounts } from "@/lib/risk"
 import { formatDateTime } from "@/lib/targets"
@@ -107,6 +113,9 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
   const [streamFrom, setStreamFrom] = useState<string | null | undefined>(undefined)
   const [notFound, setNotFound] = useState(false)
   const [findings, setFindings] = useState<FindingItem[]>([])
+  // Of this run's findings: how many it found, saw again with the same root cause (FR-6.6) or
+  // reopened as a regression (Screen 37's KPI row).
+  const [inRun, setInRun] = useState<InRunCounts | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState<"pause" | "resume" | "stop" | null>(null)
   const [confirmStop, setConfirmStop] = useState(false)
@@ -128,7 +137,10 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
   const loadFindings = useCallback(
     (runId: string) => {
       listFindings(new URLSearchParams({ run_id: runId, page_size: "25" }))
-        .then((page) => setFindings(page.items))
+        .then((page) => {
+          setFindings(page.items)
+          setInRun(page.in_run_counts)
+        })
         .catch(() => undefined)
     },
     [],
@@ -318,8 +330,20 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
           value={formatCount(run.attempts_sent)}
           note={`${formatCount(run.attempts_replied)} replied · ${formatCount(run.attempts_failed)} failed`}
         />
-        <Kpi label="Findings so far" value={formatCount(findings.length)} note={<SeverityCountsStrip counts={severities} />} />
-        <Kpi label="Request rate" value={`${run.request_rate}/min`} note="Never faster than the target's safe rate" />
+        <Kpi
+          label={ended ? "Findings" : "Findings so far"}
+          value={formatCount(findings.length)}
+          note={<SeverityCountsStrip counts={severities} />}
+        />
+        {ended ? (
+          <Kpi
+            label="New · seen again · reopened"
+            value={inRun ? `${inRun.new} · ${inRun.seen_again} · ${inRun.reopened}` : "–"}
+            note="New weaknesses, the same root cause again (FR-6.6), and fixed ones that came back"
+          />
+        ) : (
+          <Kpi label="Request rate" value={`${run.request_rate}/min`} note="Never faster than the target's safe rate" />
+        )}
         <Kpi label="LLM cost" value={`$${run.cost_usd.toFixed(2)}`} note="What this run has used so far" />
         <Kpi
           label="Time window"
@@ -381,9 +405,20 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
                         {finding.code}
                       </Link>
                       <SeverityBadge severity={finding.severity} />
+                      {finding.in_run && (
+                        <span className="rounded border px-1.5 text-[11px] text-muted-foreground">
+                          {IN_RUN_LABEL[finding.in_run]}
+                        </span>
+                      )}
                       <span className="text-xs text-muted-foreground">{finding.category}</span>
                     </div>
                     <p className="mt-1 text-sm">{finding.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {finding.repetitions ? `${finding.repetitions.label} reproduced it` : "Not measured yet"}
+                      {finding.owner ? ` · ${finding.owner.name}` : ""}
+                      {" · "}
+                      {FINDING_STATUS_LABEL[finding.status]}
+                    </p>
                   </li>
                 ))}
               </ul>
