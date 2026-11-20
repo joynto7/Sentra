@@ -53,4 +53,10 @@ class TargetRedirect(ConnectorError):
 
 
 class BadResponse(ConnectorError):
-    """The answer isn't JSON, is too large, or has no reply where the target's format says."""
+    """The answer isn't JSON, is too large, or has no reply where the target's format says.
+    `excerpt` is the start of the answer, so the user can see what Sentra couldn't read
+    (UC-2.2, 4a)."""
+
+    def __init__(self, message: str, excerpt: str = "") -> None:
+        super().__init__(message)
+        self.excerpt = excerpt[:500]
