@@ -65,7 +65,9 @@ def coverage(threats: list[Threat], tests: list) -> dict[int, set[str]]:
     }
 
 
-def _suites(db: Session, organization_id: uuid.UUID) -> list[TestSuite]:
+def active_suites(db: Session, organization_id: uuid.UUID) -> list[TestSuite]:
+    """The suites a campaign can use: the current version of each, not archived, built-in or the
+    organization's own. M7's framework coverage reads them too (UC-7.4 step 5)."""
     return list(
         db.scalars(
             select(TestSuite).where(
@@ -108,7 +110,7 @@ class Plan:
         self.test_codes = {t.code for t in tests}
         self.covered = coverage(self.threats, tests)
         self.suites = []
-        for suite in _suites(db, organization_id):
+        for suite in active_suites(db, organization_id):
             runnable = [code for code in suite.tests if code in self.test_codes]
             if not runnable:
                 continue  # none of its tests applies to this type of target
