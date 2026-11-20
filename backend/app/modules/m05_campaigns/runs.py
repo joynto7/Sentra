@@ -72,6 +72,7 @@ def launch(
             "first.",
             code="target_not_verified",
         )
+    _lab_ready(db, target)
     running = lifecycle.active_run(db, campaign.id)
     if running is not None:  # 4a
         raise ConflictError(
@@ -184,6 +185,19 @@ def _versions(db: Session, campaign: Campaign) -> tuple[list[dict], list[dict]]:
 
 def _clock(value: time | None) -> str | None:
     return value.isoformat(timespec="minutes") if value else None
+
+
+def _lab_ready(db: Session, target: Target) -> None:
+    """UC-11.2 step 1: a lab target that is being reset, or that a reset left not ready, is not
+    tested — every run must start from the same state (FR-11.2). It costs one query, and only for
+    a lab target; every other target is never in the way."""
+    from app.modules.m11_lab import deployment
+
+    if not deployment.before_run(db, target.id):
+        raise ConflictError(
+            f"{target.name} is a lab target that isn't ready. Reset it in the Security Lab first.",
+            code="lab_target_not_ready",
+        )
 
 
 def _settings(campaign: Campaign) -> dict:
