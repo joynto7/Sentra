@@ -39,7 +39,7 @@ from app.modules.m05_campaigns import limits
 from app.modules.m05_campaigns.models import Attempt, CampaignRun
 from app.modules.m06_findings.models import DetectionResult, Outcome
 from app.workers import jobs
-from app.workers.detection import judge_instructions, verdict
+from app.workers.detection import findings, judge_instructions, verdict
 from app.workers.jobs import job
 from app.workers.orchestrator import live
 
@@ -243,8 +243,9 @@ def _later(
 def _finish(
     db: Session, attempt: Attempt, result: DetectionResult, outcome: Outcome, summary: str
 ) -> None:
-    """Stores the judge's result and the attempt's new verdict, and shows it on the live campaign
-    monitor (an event "detection")."""
+    """Stores the judge's result and the attempt's new verdict, shows it on the live campaign
+    monitor (an event "detection") and records a finding when the verdict is met (UC-6.1 step 6),
+    or adds the judge's answer to the evidence of the finding the attempt already supports."""
     result.outcome, result.summary = outcome, summary
     result.evaluated_at = datetime.now(UTC)
     state = {Outcome.MET: "met", Outcome.NOT_MET: "not_met"}.get(outcome, "unknown")
@@ -272,3 +273,4 @@ def _finish(
             **verdict.live_data(decided, results),
         },
     )
+    findings.record(db, attempt, decided)

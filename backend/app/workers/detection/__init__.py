@@ -9,7 +9,9 @@ engine (engine.py) then
    queue "analysis", so it never holds up the next attempt (NFR-1.4);
 4. stores each method's result separately with the attempt (m06_findings.models);
 5. combines them into the attempt's verdict (verdict.py): deterministic evidence decides wherever
-   it is available, and a success that only the judge supports must be confirmed by an analyst.
+   it is available, and a success that only the judge supports must be confirmed by an analyst;
+6. records a finding with the attempt's evidence when the verdict is met (findings.py, UC-6.2),
+   at once or when the judge answers.
 
 Two parts are Joynto's (docs/build-work/SAFETY-STOPS-PLAN.md): the judge's fixed instructions in
 judge_instructions.py, and the checks of every built-in test, which are the `checks` of its
