@@ -1,6 +1,8 @@
-"""The detection results of the attempts of campaign runs (FR-6.1; report, ER diagram 4: every
-attempt is EVALUATED_BY one detection result for each detection method of its test). The Detection
-Engine (app/workers/detection) writes them; the findings (FR-6.2) are recorded from the verdicts."""
+"""The detection results of the attempts of campaign runs (FR-6.1), and the findings with their
+evidence (FR-6.2, FR-6.3). Report, ER diagram 4: every attempt is EVALUATED_BY one detection result
+for each detection method of its test; a test definition RAISES findings, every finding AFFECTS
+one target and is SUPPORTED_BY evidence that CAPTURES an attempt. The Detection Engine
+(app/workers/detection) writes them all."""
 
 import uuid
 from datetime import datetime
@@ -8,6 +10,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
+    DDL,
     DateTime,
     ForeignKey,
     Index,
@@ -16,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -89,3 +93,157 @@ class DetectionVerdict(Timestamps, OrganizationScoped, Base):
     requires_confirmation: Mapped[bool] = mapped_column(default=False)
     disagreement: Mapped[bool] = mapped_column(default=False)
     summary: Mapped[str] = mapped_column(Text)
+
+
+class FindingStatus(StrEnum):
+    """The lifecycle of a finding (report, Figure 2.6). Open: new, requires confirmation,
+    confirmed, reopened. Closed: false positive, merged, fixed and verified. A new finding starts
+    as new when deterministic evidence supports it, else as requires confirmation (NFR-9.3);
+    triage (FR-6.5), merging (FR-6.6) and retests (FR-8.5) change it later."""
+
+    NEW = "new"
+    REQUIRES_CONFIRMATION = "requires_confirmation"
+    CONFIRMED = "confirmed"
+    FALSE_POSITIVE = "false_positive"
+    MERGED = "merged"
+    FIXED_AND_VERIFIED = "fixed_and_verified"
+    REOPENED = "reopened"
+
+
+OPEN = (
+    FindingStatus.NEW,
+    FindingStatus.REQUIRES_CONFIRMATION,
+    FindingStatus.CONFIRMED,
+    FindingStatus.REOPENED,
+)
+CLOSED = (FindingStatus.FALSE_POSITIVE, FindingStatus.MERGED, FindingStatus.FIXED_AND_VERIFIED)
+
+
+class ComponentKind(StrEnum):
+    """The kinds of component of a target, as the threat model names them (FR-3.1): where a
+    finding's weakness is (UC-6.2 step 1)."""
+
+    MODEL = "model"
+    SYSTEM_PROMPT = "system_prompt"
+    KNOWLEDGE_SOURCE = "knowledge_source"
+    TOOL = "tool"
+    OUTPUT = "output"
+
+
+KIND_LABELS = {
+    ComponentKind.MODEL: "Model",
+    ComponentKind.SYSTEM_PROMPT: "System prompt",
+    ComponentKind.KNOWLEDGE_SOURCE: "Knowledge source",
+    ComponentKind.TOOL: "Tool",
+    ComponentKind.OUTPUT: "Output",
+}
+
+
+def component_label(kind: str, name: str) -> str:
+    """How a component is named on the pages, e.g. "Tool: issue_refund" (Screen 39). A name
+    that already says its kind, such as "System prompt" or "Knowledge sources", stays as it is."""
+    label = KIND_LABELS[ComponentKind(kind)]
+    return name if name.lower().startswith(label.lower()) else f"{label}: {name}"
+
+
+class Finding(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
+    """A weakness of one target (FR-6.2): one finding per root cause, which is the test together
+    with the affected component (UC-6.2 step 1). A later attempt with the same root cause, in the
+    same or another campaign run, adds its evidence instead of a second finding (2a)."""
+
+    __tablename__ = "findings"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "number"),
+        # UC-6.2 step 1: one finding per root cause, even when two workers record one at once
+        UniqueConstraint(
+            "target_id",
+            "test_code",
+            "component_kind",
+            "component_name",
+            name="uq_findings_root_cause",
+        ),
+        Index("ix_findings_organization_status", "organization_id", "status"),
+    )
+
+    number: Mapped[int]  # shown as F-001; counted per organization
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("targets.id", ondelete="RESTRICT"))
+    test_code: Mapped[str] = mapped_column(String(40))
+    # The version of the test that found it first ("Test definition SID-XACC-005 v2", Screen 39)
+    test_definition_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("test_definitions.id", ondelete="RESTRICT")
+    )
+    component_kind: Mapped[str] = mapped_column(String(20))
+    component_name: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(5))  # OWASP Top 10 for LLM Applications
+    atlas: Mapped[list[str]] = mapped_column(JSONB, default=list)  # MITRE ATLAS techniques
+    # The initial severity comes from the test definition (FR-4.2); FR-7.1 rates it.
+    severity: Mapped[str] = mapped_column(String(15))
+    status: Mapped[str] = mapped_column(String(25))
+    description: Mapped[str] = mapped_column(Text)  # the observed behaviour, masked
+    first_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="RESTRICT")
+    )
+    last_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="RESTRICT")
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    evidence_count: Mapped[int] = mapped_column(default=0)  # numbers its evidence 1, 2, 3 …
+
+    @property
+    def code(self) -> str:
+        return f"F-{self.number:03d}"
+
+
+class EvidenceKind(StrEnum):
+    ATTEMPT = "attempt"  # the attempt, the reply, the tool calls and the detection results
+    # The LLM judge's answer to an attempt whose evidence was stored before it came
+    JUDGE_VERDICT = "judge_verdict"
+
+
+class Evidence(UUIDPrimaryKey, OrganizationScoped, Base):
+    """What proves a finding (FR-6.3): one JSON document, masked, written once with its SHA-256
+    checksum (NFR-2.4). A document of up to 64 KB is kept here; a larger one is kept in the
+    object storage and `content_ref` names it (NFR-6.2). A trigger refuses every change."""
+
+    __tablename__ = "evidence"
+    __table_args__ = (
+        UniqueConstraint("finding_id", "evidence_no"),
+        UniqueConstraint("attempt_id", "kind"),  # each attempt's evidence is stored once
+        Index("ix_evidence_campaign_run_id", "campaign_run_id"),
+    )
+
+    finding_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("findings.id", ondelete="RESTRICT"))
+    evidence_no: Mapped[int]  # 1, 2, 3 … within the finding
+    kind: Mapped[str] = mapped_column(String(20))
+    attempt_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("attempts.id", ondelete="RESTRICT"))
+    campaign_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="RESTRICT")
+    )
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    checksum: Mapped[str] = mapped_column(String(64))  # SHA-256 of the document's bytes
+    size: Mapped[int]  # bytes
+    content: Mapped[str | None] = mapped_column(Text)  # the document, as the exact text hashed
+    content_ref: Mapped[str | None] = mapped_column(String(300))  # its key in the object storage
+
+
+# NFR-2.4: stored evidence is never modified. Attached to the table, so the tests' create_all()
+# makes the trigger as well as the migration does. Even an administrator can only bypass it by
+# disabling the trigger, and the checksum then shows the change.
+READ_ONLY_FUNCTION = DDL(
+    """
+CREATE OR REPLACE FUNCTION sentra_evidence_read_only() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'Evidence can''t be changed or deleted.'
+        USING ERRCODE = 'insufficient_privilege';
+END
+$$ LANGUAGE plpgsql
+"""
+)
+READ_ONLY_TRIGGER = DDL(
+    "CREATE TRIGGER evidence_read_only BEFORE UPDATE OR DELETE ON evidence "
+    "FOR EACH ROW EXECUTE FUNCTION sentra_evidence_read_only()"
+)
+event.listen(Evidence.__table__, "after_create", READ_ONLY_FUNCTION)
+event.listen(Evidence.__table__, "after_create", READ_ONLY_TRIGGER)
