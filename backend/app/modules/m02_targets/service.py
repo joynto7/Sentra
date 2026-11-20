@@ -193,8 +193,9 @@ def register(db: Session, membership: Membership, data: TargetIn) -> Target:
 
 def update(db: Session, membership: Membership, target_id: uuid.UUID, data: TargetPatch) -> Target:
     """UC-2.5: change the settings. A new endpoint makes the target unverified (FR-2.6)."""
-    target = _changeable(db, membership, target_id)
     given = data.model_fields_set
+    # 3b1: the endpoint decides where Sentra sends, so a run in progress stops it from changing
+    target = _changeable(db, membership, target_id, sending="endpoint_url" in given)
     errors = _Errors()
     name, rate, url = target.name, target.max_request_rate, target.endpoint_url
     if "name" in given:
@@ -249,7 +250,7 @@ def replace_credentials(
     db: Session, membership: Membership, target_id: uuid.UUID, new: list[CredentialIn]
 ) -> Target:
     """UC-2.5 step 4: encrypt the new credentials and delete the replaced ones."""
-    target = _changeable(db, membership, target_id)
+    target = _changeable(db, membership, target_id, sending=True)  # 3b1
     errors = _Errors()
     credentials = _credentials(errors, new)
     errors.raise_if_any()
@@ -284,10 +285,19 @@ def _test_connection(db: Session, target: Target, user_id: uuid.UUID) -> None:
     connection.start(db, target, user_id)
 
 
-def _changeable(db: Session, membership: Membership, target_id: uuid.UUID) -> Target:
+def _changeable(
+    db: Session, membership: Membership, target_id: uuid.UUID, *, sending: bool = False
+) -> Target:
+    """The target, if it may be changed at all. `sending` is for the endpoint and the credentials:
+    they decide where and how Sentra sends, so they may not change while a campaign run of the
+    target is in progress (UC-2.5, 3b1)."""
+    from app.modules.m02_targets import lifecycle
+
     target = get_target(db, membership.organization_id, target_id)
     if target.status == TargetStatus.ARCHIVED:
         raise ConflictError(ARCHIVED, code="target_archived")
+    if sending and (blocked := lifecycle.running_text(db, target.id)):
+        raise ConflictError(blocked, code="run_in_progress")
     return target
 
 
