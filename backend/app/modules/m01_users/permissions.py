@@ -38,7 +38,8 @@ class Action(StrEnum):
     MANAGE_TEST_SUITES = "manage_test_suites"
     MANAGE_CAMPAIGNS = "manage_campaigns"
     APPROVE_CAMPAIGN_SCOPE = "approve_campaign_scope"
-    CONTROL_CAMPAIGN_RUNS = "control_campaign_runs"
+    PAUSE_CAMPAIGN_RUNS = "pause_campaign_runs"
+    STOP_CAMPAIGN_RUNS = "stop_campaign_runs"
     TRIAGE_FINDINGS = "triage_findings"
     REQUEST_REMEDIATIONS = "request_remediations"
     APPROVE_REMEDIATIONS = "approve_remediations"
@@ -79,7 +80,9 @@ PERMISSIONS: dict[Action, Permission] = {
     Action.MANAGE_TEST_SUITES: _p("Build test suites", "UC-4.4, UC-4.5", ANALYST),
     Action.MANAGE_CAMPAIGNS: _p("Create and launch campaigns", "UC-5.1, UC-5.3", ANALYST),
     Action.APPROVE_CAMPAIGN_SCOPE: _p("Approve campaign scope", "UC-5.2", MANAGER),
-    Action.CONTROL_CAMPAIGN_RUNS: _p("Pause and stop campaign runs", "UC-5.7", ANALYST, DEVELOPER),
+    Action.PAUSE_CAMPAIGN_RUNS: _p("Pause and resume campaign runs", "UC-5.7", ANALYST),
+    # UC-5.7, 1b: developers may stop a run as an emergency measure, but not pause or resume it.
+    Action.STOP_CAMPAIGN_RUNS: _p("Stop campaign runs", "UC-5.7", ANALYST, DEVELOPER),
     Action.TRIAGE_FINDINGS: _p("Triage findings", "UC-6.6, UC-7.1", ANALYST),
     Action.REQUEST_REMEDIATIONS: _p(
         "Request and adapt remediations", "UC-8.2, UC-8.3", DEVELOPER, ANALYST
