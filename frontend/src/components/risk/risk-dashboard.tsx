@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Reproducibility, StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
+import { ReportDialog } from "@/components/reports/report-dialog"
 import { CategoryTable } from "@/components/risk/category-table"
 import { RiskTiles } from "@/components/risk/risk-tiles"
 import { ScoreMethod } from "@/components/risk/score-method"
@@ -172,6 +173,8 @@ function TargetRisk({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boo
 /** Screen 42: the organization's risk at a glance (UC-7.3), and the score of UC-7.2 per target. */
 export function RiskDashboard() {
   const canVerify = useCan("verify_targets")
+  const canReport = useCan("generate_reports")
+  const [report, setReport] = useState(false)
   const [target, setTarget] = useState("")
   const [days, setDays] = useState(DEFAULT_DAYS)
   const [category, setCategory] = useState("")
@@ -214,10 +217,30 @@ export function RiskDashboard() {
             : "Updated after every campaign run, triage action and retest"
         }
         action={
-          <Button asChild variant="outline" className="h-9">
-            <Link href="/findings">View all findings</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" className="h-9">
+              <Link href="/findings">View all findings</Link>
+            </Button>
+            {canReport && (
+              <Button className="h-9 hover:bg-primary-hover" onClick={() => setReport(true)}>
+                Generate executive report
+              </Button>
+            )}
+          </div>
         }
+      />
+
+      {/* UC-9.1, 1a1: the report takes the filters this page is showing. */}
+      <ReportDialog
+        open={report}
+        preset={{
+          target_id: target || null,
+          period_days: Number(days),
+          category: data?.category ?? null,
+          label: `${target ? (options.find((one) => one.id === target)?.name ?? "one target") : `All targets${options.length ? ` (${options.length})` : ""}`} · ${PERIODS.find((one) => one.value === days)?.label ?? `Last ${days} days`} · ${data?.category ?? "All OWASP categories"}`,
+        }}
+        onClose={() => setReport(false)}
+        onDone={() => undefined}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
