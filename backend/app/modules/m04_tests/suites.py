@@ -18,9 +18,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.core.models import Organization
-from app.modules.m01_users.models import Membership
+from app.modules.m01_users.models import Membership, User
 from app.modules.m04_tests.custom import org_prefix
 from app.modules.m04_tests.library import (
     BUILT_IN,
@@ -348,6 +349,7 @@ def create(db: Session, membership: Membership, data: SuiteInput) -> TestSuite:
         content_hash=_hash(checked.name, checked.purpose, checked.tests),
         change_note="Initial version",
     )
+    _audit(db, membership, suite, "suite.created", f"Created test suite {suite.code}")
     return _save(db, suite)
 
 
@@ -366,6 +368,9 @@ def new_version(
             code="unchanged",
             status_code=422,
         )
+    _audit(
+        db, membership, current, "suite.updated", f"Saved version {current.version + 1} of {code}"
+    )
     return _next_version(db, current, checked, digest, reason, "active")
 
 
@@ -374,6 +379,7 @@ def archive(db: Session, membership: Membership, code: str, reason: str) -> Test
     (Replacing it in scheduled campaigns first comes with scheduling, FR-5.3.)"""
     current = editable(db, membership.organization_id, code)
     content = SuiteInput(current.name, current.purpose, current.tests)
+    _audit(db, membership, current, "suite.archived", f"Archived test suite {code}")
     return _next_version(db, current, content, current.content_hash, reason, "archived")
 
 
@@ -418,6 +424,19 @@ def _next_version(
         change_note=note,
     )
     return _save(db, suite)
+
+
+def _audit(
+    db: Session, membership: Membership, suite: TestSuite, action: str, summary: str
+) -> None:
+    audit.record(
+        db,
+        organization_id=membership.organization_id,
+        actor=db.get_one(User, membership.user_id),
+        action=action,
+        summary=summary,
+        item=audit.Item("suite", suite.code, suite.name),
+    )
 
 
 def _save(db: Session, suite: TestSuite) -> TestSuite:
