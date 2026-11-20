@@ -259,3 +259,28 @@ class LibraryFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tests: list[TestDefinitionSpec]
+
+
+class SuiteSpec(BaseModel):
+    """One built-in test suite, as written in library/suites/built_in.yaml (FR-4.4). It refers to
+    its tests by code, so it always uses their current versions (UC-4.4, quality requirement 6)."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    code: str = Field(pattern=r"^[A-Z0-9]+(-[A-Z0-9]+)*$", max_length=40)
+    name: str = Field(min_length=3, max_length=80)
+    purpose: str = Field(min_length=10, max_length=300)
+    tests: list[str] = Field(min_length=1)
+
+    @field_validator("tests")
+    @classmethod
+    def _unique_tests(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("a test may appear only once")
+        return value
+
+
+class SuiteLibraryFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    suites: list[SuiteSpec]
