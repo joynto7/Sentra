@@ -9,6 +9,8 @@ os.environ.setdefault("RUN_STARTUP_HOOKS", "false")
 os.environ.setdefault("CREDENTIALS_KEY", "c2VudHJhLXRlc3RzLW9ubHktbm90LWEtcmVhbC1rZXk=")
 # Background jobs run at once, inside the request, instead of on a worker.
 os.environ.setdefault("RUN_JOBS_INLINE", "true")
+# The live events of campaign runs stay in this process: the tests have no Redis.
+os.environ.setdefault("LIVE_EVENTS_BACKEND", "memory")
 
 import httpx
 import pytest
