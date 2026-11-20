@@ -33,8 +33,9 @@ def _submodules(name: str) -> Iterator[ModuleType]:
 
 def load_models() -> None:
     """Import every module's models.py so that their tables are registered, together with the
-    table of the shared LLM layer (app/llm)."""
+    tables of the shared LLM layer (app/llm) and the audit log (app/core/audit.py)."""
     importlib.import_module("app.llm.models")
+    importlib.import_module("app.core.audit")
     for _ in _submodules("models"):
         pass
 
