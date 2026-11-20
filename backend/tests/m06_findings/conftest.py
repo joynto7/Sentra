@@ -76,11 +76,21 @@ def plant(db, target, slot: str, token: str) -> TargetCanary:
 
 @pytest.fixture
 def run_with(team, monkeypatch):  # noqa: F811
-    """run_with(test, answers): launches C-001 with one attempt of `test` per answer, with the
-    messages ATTEMPT-1 …; an answer is the target's reply text, a Reply or a connector error.
-    Returns the run's attempts once the run has ended."""
+    """run_with(test, answers, planned=None, during=None): launches C-001 with `planned` attempts
+    of `test` (one per answer by default), with the messages ATTEMPT-1 …; an answer is the
+    target's reply text, a Reply or a connector error. An attempt beyond the answers — a
+    repetition of FR-6.4, or a retry — gets the last answer again. `during(run, attempt)` runs
+    after each attempt, for example to stop the run through the API. Returns the run's attempts
+    once the run has ended."""
 
-    def launch(definition: TestDefinition, answers: list) -> list[Attempt]:
+    def launch(
+        definition: TestDefinition,
+        answers: list,
+        planned: int | None = None,
+        during=None,
+    ) -> list[Attempt]:
+        count = planned if planned is not None else len(answers)
+
         def plan(db, run, target) -> planning.Plan:
             result = planning.Plan(templates={"file": "stub", "entries": {}})
             result.tests.append(
@@ -92,10 +102,10 @@ def run_with(team, monkeypatch):  # noqa: F811
                     "template": "stub",
                     "status": "planned",
                     "reason": None,
-                    "attempts": len(answers),
+                    "attempts": count,
                 }
             )
-            for number in range(1, len(answers) + 1):
+            for number in range(1, count + 1):
                 attempt = Attempt(
                     organization_id=run.organization_id,
                     campaign_run_id=run.id,
@@ -112,11 +122,11 @@ def run_with(team, monkeypatch):  # noqa: F811
             return result
 
         def answer(attempt):
-            given = answers[attempt.attempt_no - 1]
+            given = answers[min(attempt.attempt_no, len(answers)) - 1]
             return reply(given) if isinstance(given, str) else given
 
         monkeypatch.setattr(planning, "plan", plan)
-        monkeypatch.setattr(send_loop, "send_attempts", StubSender(answer))
+        monkeypatch.setattr(send_loop, "send_attempts", StubSender(answer, during))
         response = team.client.post("/api/v1/campaigns/C-001/runs")
         assert response.status_code == 202, response.text
         query = (
