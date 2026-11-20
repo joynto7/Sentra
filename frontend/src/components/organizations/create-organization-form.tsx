@@ -32,7 +32,8 @@ export function CreateOrganizationForm() {
     setError(null)
     try {
       await apiFetch("/v1/organizations", { method: "POST", body: JSON.stringify({ name }) })
-      router.replace("/dashboard")
+      // UC-1.6 step 6: the new workspace opens with its first steps (Screen 07).
+      router.replace("/getting-started")
     } catch (err) {
       setError(fieldErrors(err).name ?? (err instanceof ApiError ? err.message : "Something went wrong. Try again."))
       setPending(false)
