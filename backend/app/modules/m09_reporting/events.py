@@ -22,6 +22,8 @@ EVENTS = [
     Event("usage_limit_warning", "Usage limit warning"),
     # UC-5.3, 3a1 and 4a1: a campaign's schedule came, and no run could start (FR-5.3)
     Event("campaign_schedule_problem", "Scheduled campaign couldn't start"),
+    # UC-6.2, 2b1: a finding that had been fixed and verified came back (FR-6.6)
+    Event("finding_reopened", "Finding reopened as a regression", tab="assigned"),
     # UC-2.4 step 4: the mapping of a target profile has finished
     Event("target_profile_ready", "Target profile ready for review"),
     # UC-3.1 step 6: a new draft of a threat model awaits a Security Analyst
