@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 60
     llm_retries: int = 2
 
+    # The Target Connector (FR-5.7): how long a target may take to answer.
+    connector_timeout_seconds: int = 60
+    # Host names of Sentra's own lab targets in the isolated lab network (FR-11.2). Only the
+    # connector may reach their private addresses; users can't register such addresses.
+    lab_hosts: list[str] = []
+
     # Server-side request forgery protection (NFR-3.4): targets on private network addresses are
     # refused, unless an on-premises deployment allows them.
     allow_private_targets: bool = False
