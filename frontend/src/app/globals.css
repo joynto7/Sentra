@@ -165,6 +165,9 @@
   }
   html {
     @apply font-sans;
+    /* The top bar stays at the top while the page scrolls (3.5rem). Whatever the browser scrolls
+       into view, such as the element the keyboard moves to, stops below it (WCAG 2.4.11). */
+    scroll-padding-top: 4.5rem;
   }
   .tabular {
     font-variant-numeric: tabular-nums;
