@@ -1,11 +1,15 @@
 "use client"
 
+import { Fragment } from "react"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Bell, CircleHelp, Search } from "lucide-react"
 
+import { usePageCrumbsValue } from "@/components/layout/breadcrumbs"
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -19,6 +23,7 @@ import { findNavItem } from "@/config/navigation"
 export function TopBar() {
   const pathname = usePathname()
   const match = findNavItem(pathname)
+  const crumbs = usePageCrumbsValue()
 
   return (
     <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-card px-4">
@@ -31,8 +36,28 @@ export function TopBar() {
               <BreadcrumbItem className="hidden md:block">{match.group.label}</BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
               <BreadcrumbItem>
-                <BreadcrumbPage>{match.item.title}</BreadcrumbPage>
+                {crumbs.length ? (
+                  <BreadcrumbLink asChild>
+                    <Link href={match.item.href}>{match.item.title}</Link>
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage>{match.item.title}</BreadcrumbPage>
+                )}
               </BreadcrumbItem>
+              {crumbs.map((crumb, i) => (
+                <Fragment key={`${i}-${crumb.label}`}>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    {i < crumbs.length - 1 && crumb.href ? (
+                      <BreadcrumbLink asChild>
+                        <Link href={crumb.href}>{crumb.label}</Link>
+                      </BreadcrumbLink>
+                    ) : (
+                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    )}
+                  </BreadcrumbItem>
+                </Fragment>
+              ))}
             </>
           )}
         </BreadcrumbList>
