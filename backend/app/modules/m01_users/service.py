@@ -11,6 +11,8 @@ from app.core.email import send_email
 from app.core.errors import AppError, FieldValidationError
 from app.modules.m01_users import emails
 from app.modules.m01_users.models import (
+    AccountEvent,
+    AccountEventKind,
     OneTimeToken,
     TokenPurpose,
     User,
@@ -90,6 +92,24 @@ def _send(background: BackgroundTasks, to: str, message: tuple[str, str]) -> Non
     background.add_task(send_email, to, subject, body)
 
 
+def record(
+    db: Session,
+    user: User,
+    kind: AccountEventKind,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    """Adds an event to the user's recent activity (UC-1.11 step 6). The caller commits."""
+    db.add(
+        AccountEvent(
+            user_id=user.id,
+            kind=kind,
+            ip_address=ip_address,
+            user_agent=(user_agent or "")[:300] or None,
+        )
+    )
+
+
 # ---------------------------------------------------------------- registration
 
 
@@ -160,6 +180,7 @@ def login(
 
     if user is None or not verify_password(user.password_hash, password):
         if user is not None:
+            record(db, user, AccountEventKind.LOGIN_FAILED, ip_address, user_agent)
             user.failed_login_count += 1
             if user.failed_login_count >= settings.login_max_failures:
                 user.locked_until = _now() + timedelta(minutes=settings.login_lock_minutes)
@@ -186,6 +207,7 @@ def login(
     user.failed_login_count = 0
     user.locked_until = None
     raw = start_session(db, user, user_agent, ip_address)
+    record(db, user, AccountEventKind.LOGGED_IN, ip_address, user_agent)
     db.commit()
     return user, raw
 
@@ -261,8 +283,10 @@ def reset_password(db: Session, raw: str, new_password: str, background: Backgro
         check_password(new_password, db.get_one(User, token.user_id).email, "new_password")
     user = _use_token(db, raw, TokenPurpose.RESET_PASSWORD)
     user.password_hash = hash_password(new_password)
+    user.password_changed_at = _now()
     user.failed_login_count = 0
     user.locked_until = None
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    record(db, user, AccountEventKind.PASSWORD_RESET)
     db.commit()
     _send(background, user.email, emails.password_changed(user.name))
