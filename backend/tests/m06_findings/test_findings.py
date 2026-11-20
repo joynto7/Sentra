@@ -94,7 +94,10 @@ def test_a_met_verdict_records_a_finding_with_masked_evidence_and_a_checksum(tea
 
     (finding,) = all_findings(team.db)
     assert (finding.code, finding.title) == ("F-001", f"{test.name} (Knowledge sources)")
-    assert (finding.category, finding.atlas, finding.severity) == ("LLM02", ["AML.T0057"], "medium")
+    assert (finding.category, finding.atlas) == ("LLM02", ["AML.T0057"])
+    # It starts with the Medium of its test definition (FR-4.2); FR-7.1 (S-S2-03) rates it when
+    # the run ends: disclosed data that one of the two attempts reproduced is High
+    assert (finding.severity, finding.calculated_severity) == ("high", "high")
     assert (finding.component_kind, finding.component_name) == (
         "knowledge_source",
         "Knowledge sources",
@@ -131,7 +134,15 @@ def test_a_met_verdict_records_a_finding_with_masked_evidence_and_a_checksum(tea
         "personal_data",
     )
     assert verdict(team.db, second).outcome == "not_met"
-    assert notified(team.db) == {}  # a medium finding isn't notified
+    # A Medium finding isn't notified when it is recorded; the Security Analyst learns of it when
+    # the rating of FR-7.1 (S-S2-03) raises it to High (UC-7.1, 5a1)
+    assert notified(team.db) == {
+        "arif@example.com": (
+            f"Finding F-001 on Payments Operations Agent is now High (it was Medium): "
+            f"{test.name} (Knowledge sources)",
+            1,
+        )
+    }
 
 
 def test_the_same_root_cause_adds_evidence_and_the_run_to_its_finding(team, run_with):
@@ -456,7 +467,10 @@ def test_a_new_critical_or_high_finding_is_notified_to_analysts_and_managers(tea
 
     query = select(Notification.text).where(Notification.event == "finding_critical_high")
     sentences = list(team.db.scalars(query))
-    assert len(sentences) == 4 and sum("F-002" in sentence for sentence in sentences) == 2
+    # Four about the two new findings, and one from FR-7.1 (S-S2-03): the second run's attempt
+    # reproduced F-001 less often and lowered it to Medium, and the third put it back at High
+    assert len(sentences) == 5 and sum("F-002" in sentence for sentence in sentences) == 2
+    assert sum("is now High" in sentence for sentence in sentences) == 1
 
 
 def test_new_findings_of_one_run_are_combined_in_one_notification(team, run_with):
@@ -493,9 +507,11 @@ def test_every_member_reads_the_findings_and_another_organization_cant(team, run
     (second,) = run_with(disclosure, [f"Write to {PERSONAL_TOKEN}"])
 
     page = team.client.get(FINDINGS).json()
+    # The severities are the rated ones (FR-7.1, S-S2-03): the only attempt of each test
+    # reproduced its weakness, which makes disclosed data Critical and a system prompt High
     assert [(i["code"], i["severity"], i["category_name"]) for i in page["items"]] == [
-        ("F-002", "high", "Sensitive Information Disclosure"),  # the most severe first
-        ("F-001", "medium", "System Prompt Leakage"),
+        ("F-002", "critical", "Sensitive Information Disclosure"),  # the most severe first
+        ("F-001", "high", "System Prompt Leakage"),
     ]
     assert (page["total"], page["counts"]) == (
         2,
@@ -511,7 +527,7 @@ def test_every_member_reads_the_findings_and_another_organization_cant(team, run
     def codes(**params) -> list[str]:
         return [i["code"] for i in team.client.get(FINDINGS, params=params).json()["items"]]
 
-    assert codes(severity="medium") == ["F-001"]
+    assert codes(severity="high") == ["F-001"]
     assert codes(category="LLM02") == ["F-002"]
     assert codes(run_id=str(first.campaign_run_id)) == ["F-001"]
     assert codes(target_id=str(team.agent.id)) == ["F-002", "F-001"]
