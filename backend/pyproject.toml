@@ -21,3 +21,8 @@ known-third-party = ["alembic"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Two notices from inside LiteLLM, not about Sentra's code.
+filterwarnings = [
+    "ignore:Item 'summary' on TypedDict class 'ChatCompletionReasoningItem':UserWarning",
+    "ignore:There is no current event loop:DeprecationWarning:litellm",
+]
