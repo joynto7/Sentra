@@ -57,6 +57,21 @@ def members(db: Session, organization_id: uuid.UUID) -> dict[uuid.UUID, str]:
     return {one[0]: one[1] for one in rows}
 
 
+def member_options(db: Session, organization_id: uuid.UUID) -> list[dict]:
+    """The same people as `members()`, with the address Screen 53 matches a typed one against: it
+    is the only way the dialog can say which address does not belong to a member (3a1)."""
+    rows = db.execute(
+        select(User.id, User.name, User.email)
+        .join(Membership, Membership.user_id == User.id)
+        .where(
+            Membership.organization_id == organization_id,
+            Membership.status == MembershipStatus.ACTIVE,
+        )
+        .order_by(User.name)
+    ).all()
+    return [{"id": str(one[0]), "name": one[1], "email": one[2]} for one in rows]
+
+
 def _recipients(db: Session, organization_id: uuid.UUID, wanted: list[uuid.UUID]) -> list[str]:
     """3a1: an address that doesn't belong to a member is refused; the rest are kept in order."""
     allowed = members(db, organization_id)
@@ -141,6 +156,11 @@ def update(
     if frequency is not None and frequency != schedule.frequency:
         if frequency not in tuple(ScheduleFrequency):
             raise FieldValidationError("frequency", "Choose how often the report is produced.")
+        if frequency == ScheduleFrequency.AFTER_EACH_RUN and schedule.target_id is None:
+            # The same rule as when it was created: without a target there are no runs to follow.
+            raise FieldValidationError(
+                "frequency", "A report after every campaign run needs a target to follow."
+            )
         schedule.frequency = frequency
         schedule.next_run_at = next_time(frequency, _now())
     if status is not None:
