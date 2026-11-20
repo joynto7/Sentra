@@ -45,7 +45,7 @@ def _normalize(email: str) -> str:
     return email.strip().lower()
 
 
-def _check_password(password: str, email: str, field: str) -> None:
+def check_password(password: str, email: str, field: str) -> None:
     failed = failed_rules(password, email)
     if failed:
         raise FieldValidationError(
@@ -98,7 +98,7 @@ def register(db: Session, data: RegisterRequest, background: BackgroundTasks) ->
     email = _normalize(data.email)
     if not data.accept_terms:
         raise FieldValidationError("accept_terms", TERMS_REQUIRED)
-    _check_password(data.password, email, "password")
+    check_password(data.password, email, "password")
 
     existing = db.scalar(select(User).where(User.email == email))
     if existing is not None:
@@ -185,6 +185,13 @@ def login(
         user.password_hash = hash_password(password)
     user.failed_login_count = 0
     user.locked_until = None
+    raw = start_session(db, user, user_agent, ip_address)
+    db.commit()
+    return user, raw
+
+
+def start_session(db: Session, user: User, user_agent: str | None, ip_address: str | None) -> str:
+    """A new login session; returns the raw token for the cookie. The caller commits."""
     user.last_login_at = _now()
     raw, token_hash = new_token()
     db.add(
@@ -196,8 +203,14 @@ def login(
             last_seen_at=_now(),
         )
     )
-    db.commit()
-    return user, raw
+    return raw
+
+
+def account_exists(db: Session, email: str) -> bool:
+    """Whether an active account uses this address. Only the invitation page asks, and only the
+    holder of the invitation link, who received it at that address, sees the answer (UC-1.9)."""
+    user = db.scalar(select(User).where(User.email == _normalize(email)))
+    return user is not None and user.status != UserStatus.UNVERIFIED
 
 
 def session_user(db: Session, raw: str) -> tuple[UserSession, User] | None:
@@ -245,7 +258,7 @@ def reset_password(db: Session, raw: str, new_password: str, background: Backgro
         )
     )
     if token is not None:
-        _check_password(new_password, db.get_one(User, token.user_id).email, "new_password")
+        check_password(new_password, db.get_one(User, token.user_id).email, "new_password")
     user = _use_token(db, raw, TokenPurpose.RESET_PASSWORD)
     user.password_hash = hash_password(new_password)
     user.failed_login_count = 0
