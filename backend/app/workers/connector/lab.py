@@ -47,4 +47,20 @@ def canary_slots(target: Target) -> list[dict]:
     """The lab target's planted canary tokens: [{"slot", "token", "topic"}, …]."""
     if not is_lab(target):
         return []
-    return _call("GET", target, "/lab/state").json().get("slots", [])
+    return lab_state(target).get("slots", [])
+
+
+def lab_state(target: Target) -> dict:
+    """Everything the lab target says about itself: its planted canary tokens and its documented
+    known vulnerabilities (FR-11.1)."""
+    if not is_lab(target):
+        return {}
+    return _call("GET", target, "/lab/state").json()
+
+
+def reset(target: Target) -> dict:
+    """UC-11.2 steps 2-4: the lab target throws away what the testing changed, restores its
+    synthetic data from its own image and plants new canary tokens."""
+    if not is_lab(target):
+        raise ValueError("only Sentra's own lab targets are reset by Sentra")
+    return _call("POST", target, "/lab/reset").json()
