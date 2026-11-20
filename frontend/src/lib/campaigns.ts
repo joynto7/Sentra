@@ -94,6 +94,28 @@ export type ThreatModelBrief = {
   threats_covered: number
 }
 
+/** What the LLM judge of this run may cost (FR-10.4), measured from the organization's own judged
+ * attempts. `low_usd` is null while there is nothing to measure. */
+export type CostEstimate = {
+  judged_attempts: number
+  low_usd: string | null
+  high_usd: string | null
+}
+
+/** UC-10.6 step 1 in the builder: what the organization has used of its month (FR-10.4). */
+export type MonthlyUsage = {
+  warn_percent: number
+  limits: {
+    kind: "campaign_runs" | "attempts" | "llm_cost"
+    label: string
+    used: string
+    limit: string
+    percent: number
+    reached: boolean
+    warning: boolean
+  }[]
+}
+
 export type Estimate = {
   tests: number
   skipped: number
@@ -101,6 +123,8 @@ export type Estimate = {
   target_safe_rate: number | null
   /** null: the target has no approved threat model yet (2a) */
   threat_model: ThreatModelBrief | null
+  llm_cost: CostEstimate
+  monthly: MonthlyUsage
   warnings: string[]
 }
 
