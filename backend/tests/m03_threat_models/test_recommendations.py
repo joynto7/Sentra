@@ -1,12 +1,17 @@
 """UC-3.3 Review Test Suite Recommendations (FR-3.4) and the campaign builder's use of the approved
 threat model (UC-5.1 step 2, 2a; FR-3.3)."""
 
+import uuid
+
 import pytest
 from sqlalchemy import select
 
 from app.core.audit import AuditLogEntry
+from app.modules.m03_threat_models import versions
 from app.modules.m04_tests.library import sync_built_in_library
 from app.modules.m04_tests.suites import ATTEMPTS_PER_TEST, sync_built_in_suites
+from app.modules.m05_campaigns.models import CampaignRun
+from app.workers import jobs
 from tests.m03_threat_models.conftest import add_target
 
 API = "/api/v1/threat-models"
@@ -185,6 +190,38 @@ def test_the_selection_becomes_the_default_for_new_campaigns(client, db, approve
         select(AuditLogEntry).where(AuditLogEntry.action == "threat_model.selection_saved")
     )
     assert entry.details["suites"] == chosen
+
+
+def test_a_run_keeps_the_threat_model_version_its_campaign_was_based_on(
+    client, db, approved, monkeypatch
+):
+    """UC-5.3 step 4: a launch copies the campaign's threat model version onto the run, so the
+    version can later name the runs that were based on it (UC-3.4 step 2, FR-3.3)."""
+    created = client.post(
+        "/api/v1/campaigns",
+        json={
+            "name": "Monthly assessment",
+            "target_id": str(approved.id),
+            "suites": ["LLM01-PROMPT-INJECTION"],
+            "attempt_budget": 500,
+            "request_rate": 20,
+        },
+    ).json()
+    # The run's first job stays in the queue: what the launch writes is what this test is about,
+    # and a test never lets anything reach a target (UC-5.3, quality requirement 5).
+    monkeypatch.setattr(jobs, "start", lambda *args, **options: True)
+
+    body = client.post(f"/api/v1/campaigns/{created['code']}/runs").json()
+
+    assert body["versions"]["threat_model"] == 1
+    version = versions.get(db, approved.id, 1)
+    assert version is not None
+    assert db.get(CampaignRun, uuid.UUID(body["id"])).threat_model_id == version.id
+    page = client.get(f"{API}/{approved.id}").json()
+    assert [(v["version"], v["runs"]) for v in page["versions"]] == [(1, 1)]
+    compare = client.get(f"{API}/{approved.id}/compare?base=1&compare=1").json()
+    rows = [(r["code"], r["campaign"], r["number"]) for r in compare["base_runs"]]
+    assert rows == [("R-001-1", "C-001", 1)]
 
 
 def test_a_selection_is_for_the_approved_version_and_suites_that_can_test_the_target(
