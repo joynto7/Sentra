@@ -1,7 +1,8 @@
 """The LLM layer: the only way Sentra's own AI reaches a model (NFR-7.3, NFR-9.6, NFR-3.6).
 
 complete() does the same five things for every request, in this order:
-1. it takes the model configured for the task (config.py); with none, it raises LLMUnavailable;
+1. it takes the model configured for the task (config.py), only a local one for an organization
+   that uses local models only (UC-10.5); with none, it raises LLMUnavailable;
 2. it masks secrets and personal data in the data (masking.py);
 3. it builds the prompt: the caller's fixed instructions as the system message, and the data in a
    block whose boundary is random, so the data can't end the block early. The model is told that
@@ -23,9 +24,11 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.models import Organization
 from app.llm.config import TASK_LABELS, LLMTask, ModelChoice, model_for
 from app.llm.masking import mask
 from app.llm.models import LLMUsage
@@ -83,8 +86,14 @@ def complete(
     `instructions` must be text written in Sentra's code; anything that came from a target belongs
     in `data`. The usage is recorded and committed in `db`, with the campaign run it served, if
     any, so the run's cost counts it (FR-5.7)."""
-    choice = model_for(task)
+    local_only = local_models_only(db, organization_id)
+    choice = model_for(task, local_only=local_only)
     if choice is None:
+        if local_only and model_for(task) is not None:
+            raise LLMUnavailable(
+                "This organization uses local models only, and no local model is configured for "
+                f"{TASK_LABELS[task]}."
+            )
         raise LLMUnavailable(f"No model is configured for {TASK_LABELS[task]}.")
 
     masked = mask(data)
@@ -141,6 +150,17 @@ def complete(
     if schema is not None:
         result.parsed = _parse(text, schema)
     return result
+
+
+def local_models_only(db: Session, organization_id: uuid.UUID | None) -> bool:
+    """UC-10.5: read at every request, so no module can bypass the restriction and a change
+    applies to the next request, also of a running campaign run."""
+    if organization_id is None:
+        return False
+    restricted = db.scalar(
+        select(Organization.local_models_only).where(Organization.id == organization_id)
+    )
+    return bool(restricted)
 
 
 def _send(choice: ModelChoice, messages: list[dict], max_tokens: int, temperature: float):

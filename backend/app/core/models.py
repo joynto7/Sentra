@@ -29,6 +29,9 @@ class Organization(UUIDPrimaryKey, Timestamps, Base):
     slug: Mapped[str] = mapped_column(String(80), unique=True)
     # Every member must use two-step verification (FR-1.2, UC-1.7).
     mfa_required: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # UC-10.5: none of the organization's data goes to an external LLM provider. The LLM layer
+    # reads it at every request, so a change applies at once, also to running campaign runs.
+    local_models_only: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
 
 
 class OrganizationScoped:
