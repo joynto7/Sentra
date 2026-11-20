@@ -6,20 +6,26 @@ from app.core.database import get_db
 from app.core.models import Organization
 from app.modules.m01_users import organizations, service
 from app.modules.m01_users.account_routes import account_router
-from app.modules.m01_users.cookies import set_session_cookie
+from app.modules.m01_users.cookies import set_second_step_cookie, set_session_cookie
 from app.modules.m01_users.deps import current_session, current_user
 from app.modules.m01_users.invitation_routes import admin_router as invitation_admin_router
 from app.modules.m01_users.invitation_routes import public_router as invitation_router
 from app.modules.m01_users.member_routes import router as member_router
+from app.modules.m01_users.mfa_routes import account_router as mfa_account_router
+from app.modules.m01_users.mfa_routes import login_out
+from app.modules.m01_users.mfa_routes import login_router as mfa_login_router
+from app.modules.m01_users.mfa_routes import organization_router as mfa_organization_router
 from app.modules.m01_users.models import User, UserSession
 from app.modules.m01_users.organization_routes import organization_out
 from app.modules.m01_users.organization_routes import router as organization_router
 from app.modules.m01_users.password_policy import RULES
 from app.modules.m01_users.schemas import (
     EmailRequest,
+    LoginOut,
     LoginRequest,
     MeOut,
     MessageOut,
+    PasswordIn,
     RegisterRequest,
     ResetPasswordRequest,
     TokenRequest,
@@ -62,16 +68,21 @@ def resend_verification(
 @auth_router.post("/login")
 def login(
     data: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)
-) -> UserOut:
-    user, raw = service.login(
+) -> LoginOut:
+    """UC-1.2 steps 1-2. With two-step verification the session starts after the second step
+    (/auth/login/mfa); until then a separate cookie holds the login."""
+    user, step, raw = service.login(
         db,
         data.email,
         data.password,
         request.headers.get("user-agent"),
         request.client.host if request.client else None,
     )
-    set_session_cookie(response, raw)
-    return UserOut.model_validate(user)
+    if step == service.LoginStep.DONE:
+        set_session_cookie(response, raw)
+    else:
+        set_second_step_cookie(response, raw)
+    return login_out(db, user, step)
 
 
 @auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -81,6 +92,18 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
     if raw:
         service.logout(db, raw)
     response.delete_cookie(settings.session_cookie_name, path="/")
+
+
+@auth_router.post("/confirm-password", status_code=status.HTTP_204_NO_CONTENT)
+def confirm_password(
+    data: PasswordIn,
+    user: User = Depends(current_user),
+    session: UserSession = Depends(current_session),
+    db: Session = Depends(get_db),
+) -> None:
+    """The password again, before security settings are changed (UC-1.7 step 2, NFR-3.5). It
+    allows changes from this session for 10 minutes."""
+    service.confirm_password(db, user, session, data.password)
 
 
 @auth_router.get("/me")
@@ -120,8 +143,11 @@ def reset_password(
 # All M1 endpoints; the module loader picks up `router`.
 router = APIRouter()
 router.include_router(auth_router)
+router.include_router(mfa_login_router)
 router.include_router(account_router)
+router.include_router(mfa_account_router)
 router.include_router(organization_router)
 router.include_router(member_router)
+router.include_router(mfa_organization_router)
 router.include_router(invitation_admin_router)
 router.include_router(invitation_router)

@@ -119,3 +119,54 @@ def password_changed_in_profile(name: str) -> tuple[str, str]:
         "If you did not do this, reset your password immediately and contact your "
         "organization administrator.\n",
     )
+
+
+# ---------------------------------------------------------------- two-step verification (FR-1.2)
+
+NOT_YOU = (
+    "If you did not do this, reset your password immediately and contact your "
+    "organization administrator.\n"
+)
+
+
+def mfa_enabled(name: str) -> tuple[str, str]:
+    return (
+        "Two-step verification is on for your Sentra account",
+        f"Hello {name},\n\n"
+        "Two-step verification was just turned on for your Sentra account. From now on, every "
+        "login asks for a code from your authenticator app.\n\n"
+        "Keep your recovery codes somewhere safe: each one lets you log in once without your "
+        "phone.\n" + NOT_YOU,
+    )
+
+
+def recovery_code_used(name: str, left: int) -> tuple[str, str]:
+    link = f"{get_settings().web_url}/account/security"
+    codes = "1 recovery code is" if left == 1 else f"{left} recovery codes are"
+    return (
+        "A recovery code was used to log in to Sentra",
+        f"Hello {name},\n\n"
+        "A recovery code was just used to log in to your Sentra account, so it no longer works. "
+        f"{codes} left. You can generate new ones here:\n{link}\n\n" + NOT_YOU,
+    )
+
+
+def recovery_codes_renewed(name: str) -> tuple[str, str]:
+    return (
+        "New Sentra recovery codes were generated",
+        f"Hello {name},\n\n"
+        "New recovery codes were just generated for your Sentra account. The old codes no longer "
+        "work.\n" + NOT_YOU,
+    )
+
+
+def mfa_required(name: str, organization: str) -> tuple[str, str]:
+    link = f"{get_settings().web_url}/account/security"
+    return (
+        f"{organization} requires two-step verification",
+        f"Hello {name},\n\n"
+        f"{organization} now requires two-step verification for every member on Sentra. You'll "
+        "be asked to set it up at your next login, or you can do it now:\n"
+        f"{link}\n\n"
+        "You need an authenticator app on your phone that supports time-based codes (TOTP).\n",
+    )
