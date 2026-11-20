@@ -27,6 +27,17 @@ class EstimateIn(BaseModel):
     attempt_budget: int | None = None
 
 
+class ThreatModelBrief(BaseModel):
+    """UC-5.1 step 2: the target's approved threat model (FR-3.4)."""
+
+    version: int
+    approved_at: datetime | None
+    approved_by: str | None
+    default_suites: list[str]  # preselected in the builder
+    threats_total: int
+    threats_covered: int  # by the tests of the chosen suites
+
+
 class EstimateOut(BaseModel):
     """UC-5.1 step 6: the tests that will run and the attempts they need."""
 
@@ -34,7 +45,7 @@ class EstimateOut(BaseModel):
     skipped: int
     estimated_attempts: int
     target_safe_rate: int | None
-    threat_model: bool
+    threat_model: ThreatModelBrief | None  # None: no approved threat model yet (2a)
     warnings: list[str]
 
 
@@ -75,6 +86,7 @@ class CampaignDetail(CampaignListItem):
     time_zone: str
     suites: list[CampaignSuiteOut]
     estimate: EstimateOut
+    based_on_threat_model: int | None  # the version it was created with (FR-3.3)
 
 
 # ---------------------------------------------------------------- campaign runs (FR-5.4, FR-5.6)

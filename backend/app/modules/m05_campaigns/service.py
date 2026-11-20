@@ -112,10 +112,20 @@ def estimate(
         "skipped": skipped,
         "estimated_attempts": attempts,
         "target_safe_rate": target.max_request_rate if target else None,
-        # Threat models come with FR-3.1 (Sprint 3); until then UC-5.1, 2a applies.
-        "threat_model": False,
+        # UC-5.1 step 2; None without an approved threat model (2a)
+        "threat_model": _threat_model(db, organization_id, target, codes),
         "warnings": warnings,
     }
+
+
+def _threat_model(
+    db: Session, organization_id: uuid.UUID, target: Target | None, codes: list[str]
+) -> dict | None:
+    if target is None:
+        return None
+    from app.modules.m03_threat_models.recommendations import campaign_brief
+
+    return campaign_brief(db, organization_id, target, codes)
 
 
 def list_campaigns(
@@ -171,7 +181,17 @@ def get_campaign(db: Session, organization_id: uuid.UUID, code: str) -> dict:
         "estimate": estimate(
             db, organization_id, campaign.target_id, campaign.suites, campaign.attempt_budget
         ),
+        "based_on_threat_model": _version(db, campaign.threat_model_id),
     }
+
+
+def _version(db: Session, threat_model_id: uuid.UUID | None) -> int | None:
+    if threat_model_id is None:
+        return None
+    from app.modules.m03_threat_models.models import ThreatModel
+
+    model = db.get(ThreatModel, threat_model_id)
+    return model.version if model else None
 
 
 def _row(campaign: Campaign, target: Target | None, creator: str | None) -> dict:
@@ -305,10 +325,15 @@ def create(db: Session, membership: Membership, data: CampaignInput) -> Campaign
         )
         or 0
     ) + 1
+    from app.modules.m03_threat_models.recommendations import newest_approved
+
+    approved = newest_approved(db, checked["target_id"])
     campaign = Campaign(
         organization_id=membership.organization_id,
         number=number,
         created_by_id=membership.user_id,
+        # FR-3.3: the threat model version the campaign is based on
+        threat_model_id=approved.id if approved else None,
         **checked,
     )
     db.add(campaign)
