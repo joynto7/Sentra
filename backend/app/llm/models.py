@@ -24,6 +24,11 @@ class LLMUsage(UUIDPrimaryKey, Base):
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
+    # The campaign run the request served, e.g. as its LLM judge: the run's cost (UC-5.6 step 2)
+    # and, per task, the model that served it (report, class diagram 6b: ModelUsage)
+    campaign_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL"), index=True
+    )
     task: Mapped[str] = mapped_column(String(30))
     model: Mapped[str] = mapped_column(String(200))
     provider: Mapped[str] = mapped_column(String(50))
