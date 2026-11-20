@@ -81,3 +81,49 @@ class LLMConfigurationOut(BaseModel):
     providers: list[ProviderOut]
     assignments: list[AssignmentOut]
     recorded: str  # UC-10.4 step 6, the note on the page
+
+
+# ---------------------------------------------------------------- usage and cost limits (UC-10.6)
+
+
+class LimitsIn(BaseModel):
+    """The "Edit limits" panel of Screen 61 (UC-10.6 steps 2-3)."""
+
+    campaign_runs: int = Field(ge=0, le=100_000)
+    attempts: int = Field(ge=0, le=100_000_000)
+    llm_cost_usd: Decimal = Field(ge=0, le=1_000_000, decimal_places=2)
+    warn_percent: int = Field(ge=50, le=99)
+    # UC-10.6, 2a1: the administrator has read what a limit below this month's usage means
+    confirmed: bool = False
+
+
+class LimitOut(BaseModel):
+    kind: str  # "campaign_runs", "attempts" or "llm_cost"
+    label: str
+    used: Decimal
+    limit: Decimal
+    percent: int
+    reached: bool
+    warning: bool
+    custom: bool  # set for this organization; otherwise the platform's default
+    warned_at: datetime | None
+
+
+class OrganizationUsageOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    members: int
+    warn_percent: int
+    warn_percent_custom: bool
+    limits: list[LimitOut]
+    status: str  # "active" or "limited"
+    next_month: str
+
+
+class UsageOverviewOut(BaseModel):
+    organizations: list[OrganizationUsageOut]
+    defaults: dict[str, Decimal]
+    warn_percent_default: int
+    notice: str
+    warn_at: str
