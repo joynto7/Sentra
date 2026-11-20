@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
+import { type CampaignItem, listCampaigns } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 import {
   CATEGORIES,
@@ -43,6 +44,7 @@ export function SuiteView({ code, version }: { code: string; version?: number })
   const [suite, setSuite] = useState<SuiteDetail | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [campaigns, setCampaigns] = useState<CampaignItem[] | null>(null)
 
   usePageCrumbs(
     version
@@ -58,6 +60,13 @@ export function SuiteView({ code, version }: { code: string; version?: number })
       })
   }, [code, version])
   useEffect(load, [load])
+
+  // The campaigns that use this suite (UC-4.5 step 2).
+  useEffect(() => {
+    listCampaigns(new URLSearchParams({ suite: code }))
+      .then(setCampaigns)
+      .catch(() => setCampaigns([]))
+  }, [code])
 
   if (notFound) {
     return (
@@ -197,6 +206,25 @@ export function SuiteView({ code, version }: { code: string; version?: number })
         <div className="space-y-5">
           <SuiteSummaryCard summary={suite} />
           <section className="rounded-[10px] border bg-card p-5">
+            <h2 className="mb-3 text-[15px] font-semibold">Used by</h2>
+            {campaigns === null ? (
+              <p className="text-sm text-muted-foreground">Loading the campaigns…</p>
+            ) : campaigns.length ? (
+              <ul className="space-y-1.5 text-sm">
+                {campaigns.map((campaign) => (
+                  <li key={campaign.code} className="flex items-baseline gap-2">
+                    <Link href={`/campaigns/${campaign.code}`} className="text-link hover:underline">
+                      {campaign.name}
+                    </Link>
+                    <span className="ml-auto font-mono text-xs text-muted-foreground">{campaign.code}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No campaign uses it yet.</p>
+            )}
+          </section>
+          <section className="rounded-[10px] border bg-card p-5">
             <h2 className="mb-3 text-[15px] font-semibold">Version history</h2>
             <ul className="space-y-2.5">
               {suite.versions.map((v) => (
@@ -222,7 +250,13 @@ export function SuiteView({ code, version }: { code: string; version?: number })
       </div>
 
       {archiving && (
-        <ArchiveSuiteDialog suite={suite} open={archiving} onOpenChange={setArchiving} onArchived={(archivedSuite) => setSuite(archivedSuite)} />
+        <ArchiveSuiteDialog
+          suite={suite}
+          campaigns={campaigns ?? []}
+          open={archiving}
+          onOpenChange={setArchiving}
+          onArchived={(archivedSuite) => setSuite(archivedSuite)}
+        />
       )}
     </div>
   )
