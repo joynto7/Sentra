@@ -195,14 +195,19 @@ def vocabulary() -> dict:
 STOPWORDS = {"the", "and", "for", "with", "from", "into", "that", "this", "test", "tests", "check"}
 
 
-def _new_code(db: Session, organization: Organization, test_name: str) -> str:
-    """UC-4.2 step 6: a unique identifier such as HB-REFUND-001 (organization initials, the first
-    meaningful word of the name, a number). It never repeats a code the organization can see."""
-    words = re.findall(r"[A-Za-z]+", organization.name)
+def org_prefix(organization_name: str) -> str:
+    """The organization's initials for identifiers: "Halcyon Bank" gives HB (2 to 4 letters)."""
+    words = re.findall(r"[A-Za-z]+", organization_name)
     prefix = "".join(word[0] for word in words).upper()[:4]
     if len(prefix) < 2:
         prefix = (words[0][:2] if words else "").upper()
-    prefix = prefix if len(prefix) >= 2 else "CU"
+    return prefix if len(prefix) >= 2 else "CU"
+
+
+def _new_code(db: Session, organization: Organization, test_name: str) -> str:
+    """UC-4.2 step 6: a unique identifier such as HB-REFUND-001 (organization initials, the first
+    meaningful word of the name, a number). It never repeats a code the organization can see."""
+    prefix = org_prefix(organization.name)
     candidates = re.findall(r"[A-Za-z0-9]+", test_name)
     word = next((w for w in candidates if len(w) >= 3 and w.lower() not in STOPWORDS), "test")
     stem = f"{prefix}-{word.upper()[:8]}"
