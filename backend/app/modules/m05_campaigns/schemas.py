@@ -1,7 +1,42 @@
 import uuid
 from datetime import datetime, time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class ScheduleIn(BaseModel):
+    """When the campaign runs (FR-5.3; UC-5.1 step 5). "immediately" saves no schedule: the
+    campaign's first run is launched at once instead (step 7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["immediately", "once", "recurring"]
+    frequency: Literal["daily", "weekly", "monthly"] | None = None
+    # Once: the moment. Without an offset it is read in the campaign's time zone.
+    run_at: datetime | None = None
+    at_time: str | None = Field(default=None, max_length=5)  # recurring: "02:00"
+    weekday: int | None = Field(default=None, ge=0, le=6)  # weekly: 0 = Monday … 6 = Sunday
+    day_of_month: int | None = Field(default=None, ge=1, le=28)  # monthly
+
+
+class ScheduleOut(BaseModel):
+    """The campaign's schedule, with what came of its last moment (Screens 33 and 35)."""
+
+    kind: str
+    frequency: str | None
+    run_at: datetime | None
+    at_time: time | None
+    weekday: int | None
+    day_of_month: int | None
+    status: str  # active, paused, or finished for a schedule that has had its one moment
+    summary: str  # in words: "Every Monday at 02:00 (Asia/Dhaka)"
+    next_run_at: datetime | None
+    last_run_at: datetime | None
+    last_result: str | None  # launched, skipped or missed
+    last_message: str
+    last_run: str | None  # the run it launched, e.g. R-238-2
+    created_by: str | None  # whose permissions its runs use (UC-5.3, 1a1)
 
 
 class CampaignIn(BaseModel):
@@ -19,6 +54,7 @@ class CampaignIn(BaseModel):
     window_start: str | None = Field(default=None, max_length=5)  # "02:00"
     window_end: str | None = Field(default=None, max_length=5)
     time_zone: str = Field(default="UTC", max_length=64)  # the browser's, e.g. Asia/Dhaka
+    schedule: ScheduleIn | None = None  # UC-5.1 step 5; without it the campaign waits
 
 
 class EstimateIn(BaseModel):
@@ -66,6 +102,7 @@ class CampaignListItem(BaseModel):
     attempt_budget: int
     request_rate: int
     approval_status: str
+    schedule: ScheduleOut | None
     created_by: str | None
     created_at: datetime
 
@@ -87,6 +124,9 @@ class CampaignDetail(CampaignListItem):
     suites: list[CampaignSuiteOut]
     estimate: EstimateOut
     based_on_threat_model: int | None  # the version it was created with (FR-3.3)
+    # Only in the answer to "create", and only when the campaign runs immediately (UC-5.1 step 7)
+    launched_run: "RunListItem | None" = None
+    launch_error: str | None = None
 
 
 # ---------------------------------------------------------------- campaign runs (FR-5.4, FR-5.6)

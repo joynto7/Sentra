@@ -5,10 +5,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.errors import AppError
 from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m05_campaigns import runs, service
+from app.modules.m05_campaigns import runs, scheduling, service
 from app.modules.m05_campaigns.models import ENDED, AttemptStatus, RunStatus
 from app.modules.m05_campaigns.schemas import (
     AttemptOut,
@@ -21,6 +22,8 @@ from app.modules.m05_campaigns.schemas import (
     RunDetail,
     RunListItem,
     RunOverviewItem,
+    ScheduleIn,
+    ScheduleOut,
     StopIn,
 )
 
@@ -59,10 +62,28 @@ def estimate(
 def create_campaign(
     data: CampaignIn, membership: Membership = Depends(can_manage), db: Session = Depends(get_db)
 ) -> CampaignDetail:
-    """UC-5.1 Create Campaign. Nothing is sent to the target."""
-    campaign = service.create(db, membership, service.CampaignInput(**data.model_dump()))
+    """UC-5.1 Create Campaign. Creating a campaign sends nothing to the target; step 7 launches
+    its first run only when the user chose to run it immediately, and a campaign with a schedule
+    waits for its moment (FR-5.3)."""
+    fields = data.model_dump()
+    chosen = fields.pop("schedule")
+    immediately = chosen is not None and chosen["kind"] == scheduling.IMMEDIATELY
+    planned = scheduling.ScheduleInput(**chosen) if chosen and not immediately else None
+    campaign = service.create(db, membership, service.CampaignInput(**fields, schedule=planned))
+    launched = error = None
+    if immediately:
+        try:
+            runs.launch(db, membership, campaign.code)
+        except AppError as exc:  # 7a, 3a or 4a: the campaign is saved, and the page says why
+            error = exc.message
+        else:
+            launched = runs.list_runs(db, membership.organization_id, campaign.code)[0]
     return CampaignDetail.model_validate(
-        service.get_campaign(db, membership.organization_id, campaign.code)
+        {
+            **service.get_campaign(db, membership.organization_id, campaign.code),
+            "launched_run": launched,
+            "launch_error": error,
+        }
     )
 
 
@@ -87,6 +108,70 @@ def get_campaign(
     code: str, membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
 ) -> CampaignDetail:
     return CampaignDetail.model_validate(service.get_campaign(db, membership.organization_id, code))
+
+
+# ---------------------------------------------------------------- the schedule (FR-5.3)
+
+
+def _schedule(db: Session, membership: Membership, code: str) -> ScheduleOut | None:
+    campaign = runs.campaign_row(db, membership.organization_id, code)
+    view = scheduling.view(db, campaign)
+    return ScheduleOut.model_validate(view) if view else None
+
+
+@router.get("/{code}/schedule")
+def get_schedule(
+    code: str, membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> ScheduleOut | None:
+    """When the campaign runs by itself, and what came of its last moment. Every member may read
+    it; null means it only runs when someone launches it."""
+    return _schedule(db, membership, code)
+
+
+@router.put("/{code}/schedule")
+def save_schedule(
+    code: str,
+    data: ScheduleIn,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> ScheduleOut:
+    """UC-5.1 step 5 for a campaign that is already saved: it replaces the schedule it had. The
+    member who saves it is the one whose permissions its runs use (UC-5.3, 1a1)."""
+    campaign = runs.campaign_row(db, membership.organization_id, code)
+    scheduling.save(db, membership, campaign, scheduling.ScheduleInput(**data.model_dump()))
+    db.commit()
+    return _schedule(db, membership, code)
+
+
+@router.post("/{code}/schedule/pause")
+def pause_schedule(
+    code: str, membership: Membership = Depends(can_manage), db: Session = Depends(get_db)
+) -> ScheduleOut:
+    """No run starts from the schedule until it is resumed. A run already in progress goes on."""
+    campaign = runs.campaign_row(db, membership.organization_id, code)
+    scheduling.pause(db, membership, campaign)
+    db.commit()
+    return _schedule(db, membership, code)
+
+
+@router.post("/{code}/schedule/resume")
+def resume_schedule(
+    code: str, membership: Membership = Depends(can_manage), db: Session = Depends(get_db)
+) -> ScheduleOut:
+    campaign = runs.campaign_row(db, membership.organization_id, code)
+    scheduling.resume(db, membership, campaign)
+    db.commit()
+    return _schedule(db, membership, code)
+
+
+@router.delete("/{code}/schedule", status_code=status.HTTP_204_NO_CONTENT)
+def remove_schedule(
+    code: str, membership: Membership = Depends(can_manage), db: Session = Depends(get_db)
+) -> None:
+    """The campaign keeps its settings and its runs: it simply runs only when someone starts it."""
+    campaign = runs.campaign_row(db, membership.organization_id, code)
+    scheduling.remove(db, membership, campaign)
+    db.commit()
 
 
 # ---------------------------------------------------------------- campaign runs (FR-5.4, FR-5.6)
