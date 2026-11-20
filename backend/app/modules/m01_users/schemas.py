@@ -61,6 +61,8 @@ class MeOut(UserOut):
     """The logged-in user and the organization this browser is working in (None = none yet)."""
 
     organization: OrganizationOut | None
+    # Platform Administrators get the platform pages (report 2.4); it is not an organization role.
+    platform_admin: bool = False
 
 
 class LoginOut(BaseModel):

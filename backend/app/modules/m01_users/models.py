@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -47,6 +47,9 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The time step of the last accepted code, so the same code can't be used twice.
     mfa_last_step: Mapped[int | None] = mapped_column(BigInteger)
+    # The Platform Administrator operates Sentra itself and is not an organization role
+    # (report 2.4, UC-10.1). Only a server command grants it (m10_admin/platform_admin.py).
+    platform_admin: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
 
     @property
     def mfa_enabled(self) -> bool:
