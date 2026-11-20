@@ -175,7 +175,7 @@ def test_the_estimate_counts_the_tests_for_this_target(halcyon):
     applicable = body["tests"]
     assert 0 < applicable < 8 and body["skipped"] == 8 - applicable  # some apply to agents only
     assert body["estimated_attempts"] == applicable * ATTEMPTS_PER_TEST
-    assert body["threat_model"] is False  # UC-5.1, 2a until threat models exist
+    assert body["threat_model"] is None  # UC-5.1, 2a: the target has no approved threat model
     assert f"{body['skipped']} tests don't apply to a chatbot and are skipped." in body["warnings"]
     assert (
         "The budget is smaller than the estimate, so the run may stop before every test has run."

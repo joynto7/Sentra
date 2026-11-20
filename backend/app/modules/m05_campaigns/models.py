@@ -47,6 +47,11 @@ class Campaign(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
     # Suite codes: a run fixes and records the version of each suite and test it uses (FR-4.5).
     suites: Mapped[list[str]] = mapped_column(JSONB)
     adaptive_agent: Mapped[bool] = mapped_column(default=False)  # FR-5.5
+    # FR-3.3: the threat model version the campaign was based on (the newest approved one when it
+    # was created); None when the target had no approved threat model (UC-5.1, 2a)
+    threat_model_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("threat_models.id", ondelete="SET NULL")
+    )
     attempt_budget: Mapped[int]
     request_rate: Mapped[int]  # per minute; never above the target's safe rate (FR-5.7)
     repetitions: Mapped[int]  # how often a successful attempt is repeated (FR-6.4)
