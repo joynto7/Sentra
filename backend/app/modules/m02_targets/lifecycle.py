@@ -36,7 +36,8 @@ VERIFICATION = "verification"
 CONFIGURATION = "configuration"
 PROFILE = "profile"
 CAMPAIGN_RUN = "campaign_run"
-KINDS = (REGISTRATION, VERIFICATION, CONFIGURATION, PROFILE, CAMPAIGN_RUN)
+LAB_RESET = "lab_reset"  # a lab target restored to its original state (FR-11.2, UC-11.2)
+KINDS = (REGISTRATION, VERIFICATION, CONFIGURATION, PROFILE, CAMPAIGN_RUN, LAB_RESET)
 # Which kind an audit action belongs to; anything else about a target is a configuration change.
 ACTION_KINDS = {
     "target.registered": REGISTRATION,
@@ -46,6 +47,9 @@ ACTION_KINDS = {
     "target.profile_mapped": PROFILE,
     "target.canary_planted": PROFILE,
     "target.canary_removed": PROFILE,
+    "target.lab_deployed": REGISTRATION,
+    "target.lab_reset_started": LAB_RESET,
+    "target.lab_reset": LAB_RESET,
     "target.retested": "retest",
     "target.policy_deployed": "shield_policy",
     "target.policy_rolled_back": "shield_policy",
