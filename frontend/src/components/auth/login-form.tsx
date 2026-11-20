@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ApiError, apiFetch, safeNextPath } from "@/lib/api"
+import { type InvitationDetails, invitationDetails } from "@/lib/members"
 
 export function LoginForm({ next, notice }: { next?: string; notice?: string }) {
   const router = useRouter()
@@ -19,6 +20,20 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
   const [error, setError] = useState<ApiError | null>(null)
   const [pending, setPending] = useState(false)
   const [resent, setResent] = useState(false)
+  const [invited, setInvited] = useState<InvitationDetails | null>(null)
+
+  // Opened from "Log in to accept" (Screen 05): fill in the invited address so it is never typed again (WCAG 3.3.7).
+  useEffect(() => {
+    const token = invitationToken(next)
+    if (!token) return
+    invitationDetails(token)
+      .then((details) => {
+        setInvited(details)
+        setEmail((typed) => typed || details.email)
+      })
+      .catch(() => undefined)
+  }, [next])
+  const shownNotice = notice ?? (invited && `Log in with ${invited.email} to join ${invited.organization}.`)
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -47,9 +62,9 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
   return (
     <>
       <AuthCard title="Log in to Sentra">
-        {notice && !error && (
+        {shownNotice && !error && (
           <Alert className="mb-5">
-            <AlertDescription>{notice}</AlertDescription>
+            <AlertDescription>{shownNotice}</AlertDescription>
           </Alert>
         )}
         {error && (
@@ -107,4 +122,10 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
       </p>
     </>
   )
+}
+
+/** The invitation token when "next" is the accept-invitation page, else null. */
+function invitationToken(next: string | undefined): string | null {
+  const url = new URL(safeNextPath(next), "http://sentra.local")
+  return url.pathname === "/invitations/accept" ? url.searchParams.get("token") : null
 }
