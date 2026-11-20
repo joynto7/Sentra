@@ -516,7 +516,8 @@ def test_every_member_reads_the_findings_and_another_organization_cant(team, run
     ]
     assert (page["total"], page["counts"]) == (
         2,
-        {"open": 2, "requires_confirmation": 0, "closed": 0},
+        # "assigned" is the member's own: FR-6.5 gives the findings an owner
+        {"open": 2, "assigned": 0, "requires_confirmation": 0, "closed": 0},
     )
     item = page["items"][1]
     assert (item["target"]["name"], item["component"]["label"], item["first_run"]["code"]) == (
