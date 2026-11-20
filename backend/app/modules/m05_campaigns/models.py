@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -359,3 +360,21 @@ class Attempt(UUIDPrimaryKey, OrganizationScoped, Base):
     refinement_reason: Mapped[str | None] = mapped_column(Text)  # FR-5.5, Sprint 3
     # Problems of the extensions (on_attempt) with this attempt
     hook_errors: Mapped[list | None] = mapped_column(JSONB)
+
+
+class UsageLimitWarning(UUIDPrimaryKey, OrganizationScoped, Base):
+    """UC-10.6 step 5: the organization was warned that it is close to one of its monthly limits
+    (FR-10.4). One row per month and limit, so a threshold that stays crossed for three weeks
+    warns once and not every hour; the unique index is what decides who sends the warning."""
+
+    __tablename__ = "usage_limit_warnings"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "month", "kind", name="uq_usage_limit_warnings_month_kind"
+        ),
+    )
+
+    month: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # the month's first moment
+    kind: Mapped[str] = mapped_column(String(20))  # "campaign_runs", "attempts" or "llm_cost"
+    used_percent: Mapped[int]  # the share of the limit that was used when it was sent
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
