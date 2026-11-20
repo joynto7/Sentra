@@ -4,18 +4,16 @@
     docker compose run --rm api python -m app.llm.check llm_judge  (one task)
 
 It prints, for each task, the model, whether it is external or local, the reply, the time, the
-tokens and the cost. The requests are recorded without an organization.
+tokens and the cost. It sends the same request as the "Test connection" of Screen 62, and the
+requests are recorded without an organization.
 """
 
 import sys
-import time
 
 from app.core.database import SessionLocal
 from app.llm.config import LLMTask, model_for
-from app.llm.layer import LLMError, complete
+from app.llm.layer import LLMError, connection_test
 from app.modules import load_models
-
-INSTRUCTIONS = "This is a connection test. Reply with the single word: ready"
 
 
 def main(names: list[str]) -> int:
@@ -24,25 +22,21 @@ def main(names: list[str]) -> int:
     failed = 0
     with SessionLocal() as db:
         for task in tasks:
-            choice = model_for(task)
+            choice = model_for(db, task)
             if choice is None:
-                print(f"{task}: no model configured (set LLM_MODEL)")
+                print(f"{task}: no model configured (assign one on Screen 62, or set LLM_MODEL)")
                 failed += 1
                 continue
-            start = time.monotonic()
             try:
-                reply = complete(
-                    db, task, instructions=INSTRUCTIONS, data="(no data)", organization_id=None
-                )
+                reply = connection_test(db, choice)
             except LLMError as exc:
                 print(f"{task}: {choice.model} ({choice.deployment}) failed: {exc}")
                 failed += 1
                 continue
-            seconds = time.monotonic() - start
             print(
                 f"{task}: {choice.model} ({choice.deployment}) answered {reply.text.strip()!r} "
-                f"in {seconds:.1f} s, {reply.prompt_tokens}+{reply.completion_tokens} tokens, "
-                f"{reply.cost_usd} USD"
+                f"in {reply.duration_ms / 1000:.1f} s, "
+                f"{reply.prompt_tokens}+{reply.completion_tokens} tokens, {reply.cost_usd} USD"
             )
     return 1 if failed else 0
 
