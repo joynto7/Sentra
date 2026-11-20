@@ -225,9 +225,10 @@ def register_and_accept(
     user_agent: str | None,
     ip_address: str | None,
     background: BackgroundTasks,
-) -> tuple[Membership, str]:
+) -> tuple[Membership, service.LoginStep, str]:
     """Step 3 for a person without an account. The invitation link already proved the e-mail
-    address, so no separate verification e-mail is needed. Returns the session token."""
+    address, so no separate verification e-mail is needed. Returns the membership, the next step
+    and its raw token: the session token, or the token of the login's second step."""
     invitation = find(db, raw)
     if not accept_terms:
         raise FieldValidationError("accept_terms", service.TERMS_REQUIRED)
@@ -247,12 +248,17 @@ def register_and_accept(
     user.email_verified_at = _now()
     user.terms_accepted_at = _now()
     db.flush()
+    if db.get_one(Organization, invitation.organization_id).mfa_required:
+        # The organization requires two-step verification, so it is set up before the first
+        # session (UC-1.2, 3b and UC-1.4, 1a).
+        membership = _join(db, invitation, user, None, background)
+        return membership, service.LoginStep.MFA_SETUP, service.start_second_step(db, user)
     raw_session = service.start_session(db, user, user_agent, ip_address)
     db.flush()
     session = db.scalar(
         select(UserSession).where(UserSession.token_hash == hash_token(raw_session))
     )
-    return _join(db, invitation, user, session, background), raw_session
+    return _join(db, invitation, user, session, background), service.LoginStep.DONE, raw_session
 
 
 def decline(db: Session, raw: str, background: BackgroundTasks) -> None:
@@ -267,7 +273,7 @@ def _join(
     db: Session,
     invitation: Invitation,
     user: User,
-    session: UserSession,
+    session: UserSession | None,
     background: BackgroundTasks,
 ) -> Membership:
     membership = db.scalar(
@@ -282,7 +288,11 @@ def _join(
         db.add(membership)
     _close(invitation, InvitationStatus.ACCEPTED)
     db.flush()
-    organizations.switch(db, user, session, invitation.organization_id)  # step 6; commits
+    if session is not None:
+        organizations.switch(db, user, session, invitation.organization_id)  # step 6; commits
+    else:  # no session yet: the organization opens after the second step of the login
+        user.last_organization_id = invitation.organization_id
+        db.commit()
     _tell_inviter(db, invitation, background, accepted=True)
     return membership
 
