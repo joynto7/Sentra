@@ -212,7 +212,11 @@ export function OrganizationSecurityPage() {
               <ShieldCheck aria-hidden="true" />
               <AlertDescription className="text-text-secondary">
                 You confirmed your password {now - Date.parse(security.password_confirmed_at ?? "") < MINUTE ? "just now" : `${minutes(now - Date.parse(security.password_confirmed_at ?? ""))} ago`}.
-                You can change the settings for {minutes(until - now)} more.
+                You can change the settings for {minutes(until - now)} more. Changes on this page are recorded in the{" "}
+                <Link href="/audit-log" className="font-medium text-link hover:underline">
+                  audit log
+                </Link>
+                .
               </AlertDescription>
             </Alert>
             <div className="grid max-w-4xl items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
