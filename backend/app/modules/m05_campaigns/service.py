@@ -97,9 +97,10 @@ def estimate(
     warnings = []
     if target is not None and skipped:
         kind = TYPE_NAME.get(target.type, target.type)
-        verb = "doesn't" if skipped == 1 else "don't"
+        one = skipped == 1
         warnings.append(
-            f"{skipped} test{'' if skipped == 1 else 's'} {verb} apply to a {kind} and are skipped."
+            f"{skipped} test{'' if one else 's'} {'doesn' if one else 'don'}'t apply to a {kind} "
+            f"and {'is' if one else 'are'} skipped."
         )
     if budget and attempts > budget:
         warnings.append(
