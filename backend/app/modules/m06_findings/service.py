@@ -18,7 +18,7 @@ from app.modules.m04_tests.models import TestDefinition
 from app.modules.m04_tests.schema import CATEGORY_NAMES, DETECTION_LABELS, DetectionMethod, Severity
 from app.modules.m05_campaigns import lifecycle, runs
 from app.modules.m05_campaigns.models import Attempt, Campaign, CampaignRun
-from app.modules.m06_findings import evidence
+from app.modules.m06_findings import evidence, reproducibility
 from app.modules.m06_findings.models import (
     CLOSED,
     OPEN,
@@ -229,7 +229,27 @@ def _owners(db: Session, findings: list[Finding]) -> dict[uuid.UUID, dict]:
     return {user_id: {"id": user_id, "name": name} for user_id, name in rows}
 
 
-def _item(finding: Finding, target_names: dict, run_refs: dict, owners: dict | None = None) -> dict:
+def _repetitions(score: reproducibility.Score | None) -> dict | None:
+    """What the finding's reproducibility is based on (FR-6.4): the last measurement of UC-6.3."""
+    if score is None:
+        return None
+    return {
+        "attempts": score.attempts,
+        "successes": score.successes,
+        "wanted": score.wanted,
+        "status": score.status,
+        "reason": score.reason,
+        "label": score.label(),
+    }
+
+
+def _item(
+    finding: Finding,
+    target_names: dict,
+    run_refs: dict,
+    owners: dict | None = None,
+    scores: dict | None = None,
+) -> dict:
     return {
         "code": finding.code,
         "title": finding.title,
@@ -249,6 +269,7 @@ def _item(finding: Finding, target_names: dict, run_refs: dict, owners: dict | N
         "reproducibility": (
             None if finding.reproducibility is None else str(finding.reproducibility)
         ),
+        "repetitions": _repetitions((scores or {}).get(finding.id)),
         "first_run": run_refs[finding.first_run_id],
         "last_run": run_refs[finding.last_run_id],
         "first_seen_at": finding.first_seen_at,
@@ -306,6 +327,7 @@ def list_findings(
     names = _target_names(db, {f.target_id for f in found})
     refs = _run_refs(db, {run for f in found for run in (f.first_run_id, f.last_run_id)})
     owners = _owners(db, list(found))
+    measured = reproducibility.latest(db, {f.id for f in found})
     counts = {
         view: sum(statuses.get(status, 0) for status in included)
         for view, included in VIEWS.items()
@@ -318,7 +340,8 @@ def list_findings(
     in_run = _in_run(db, organization_id, filters.run_id, list(found)) if filters.run_id else {}
     return {
         "items": [
-            _item(finding, names, refs, owners) | ({"in_run": in_run[finding.id]} if in_run else {})
+            _item(finding, names, refs, owners, measured)
+            | ({"in_run": in_run[finding.id]} if in_run else {})
             for finding in found
         ],
         "total": total,
@@ -445,7 +468,13 @@ def finding_detail(db: Session, organization_id: uuid.UUID, code: str) -> dict:
     refs = _run_refs(db, run_ids)
     names = _names(db, {finding.owner_id, finding.confirmed_by_id, finding.closed_by_id})
     merged_into = _codes(db, organization_id, {finding.merged_into_id})
-    return _item(finding, _target_names(db, {finding.target_id}), refs, _owners(db, [finding])) | {
+    return _item(
+        finding,
+        _target_names(db, {finding.target_id}),
+        refs,
+        _owners(db, [finding]),
+        reproducibility.latest(db, {finding.id}),
+    ) | {
         "description": finding.description,
         "atlas": finding.atlas,
         # The triage of FR-6.5, and the duplicates whose evidence and history count as this
