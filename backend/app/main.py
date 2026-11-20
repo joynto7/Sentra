@@ -35,6 +35,8 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # The web app reads the name of a downloaded export, e.g. of the audit log (UC-10.3).
+        expose_headers=["Content-Disposition"],
     )
     # Where each request came from, for the audit log (FR-10.2).
     app.add_middleware(SourceAddressMiddleware)

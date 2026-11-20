@@ -28,17 +28,21 @@ import {
 import { OrganizationSwitcher } from "@/components/layout/organization-switcher"
 import { SentraLogo } from "@/components/layout/sentra-logo"
 import { useSession } from "@/components/session-provider"
-import { visibleNavigation } from "@/config/navigation"
+import { platformNavigation, visibleNavigation } from "@/config/navigation"
 import { apiFetch } from "@/lib/api"
 import { initials } from "@/lib/session"
 
-export function AppSidebar() {
+/** The sidebar of the app, or with `platform` of the Platform Administrator's pages, whose menu
+ * has only the PLATFORM group and whose switcher reads "Sentra platform" (UI plan, Screen 61). */
+export function AppSidebar({ platform = false }: { platform?: boolean }) {
   const pathname = usePathname()
   const router = useRouter()
   const user = useSession()
-  // Pages inside the app always have an organization (the session provider makes sure).
-  const organization = user.organization!
-  const groups = visibleNavigation(organization.role)
+  // Pages inside the app always have an organization (the session provider makes sure); the
+  // platform pages don't need one.
+  const organization = user.organization
+  const groups = platform ? platformNavigation : visibleNavigation(organization!.role)
+  const roleLabel = platform ? "Platform Administrator" : organization!.role_label
 
   async function logOut() {
     await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
@@ -48,13 +52,13 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="gap-3 px-3 pt-4">
-        <Link href="/dashboard" className="flex items-center gap-2.5 px-1" aria-label="Sentra home">
+        <Link href={platform ? "/platform" : "/dashboard"} className="flex items-center gap-2.5 px-1" aria-label="Sentra home">
           <SentraLogo />
           <span className="text-[17px] font-semibold tracking-tight text-white group-data-[collapsible=icon]:hidden">
             Sentra
           </span>
         </Link>
-        <OrganizationSwitcher current={organization} />
+        <OrganizationSwitcher current={platform ? null : organization} />
       </SidebarHeader>
 
       <SidebarContent className="px-1">
@@ -103,7 +107,7 @@ export function AppSidebar() {
             </span>
             <span className="min-w-0 group-data-[collapsible=icon]:hidden">
               <span className="block truncate text-sm font-medium text-white">{user.name}</span>
-              <span className="block truncate text-xs text-sidebar-label">{organization.role_label}</span>
+              <span className="block truncate text-xs text-sidebar-label">{roleLabel}</span>
             </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">

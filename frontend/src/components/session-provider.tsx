@@ -29,7 +29,8 @@ export function SessionProvider({
       .then((me) => {
         if (cancelled) return
         if (requireOrganization && !me.organization) {
-          router.replace("/organizations/new")
+          // A Platform Administrator without an organization works on the platform pages.
+          router.replace(me.platform_admin ? "/platform/accounts" : "/organizations/new")
           return
         }
         setUser(me)

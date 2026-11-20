@@ -40,6 +40,43 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return body as T
 }
 
+/**
+ * Calls an API endpoint that answers with a file (an export) and saves it in the browser under
+ * the name the server gives, or `fallbackName`. Throws an ApiError like apiFetch.
+ */
+export async function apiDownload(path: string, init: RequestInit, fallbackName: string): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...init.headers },
+    })
+  } catch {
+    throw new ApiError(0, "network_error", "Sentra could not reach the server. Try again.")
+  }
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null))?.error
+    throw new ApiError(
+      response.status,
+      error?.code ?? `http_${response.status}`,
+      error?.message ?? "Something went wrong. Try again.",
+      error?.details,
+    )
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? ""
+  const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement("a")
+  link.href = url
+  link.download = name
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return name
+}
+
 /** Field errors of a validation error, keyed by field name ("email", "password", …). */
 export function fieldErrors(error: unknown): Record<string, string> {
   if (!(error instanceof ApiError) || !error.details) return {}
