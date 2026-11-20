@@ -127,12 +127,15 @@ function FindingPanel({ code, onClose }: { code: string | null; onClose: () => v
 export function FindingsList() {
   const organization = useSession().organization
   const query = useSearchParams()
-  const [view, setView] = useState<FindingView>("open")
+  // The risk dashboard (Screen 42) links here with the filter behind every number it shows, so
+  // the list starts with the view and the filters of that link (UC-7.3 step 6).
+  const asked = query.get("view") as FindingView | null
+  const [view, setView] = useState<FindingView>(asked && VIEWS.includes(asked) ? asked : "open")
   const [search, setSearch] = useState("")
   const [target, setTarget] = useState(query.get("target_id") ?? "")
-  const [severity, setSeverity] = useState("")
-  const [category, setCategory] = useState("")
-  const [status, setStatus] = useState("")
+  const [severity, setSeverity] = useState(query.get("severity") ?? "")
+  const [category, setCategory] = useState(query.get("category") ?? "")
+  const [status, setStatus] = useState(query.get("status") ?? "")
   const [runId, setRunId] = useState(query.get("run_id") ?? "")
   const [page, setPage] = useState(1)
   const [data, setData] = useState<FindingPage | null>(null)
