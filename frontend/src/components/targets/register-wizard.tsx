@@ -10,8 +10,10 @@ import { FormField } from "@/components/auth/form-field"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { SegmentedControl } from "@/components/sentra/segmented-control"
+import { ConnectionTestCard } from "@/components/targets/connection-test"
 import { CredentialFields, emptyRows } from "@/components/targets/credential-fields"
 import { FormatFields, type FormatValue } from "@/components/targets/format-fields"
+import { VerifyOwnership } from "@/components/targets/verify-ownership"
 import { TypeCards } from "@/components/targets/type-cards"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -33,8 +35,10 @@ import {
   type Environment,
   EXAMPLE_TEMPLATE,
   MAX_RATE,
+  type Target,
   type TargetType,
   checkEndpoint,
+  getTarget,
   credentialProblems,
   credentialsPayload,
   nameProblem,
@@ -46,7 +50,7 @@ import {
 } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
-const STEPS = ["Target details", "Connection format", "Credentials"] as const
+const STEPS = ["Target details", "Connection format", "Credentials", "Test and verify"] as const
 const STEP_OF_FIELD: Record<string, number> = {
   type: 1,
   name: 1,
@@ -116,6 +120,7 @@ export function RegisterWizard() {
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [registered, setRegistered] = useState<Target | null>(null)
 
   const dirty = !saved && Boolean(type || name || endpoint || rows.some((r) => r.value))
 
@@ -214,10 +219,12 @@ export function RegisterWizard() {
         credentials: credentialsPayload(mode, rows),
       })
       setSaved(true)
+      setRegistered(target)
+      setFinished([1, 2, 3])
+      setStep(4)
       toast.success(`${target.name} is registered`, {
-        description: "It stays unverified until you prove ownership, so no test can run yet.",
+        description: "Sentra is testing the connection. Prove ownership to let campaigns run.",
       })
-      router.push("/targets")
     } catch (error) {
       const fields = fieldErrors(error)
       if (Object.keys(fields).length) {
@@ -241,6 +248,7 @@ export function RegisterWizard() {
     else void save()
   }
 
+  const verifying = step === 4 && registered !== null
   const primary =
     step === 1
       ? busy === "checking"
@@ -262,9 +270,15 @@ export function RegisterWizard() {
             {step > 1 && name.trim() ? ` · ${name.trim()}` : ""}
           </p>
         </div>
-        <Button variant="outline" className="h-9" onClick={() => (dirty ? setConfirmCancel(true) : router.push("/targets"))}>
-          Cancel
-        </Button>
+        {!verifying && (
+          <Button
+            variant="outline"
+            className="h-9"
+            onClick={() => (dirty ? setConfirmCancel(true) : router.push("/targets"))}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,720px)]">
@@ -274,6 +288,7 @@ export function RegisterWizard() {
               {STEPS.map((label, i) => {
                 const number = i + 1
                 const current = number === step
+                // Once the target is registered its details are changed on its own page, not here.
                 const done = finished.includes(number) && !current
                 const content = (
                   <>
@@ -293,7 +308,7 @@ export function RegisterWizard() {
                 )
                 return (
                   <li key={label}>
-                    {done ? (
+                    {done && !registered ? (
                       <button
                         type="button"
                         onClick={() => setStep(number)}
@@ -319,6 +334,27 @@ export function RegisterWizard() {
           )}
         </div>
 
+        {verifying ? (
+          <div className="min-w-0 space-y-5">
+            <h2 id="step-heading" ref={heading} tabIndex={-1} className="text-[15px] font-semibold outline-none">
+              {STEPS[3]}
+            </h2>
+            <ConnectionTestCard target={registered} />
+            <VerifyOwnership
+              target={registered}
+              onVerified={() => void getTarget(registered.id).then(setRegistered).catch(() => undefined)}
+              footer={
+                <Button variant="outline" className="h-9" onClick={() => router.push(`/targets/${registered.id}`)}>
+                  Finish later
+                </Button>
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              The target is saved as Unverified until the check succeeds. You can come back to it from its page at any
+              time.
+            </p>
+          </div>
+        ) : (
         <form onSubmit={onSubmit} noValidate aria-labelledby="step-heading" className="min-w-0 rounded-[10px] border bg-card p-6">
           <h2 id="step-heading" ref={heading} tabIndex={-1} className="mb-5 text-[15px] font-semibold outline-none">
             {STEPS[step - 1]}
@@ -422,6 +458,7 @@ export function RegisterWizard() {
             </Button>
           </div>
         </form>
+        )}
 
         {step === 1 && (
           <aside aria-labelledby="next-heading" className="rounded-[10px] border bg-card p-5 lg:hidden">
