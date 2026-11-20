@@ -17,6 +17,8 @@ export type SessionUser = {
   email: string
   status: string
   organization: CurrentOrganization | null
+  /** Operates Sentra itself and has the platform pages (report 2.4); not an organization role. */
+  platform_admin: boolean
 }
 
 export function initials(name: string): string {

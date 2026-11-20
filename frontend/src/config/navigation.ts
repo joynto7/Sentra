@@ -1,5 +1,8 @@
 import type { LucideIcon } from "lucide-react"
 import {
+  Activity,
+  Bot,
+  Building2,
   Bug,
   ClipboardList,
   FileText,
@@ -13,6 +16,7 @@ import {
   Shield,
   ShieldCheck,
   Target,
+  UsersRound,
   Waypoints,
   Wrench,
 } from "lucide-react"
@@ -78,6 +82,24 @@ export const navigation: NavGroup[] = [
   },
 ]
 
+/**
+ * The Platform Administrator's shell (UI plan, Screens 61-64): the same layout with one PLATFORM
+ * group, for operating Sentra itself. It is not an organization role (report 2.4), so these pages
+ * live under /platform and never show an organization's content.
+ */
+export const platformNavigation: NavGroup[] = [
+  {
+    label: "Platform",
+    items: [
+      { title: "Organizations", href: "/platform/organizations", icon: Building2, module: "M10" },
+      { title: "Accounts", href: "/platform/accounts", icon: UsersRound, module: "M10" },
+      { title: "LLM Providers", href: "/platform/llm-providers", icon: Bot, module: "M10" },
+      { title: "System Health", href: "/platform/health", icon: Activity, module: "M10" },
+      { title: "Platform Audit Log", href: "/platform/audit-log", icon: ScrollText, module: "M10" },
+    ],
+  },
+]
+
 export function visibleNavigation(role: Role): NavGroup[] {
   return navigation
     .map((group) => ({
@@ -88,7 +110,7 @@ export function visibleNavigation(role: Role): NavGroup[] {
 }
 
 export function findNavItem(pathname: string): { group: NavGroup; item: NavItem } | undefined {
-  for (const group of navigation) {
+  for (const group of [...navigation, ...platformNavigation]) {
     const item = group.items.find(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
     )
