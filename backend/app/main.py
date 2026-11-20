@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.core import health
+from app.core.audit import SourceAddressMiddleware
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.modules import load_models, routers, startup_hooks
@@ -35,6 +36,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Where each request came from, for the audit log (FR-10.2).
+    app.add_middleware(SourceAddressMiddleware)
     register_error_handlers(app)
 
     load_models()
