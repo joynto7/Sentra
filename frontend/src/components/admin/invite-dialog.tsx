@@ -26,14 +26,17 @@ export function InviteDialog({
   open,
   onOpenChange,
   onInvited,
+  initialRole = "",
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onInvited: (invitation: Invitation) => void
+  /** A role chosen in advance, e.g. "Invite a developer" on Getting started (Screen 07) */
+  initialRole?: string
 }) {
   const [roles, setRoles] = useState<RoleInfo[]>([])
   const [email, setEmail] = useState("")
-  const [role, setRole] = useState("")
+  const [role, setRole] = useState(initialRole)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [pending, setPending] = useState(false)
 
@@ -44,7 +47,7 @@ export function InviteDialog({
   function reset(next: boolean) {
     if (!next) {
       setEmail("")
-      setRole("")
+      setRole(initialRole)
       setErrors({})
     }
     onOpenChange(next)
