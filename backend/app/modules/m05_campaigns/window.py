@@ -2,9 +2,22 @@
 time zone, such as 02:00-05:00, or 22:00-02:00 across midnight. A run sends attempts only inside
 the window and ends when the window it runs in closes."""
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+
+
+def clock_time(value: str | None) -> time | None:
+    """A clock time as a person writes it, such as "02:00". None when nothing was entered, and
+    ValueError when it is not a time; the window of a campaign (FR-5.1) and the time of a
+    schedule (FR-5.3) both read their times with it."""
+    if not value:
+        return None
+    match = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", value.strip())
+    if not match:
+        raise ValueError(value)
+    return time(int(match.group(1)), int(match.group(2)))
 
 
 @dataclass(frozen=True)
