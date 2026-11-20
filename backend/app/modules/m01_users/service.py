@@ -28,6 +28,7 @@ from app.modules.m01_users.security import (
     new_token,
     verify_password,
 )
+from app.modules.m09_reporting.notifications import notify
 
 VERIFY_EMAIL_VALID_FOR = timedelta(hours=24)
 RESET_PASSWORD_VALID_FOR = timedelta(minutes=30)
@@ -290,3 +291,13 @@ def reset_password(db: Session, raw: str, new_password: str, background: Backgro
     record(db, user, AccountEventKind.PASSWORD_RESET)
     db.commit()
     _send(background, user.email, emails.password_changed(user.name))
+    notify(
+        db,
+        event="account_security",
+        user_ids=[user.id],
+        organization_id=None,
+        text="Your password was reset with an e-mail link, and every session was logged out",
+        subject="password",
+        link="/account/security",
+        email=False,
+    )
