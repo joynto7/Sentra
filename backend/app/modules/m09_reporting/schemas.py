@@ -105,3 +105,82 @@ class ApiKeyMe(BaseModel):
     targets: list[TargetRef]
     expires_at: datetime
     expires_soon: bool
+
+
+class ReportOut(BaseModel):
+    """One report (FR-9.1) as Screen 52 lists it. The file itself is downloaded separately."""
+
+    id: uuid.UUID
+    code: str  # RP-001
+    title: str
+    type: str
+    scope: str
+    target: str | None
+    campaign_run: str | None
+    category: str | None
+    period_from: datetime | None
+    period_to: datetime | None
+    format: str
+    status: str  # generating, ready, empty (5a1) or failed
+    message: str | None
+    summary: dict  # how many findings it counts, and how many await confirmation (2a1)
+    checksum: str | None  # SHA-256 of the file, shown beside the download
+    size_bytes: int | None
+    requested_by: str | None
+    schedule: str | None  # the schedule that produced it (FR-9.2)
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class RecipientRef(BaseModel):
+    id: str
+    name: str
+
+
+class ScheduleOut(BaseModel):
+    """A standing order for reports (FR-9.2, UC-9.2)."""
+
+    id: uuid.UUID
+    name: str
+    type: str
+    scope: str
+    target: str | None
+    category: str | None
+    period_days: int | None
+    format: str
+    frequency: str  # after_each_run, weekly or monthly
+    status: str  # active or paused (4a)
+    recipients: list[RecipientRef]
+    created_by: str | None
+    created_at: datetime
+    next_run_at: datetime | None
+    last_run_at: datetime | None
+
+
+class ReportList(BaseModel):
+    rows: list[ReportOut]
+    schedules: list[ScheduleOut]
+    members: list[RecipientRef]  # who may be a recipient (UC-9.2 step 3)
+
+
+class ReportRequestIn(BaseModel):
+    type: str
+    scope: str
+    format: str
+    target_id: uuid.UUID | None = None
+    campaign_run_id: uuid.UUID | None = None
+    period_days: int | None = Field(default=None, ge=1, le=3650)
+    category: str | None = None
+
+
+class ScheduleIn(ReportRequestIn):
+    name: str = Field(min_length=1, max_length=120)
+    frequency: str
+    recipient_ids: list[uuid.UUID]
+
+
+class ScheduleUpdateIn(BaseModel):
+    name: str | None = None
+    recipient_ids: list[uuid.UUID] | None = None
+    frequency: str | None = None
+    status: str | None = None
