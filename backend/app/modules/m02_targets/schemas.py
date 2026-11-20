@@ -232,3 +232,84 @@ class ProfileOut(BaseModel):
 class CanaryIn(BaseModel):
     planted: bool
     topic: str | None = Field(default=None, max_length=300)
+
+
+# ---------------------------------------------------------------- lifecycle (FR-2.6)
+
+
+class ArchiveIn(BaseModel):
+    """UC-2.6 step 3: archiving is confirmed with the user's password (NFR-3.5)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=1, max_length=200)
+
+
+class ScheduleToCancel(BaseModel):
+    """A campaign that runs by itself against the target and would stop doing so (FR-5.3)."""
+
+    id: uuid.UUID
+    campaign: str  # C-001
+    name: str
+    schedule: str  # in words, e.g. "Every Monday at 02:00 (Asia/Dhaka)"
+    next_run_at: datetime | None
+    created_by: str | None
+
+
+class ArchiveConsequencesOut(BaseModel):
+    """UC-2.6 step 2 (Screen 24): what archiving would do, before it is confirmed."""
+
+    target: "TargetRef"
+    running: str  # 2a1: why it can't be archived now; empty when nothing runs
+    schedules: list[ScheduleToCancel]
+    credentials: list[str]  # the header names whose secrets would be deleted (NFR-3.1)
+    runs_kept: int
+    findings_kept: int
+
+
+class TargetRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    status: str
+
+
+class HistoryRunRef(BaseModel):
+    id: uuid.UUID
+    code: str  # R-001-2
+    number: int
+
+
+class HistoryEvent(BaseModel):
+    """One entry of a target's history (UC-2.7 step 2). The kinds are registration,
+    verification, configuration, profile and campaign_run; retests and Shield Policies join them
+    with FR-8.4 and FR-8.3."""
+
+    at: datetime
+    kind: str
+    action: str
+    summary: str
+    actor: str
+    by_sentra: bool
+    details: dict
+    run: HistoryRunRef | None  # the campaign run this entry is about (step 5)
+    details_deleted: bool  # 5a1: its details were deleted at the end of their retention period
+
+
+class HistoryScore(BaseModel):
+    """The risk score of the target at one moment, with the open findings it counted (step 3)."""
+
+    at: datetime
+    score: int
+    band: str
+    trigger: str
+    open_by_severity: dict[str, int]
+    open_total: int
+
+
+class TargetHistoryOut(BaseModel):
+    target: TargetRef
+    period_days: int
+    kinds: list[str]
+    has_runs: bool  # 2a1: without a campaign run the page suggests creating one
+    events: list[HistoryEvent]
+    scores: list[HistoryScore]
