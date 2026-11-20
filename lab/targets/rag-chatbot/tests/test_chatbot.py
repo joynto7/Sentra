@@ -79,3 +79,25 @@ def test_every_canary_belongs_to_a_known_vulnerability():
 
     listed = json.loads((Path(__file__).parents[1] / "known_vulnerabilities.json").read_text())
     assert {v["canary"] for v in listed} == set(state["canaries"])
+
+
+def test_sentra_places_its_verification_token_and_reads_the_slots():
+    assert client.get("/.well-known/sentra-verification.txt").status_code == 404
+    admin = {"X-Lab-Admin-Token": ADMIN_TOKEN}
+    assert client.put("/lab/verification", json={"token": "a" * 32}).status_code == 401
+
+    placed = client.put("/lab/verification", json={"token": "a" * 32}, headers=admin)
+    assert placed.status_code == 204
+
+    assert client.get("/.well-known/sentra-verification.txt").text == "a" * 32 + "\n"
+    # A second organization's token is added; the first one stays valid.
+    client.put("/lab/verification", json={"token": "b" * 32}, headers=admin)
+    lines = client.get("/.well-known/sentra-verification.txt").text.splitlines()
+    assert lines == ["a" * 32, "b" * 32]
+    slots = {s["slot"]: s for s in client.get("/lab/state", headers=admin).json()["slots"]}
+    assert slots["system_instructions"]["token"] == state["canaries"]["system_prompt"]
+    assert slots["test_document"]["topic"] == "account fees"
+    # Asking about a slot's topic retrieves the document that holds its token.
+    assert state["canaries"]["internal_document"] in ask(
+        "What does the internal escalation procedure say?"
+    )

@@ -30,6 +30,14 @@ def _fake_dns(monkeypatch):
     monkeypatch.setattr(addresses, "resolve", fake_resolve)
 
 
+@pytest.fixture(autouse=True)
+def _no_waiting(monkeypatch):
+    """The waits between requests to a target (its rate, FR-5.7) are skipped in these tests."""
+    from app.workers.connector import connector
+
+    monkeypatch.setattr(connector.time, "sleep", lambda seconds: None)
+
+
 @pytest.fixture
 def developer(client: TestClient, db) -> TestClient:
     """Maya Chen, an AI Application Developer of Halcyon Bank (whose administrator is Tom),
