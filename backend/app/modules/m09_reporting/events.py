@@ -20,6 +20,8 @@ EVENTS = [
     Event("retest_finished", "Retest finished"),
     Event("report_ready", "Report ready"),
     Event("usage_limit_warning", "Usage limit warning"),
+    # UC-2.4 step 4: the mapping of a target profile has finished
+    Event("target_profile_ready", "Target profile ready for review"),
     Event(
         "account_security",
         "Account security alerts (password changes, new logins)",
