@@ -80,11 +80,13 @@ class Settings(BaseSettings):
     run_retry_delays: list[int] = [15, 30, 60, 120, 240]
     # Sentra's own code failing this many times in a row on one run stops the run (NFR-2.3).
     run_max_worker_errors: int = 3
-    # The platform's default monthly limits of an organization (UC-10.6, 1a), until FR-10.4 lets
-    # Platform Administrators set them for each organization.
+    # The platform's default monthly limits of an organization (UC-10.6, 1a1), in force until a
+    # Platform Administrator sets limits for that organization on Screen 61 (FR-10.4).
     default_monthly_campaign_runs: int = 100
     default_monthly_attempts: int = 50_000
     default_monthly_llm_cost_usd: float = 100.0
+    # The share of a limit at which an organization is warned (FR-10.4, UC-10.6 step 3).
+    default_usage_warn_percent: int = 80
     # The LLM judge (FR-6.1; UC-6.1, 3a): a judge that can't answer (the provider fails, or the
     # monthly LLM cost limit is reached) tries again after these delays in seconds; after the last
     # one the attempt is marked as not evaluated by the judge.
