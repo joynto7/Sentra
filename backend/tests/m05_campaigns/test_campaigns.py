@@ -1,10 +1,12 @@
 """Tests for FR-5.1 (M5) Campaign Creation: UC-5.1 Create Campaign."""
 
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
+from app.llm.models import LLMUsage
 from app.modules.m01_users.models import Role
 from app.modules.m02_targets.models import Target
 from app.modules.m04_tests.library import sync_built_in_library
@@ -162,6 +164,43 @@ def test_an_unknown_time_zone_is_refused(halcyon):
     response = halcyon.client.post(URL, json=campaign(halcyon.agent.id, time_zone="Mars/Olympus"))
 
     assert details(response) == {"time_zone": "Unknown time zone."}
+
+
+def test_the_estimate_prices_the_judged_attempts_from_what_they_have_cost(halcyon):
+    """FR-10.4 on Screen 34: the LLM cost of a run is measured from the organization's own judged
+    attempts, so the number stays true when a Platform Administrator switches provider."""
+    body = halcyon.client.post(
+        f"{URL}/estimate", json={"target_id": str(halcyon.agent.id), "suites": ["QUICK-REGRESSION"]}
+    ).json()
+
+    judged = body["llm_cost"]["judged_attempts"]
+    assert judged > 0  # the built-in tests use the LLM judge
+    assert body["llm_cost"]["low_usd"] is None  # nothing has been judged yet, so no price
+
+    for _ in range(4):
+        halcyon.db.add(
+            LLMUsage(
+                organization_id=halcyon.org,
+                task="llm_judge",
+                model="anthropic/claude-sonnet-5-5",
+                provider="anthropic",
+                deployment="external",
+                cost_usd=Decimal("0.010"),
+                succeeded=True,
+            )
+        )
+    halcyon.db.flush()
+
+    cost = halcyon.client.post(
+        f"{URL}/estimate", json={"target_id": str(halcyon.agent.id), "suites": ["QUICK-REGRESSION"]}
+    ).json()["llm_cost"]
+
+    assert cost["judged_attempts"] == judged
+    # 0.01 per judged attempt, as a range of plus or minus a fifth
+    assert Decimal(cost["low_usd"]) == (Decimal("0.01") * judged * Decimal("0.8")).quantize(
+        Decimal("0.01")
+    )
+    assert Decimal(cost["high_usd"]) > Decimal(cost["low_usd"])
 
 
 def test_the_estimate_counts_the_tests_for_this_target(halcyon):
