@@ -139,3 +139,51 @@ class InvitationDetailsOut(BaseModel):
 
 class PasswordIn(BaseModel):
     password: str = Field(min_length=1, max_length=256)
+
+
+# ---------------------------------------------------------------- profile (FR-1.7)
+
+
+class ProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: str
+    pending_email: str | None  # a new address waiting for its confirmation link (UC-1.11, 2a)
+    phone: str | None
+    password_changed_at: datetime | None
+    created_at: datetime
+
+
+class ProfileIn(BaseModel):
+    name: str = Field(default="", max_length=400)
+    phone: str | None = Field(default=None, max_length=64)
+
+
+class EmailChangeIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    user_agent: str | None
+    ip_address: str | None
+    created_at: datetime
+    last_seen_at: datetime
+    current: bool  # the session of this browser ("This device")
+
+
+class ActivityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    ip_address: str | None
+    user_agent: str | None
+    created_at: datetime
