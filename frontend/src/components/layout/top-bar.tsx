@@ -60,6 +60,22 @@ export function TopBar() {
               ))}
             </>
           )}
+          {/* Pages outside the sidebar, such as Account / Profile, show only their own steps. */}
+          {!match &&
+            crumbs.map((crumb, i) => (
+              <Fragment key={`${i}-${crumb.label}`}>
+                {i > 0 && <BreadcrumbSeparator />}
+                <BreadcrumbItem>
+                  {i < crumbs.length - 1 && crumb.href ? (
+                    <BreadcrumbLink asChild>
+                      <Link href={crumb.href}>{crumb.label}</Link>
+                    </BreadcrumbLink>
+                  ) : (
+                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                  )}
+                </BreadcrumbItem>
+              </Fragment>
+            ))}
         </BreadcrumbList>
       </Breadcrumb>
 
