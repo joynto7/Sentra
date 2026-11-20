@@ -20,6 +20,8 @@ EVENTS = [
     Event("retest_finished", "Retest finished"),
     Event("report_ready", "Report ready"),
     Event("usage_limit_warning", "Usage limit warning"),
+    # UC-11.4 step 7: every repetition of a benchmark run has ended (FR-11.3)
+    Event("benchmark_run_finished", "Benchmark run finished"),
     # UC-5.3, 3a1 and 4a1: a scheduled run didn't start (FR-5.3), or the schedule was cancelled
     # because its target was archived (FR-2.6; UC-2.6 step 5)
     Event("campaign_schedule_problem", "Scheduled campaign that can't run"),
