@@ -1,5 +1,6 @@
 import type { Severity } from "@/components/sentra/severity-badge"
 import { apiFetch } from "@/lib/api"
+import type { FindingStatus } from "@/lib/findings"
 
 /** The band of a risk score: the highest severity among the findings it counts (FR-7.2). */
 export type RiskBand = "critical" | "high" | "medium" | "low" | "none"
@@ -52,6 +53,18 @@ export type TargetRisk = {
   history: ScoreHistoryItem[]
 }
 
+/** One row of "Critical and high findings" (Screen 42), the most serious open finding first. */
+export type TopFinding = {
+  code: string
+  title: string
+  severity: Severity
+  status: FindingStatus
+  target: { id: string; name: string }
+  reproducibility: string | null // None until FR-7.1 has rated the finding
+  provisional: boolean
+  last_seen_at: string
+}
+
 export type RiskDashboard = {
   period_days: number
   last_run_at: string | null
@@ -62,6 +75,7 @@ export type RiskDashboard = {
   fixed_and_verified: number
   by_status: Record<string, number>
   targets: TargetRiskRow[]
+  top_findings: { total: number; items: TopFinding[] }
 }
 
 export const BAND_LABEL: Record<RiskBand, string> = {
@@ -104,6 +118,7 @@ export type FindingSeverity = {
 export const getFindingSeverity = (code: string, signal?: AbortSignal) =>
   apiFetch<FindingSeverity>(`/v1/findings/${encodeURIComponent(code)}/severity`, { signal })
 
+/** UC-7.3: the dashboard for the chosen target and period (Screen 42). */
 export function getRiskDashboard(params?: URLSearchParams, signal?: AbortSignal) {
   const query = params?.toString()
   return apiFetch<RiskDashboard>(`/v1/risk/dashboard${query ? `?${query}` : ""}`, { signal })
@@ -112,3 +127,31 @@ export function getRiskDashboard(params?: URLSearchParams, signal?: AbortSignal)
 export function getTargetRisk(targetId: string, signal?: AbortSignal) {
   return apiFetch<TargetRisk>(`/v1/targets/${targetId}/risk`, { signal })
 }
+
+/** The period filter of the risk dashboard (UC-7.3 step 4). */
+export const PERIODS = [
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "180", label: "Last 180 days" },
+  { value: "365", label: "Last 12 months" },
+]
+
+/** The statuses of the finding lifecycle, as "Findings by status" groups them (Screen 42). */
+export const OPEN_STATUSES = ["new", "requires_confirmation", "confirmed", "reopened"] as const
+export const CLOSED_STATUSES = ["fixed_and_verified", "false_positive", "merged"] as const
+
+/**
+ * The rules behind a severity and a score, from the code itself: the dialog "How is the risk score
+ * calculated?" shows them, so no page repeats them (FR-7.1, FR-7.2; NFR-4.2).
+ */
+export type RiskMethod = {
+  severity: {
+    impact: { level: number; label: string; consequence: string; sentence: string }[]
+    exploitability: { level: number; sentence: string }[]
+    reproducibility: { from: string; changes: number }[]
+    matrix: { impact: number; likelihood: Severity[] }[]
+  }
+  bands: { band: RiskBand; severity: Severity; from: number; to: number }[]
+}
+
+export const getRiskMethod = (signal?: AbortSignal) => apiFetch<RiskMethod>("/v1/risk/method", { signal })
