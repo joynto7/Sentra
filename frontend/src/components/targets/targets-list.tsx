@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Rocket, Search } from "lucide-react"
+import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Rocket, RotateCcw, Search } from "lucide-react"
+import { toast } from "sonner"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
@@ -26,7 +27,15 @@ import { useSession } from "@/components/session-provider"
 import { useCan } from "@/lib/permissions"
 import { type TargetRiskRow, getRiskDashboard, notScoredText } from "@/lib/risk"
 import { initials } from "@/lib/session"
-import { ENVIRONMENT_LABEL, TYPE_LABEL, type TargetList, formatDate, listTargets } from "@/lib/targets"
+import {
+  ENVIRONMENT_LABEL,
+  TYPE_LABEL,
+  type Target,
+  type TargetList,
+  formatDate,
+  listTargets,
+  restoreTarget,
+} from "@/lib/targets"
 
 const PAGE_SIZE = 20
 type Tab = "active" | "archived"
@@ -38,7 +47,7 @@ export function TargetsList() {
   const canCampaign = useCan("manage_campaigns") // "Create campaign" on a target (UC-5.1 trigger)
   const canVerify = useCan("verify_targets") // the inline "Verify ownership" of an unverified target
   const [tab, setTab] = useState<Tab>("active")
-  const hasActions = (canManage || canCampaign) && tab === "active"
+  const hasActions = (canManage || canCampaign) && (tab === "active" || canManage === true)
   const [search, setSearch] = useState("")
   const [type, setType] = useState("")
   const [environment, setEnvironment] = useState("")
@@ -79,6 +88,17 @@ export function TargetsList() {
       controller.abort()
     }
   }, [tab, search, type, environment, ownership, page, attempt])
+
+  /** UC-2.6, 1a1: the target comes back unverified, so the list reloads with its new status. */
+  const restore = useCallback(async (target: Target) => {
+    try {
+      await restoreTarget(target.id)
+      toast.success(`${target.name} is restored. Add credentials and verify its ownership again.`)
+      setAttempt((count) => count + 1)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
 
   const filtered = Boolean(search.trim() || type || environment || ownership)
   const clearFilters = useCallback(() => {
@@ -313,6 +333,17 @@ export function TargetsList() {
                                   <Rocket aria-hidden="true" />
                                   Create campaign
                                 </Link>
+                              </DropdownMenuItem>
+                            )}
+                            {canManage && target.status === "archived" && (
+                              <DropdownMenuItem
+                                onSelect={(event) => {
+                                  event.preventDefault()
+                                  void restore(target)
+                                }}
+                              >
+                                <RotateCcw aria-hidden="true" />
+                                Restore target
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
