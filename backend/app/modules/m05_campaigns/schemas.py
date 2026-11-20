@@ -229,6 +229,7 @@ class AttemptOut(BaseModel):
     variant: int
     status: str
     retry_of_id: uuid.UUID | None
+    repeat_of_id: uuid.UUID | None  # FR-6.4: the attempt this one repeats
     input: str
     sent_at: datetime | None
     finished_at: datetime | None
