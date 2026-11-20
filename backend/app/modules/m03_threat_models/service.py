@@ -39,6 +39,8 @@ from app.modules.m03_threat_models.schemas import (
     VersionOut,
     VersionSummary,
 )
+from app.modules.m05_campaigns import lifecycle
+from app.modules.m05_campaigns.models import Campaign, CampaignRun
 
 
 def _names(db: Session, ids) -> dict[uuid.UUID, str]:
@@ -71,10 +73,32 @@ def _counts(db: Session, model_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
 
 
 def runs_based_on(db: Session, model_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[RunRef]]:
-    """UC-3.4 step 2: the campaign runs that were based on each version. Campaign runs come with
-    FR-5.4 (Sprint 2, task 4), which records the version each run uses; until this code is moved
-    onto that task there are none."""
-    return {}
+    """UC-3.4 step 2: the campaign runs that were based on each version, the newest first. A run
+    takes the version from its campaign when it is launched (FR-3.3, FR-5.4), so a version that
+    nothing has run yet simply has no runs."""
+    if not model_ids:
+        return {}
+    rows = db.execute(
+        select(CampaignRun, Campaign)
+        # A run of a retest or a benchmark belongs to no campaign (FR-8.4, FR-11.3), so the join
+        # has to be an outer one; `lifecycle.code` names such a run after the run itself.
+        .outerjoin(Campaign, Campaign.id == CampaignRun.campaign_id)
+        .where(CampaignRun.threat_model_id.in_(model_ids))
+        .order_by(CampaignRun.created_at.desc())
+    ).all()
+    found: dict[uuid.UUID, list[RunRef]] = {}
+    for run, campaign in rows:
+        assert run.threat_model_id is not None
+        found.setdefault(run.threat_model_id, []).append(
+            RunRef(
+                id=run.id,
+                code=lifecycle.code(run, campaign),
+                campaign=campaign.code if campaign else None,
+                number=run.number,
+                started_at=run.started_at,
+            )
+        )
+    return found
 
 
 def summary(model: ThreatModel, names: dict, count: int, runs: int = 0) -> VersionSummary:
