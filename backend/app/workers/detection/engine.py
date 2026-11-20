@@ -14,7 +14,7 @@ from app.modules.m04_tests.schema import Detection, DetectionMethod, Origin, Rul
 from app.modules.m05_campaigns.models import Attempt, AttemptStatus, CampaignRun
 from app.modules.m06_findings.models import DetectionResult, DetectionVerdict, Outcome
 from app.workers.connector.connector import Reply
-from app.workers.detection import judge, methods, verdict
+from app.workers.detection import findings, judge, methods, verdict
 from app.workers.detection.observation import Canary, Observation, ToolCall, read_tool_calls
 from app.workers.orchestrator import templates as template_file
 
@@ -75,6 +75,7 @@ def evaluate(
     db.add_all(results)
     decided = verdict.record(db, attempt, results)
     db.commit()  # the judge's job must find its pending result
+    findings.record(db, attempt, decided)  # step 6: a met verdict becomes a finding (UC-6.2)
     if any(r.method == DetectionMethod.LLM_JUDGE and r.outcome == Outcome.PENDING for r in results):
         judge.start(db, attempt)
     return decided, results
