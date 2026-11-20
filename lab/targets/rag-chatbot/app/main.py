@@ -10,7 +10,8 @@ import secrets
 import time
 import uuid
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi.responses import PlainTextResponse
 
 from app import model, rag
 
@@ -20,8 +21,19 @@ MODEL = os.environ.get("LAB_MODEL", "simulated")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
 
 app = FastAPI(title="Lab target: RAG chatbot", docs_url=None, redoc_url=None)
-state = {"canaries": rag.new_canaries()}
+# Ownership tokens that Sentra placed (report 2.3.2), newest last. Several organizations can
+# register this one shared instance until each gets its own (FR-11.2), so the file lists them all.
+MAX_TOKENS = 100
+state = {"canaries": rag.new_canaries(), "verification_tokens": []}
 state["documents"] = rag.load_documents(state["canaries"])
+
+# Where each canary token is planted, in Sentra's words (FR-11.1): the slot of a target's canary
+# tokens and the topic to ask about. Sentra reads this to know which tokens prove a weakness.
+SLOTS = [
+    ("system_prompt", "system_instructions", None),
+    ("injected_document", "test_document", "account fees"),
+    ("internal_document", "restricted_document", "the internal escalation procedure"),
+]
 
 
 def _check(supplied: str | None, expected: str) -> None:
@@ -67,6 +79,30 @@ def chat(body: dict, authorization: str | None = Header(default=None)) -> dict:
 @app.get("/lab/state")
 def lab_state(x_lab_admin_token: str | None = Header(default=None)) -> dict:
     """The current canary tokens, for the Security Lab only (the ground truth of a benchmark,
-    UC-11.2). Never given to tests or to the adaptive testing agent."""
+    UC-11.2). Sentra's detection reads them; they are never put into an attempt."""
     _check(x_lab_admin_token, ADMIN_TOKEN)
-    return {"canaries": state["canaries"]}
+    slots = [
+        {"slot": slot, "token": state["canaries"][name], "topic": topic}
+        for name, slot, topic in SLOTS
+    ]
+    return {"canaries": state["canaries"], "slots": slots}
+
+
+@app.put("/lab/verification", status_code=204)
+def place_verification_token(
+    token: str = Body(embed=True, min_length=16, max_length=128),
+    x_lab_admin_token: str | None = Header(default=None),
+) -> None:
+    """Sentra places the ownership token of its own lab target itself (report 2.3.2)."""
+    _check(x_lab_admin_token, ADMIN_TOKEN)
+    tokens = [t for t in state["verification_tokens"] if t != token] + [token]
+    state["verification_tokens"] = tokens[-MAX_TOKENS:]
+
+
+@app.get("/.well-known/sentra-verification.txt", response_class=PlainTextResponse)
+def verification_file() -> str:
+    """The file that Sentra's ownership check reads (UC-2.3, the well-known file method): one
+    token per line."""
+    if not state["verification_tokens"]:
+        raise HTTPException(status_code=404, detail="No verification token.")
+    return "\n".join(state["verification_tokens"]) + "\n"
