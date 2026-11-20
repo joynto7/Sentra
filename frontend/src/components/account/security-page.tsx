@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { AccountNav } from "@/components/account/account-nav"
+import { TwoStepCard } from "@/components/account/two-step-card"
 import { FormField } from "@/components/auth/form-field"
 import { PasswordChecklist } from "@/components/auth/password-checklist"
 import { PasswordInput } from "@/components/auth/password-input"
@@ -29,6 +30,7 @@ import {
   recentActivity,
 } from "@/lib/account"
 import { ApiError } from "@/lib/api"
+import { type MfaStatus, mfaStatus } from "@/lib/mfa"
 import { formatDate } from "@/lib/test-library"
 
 function Card({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -42,12 +44,14 @@ function Card({ id, title, children }: { id: string; title: string; children: Re
   )
 }
 
-/** Screen 09: UC-1.11 steps 4-7 (alternatives 4a, 5a): password, active sessions, recent activity. */
+/** Screen 09: UC-1.11 steps 4-7 (alternatives 4a, 5a): password, two-step verification (the entry
+ * to UC-1.4), active sessions, recent activity. */
 export function SecurityPage() {
   const email = useSession().email
   const [profile, setProfile] = useState<Profile | null>(null)
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null)
   const [activity, setActivity] = useState<AccountEvent[] | null>(null)
+  const [mfa, setMfa] = useState<MfaStatus | null>(null)
   const [failed, setFailed] = useState(false)
   const [changing, setChanging] = useState(false)
   const [current, setCurrent] = useState("")
@@ -61,11 +65,12 @@ export function SecurityPage() {
   usePageCrumbs([{ label: "Account", href: "/account/profile" }, { label: "Security" }])
 
   const load = useCallback(() => {
-    Promise.all([getProfile(), listSessions(), recentActivity()])
-      .then(([loadedProfile, loadedSessions, loadedActivity]) => {
+    Promise.all([getProfile(), listSessions(), recentActivity(), mfaStatus()])
+      .then(([loadedProfile, loadedSessions, loadedActivity, loadedMfa]) => {
         setProfile(loadedProfile)
         setSessions(loadedSessions)
         setActivity(loadedActivity)
+        setMfa(loadedMfa)
       })
       .catch(() => setFailed(true))
   }, [])
@@ -147,10 +152,12 @@ export function SecurityPage() {
       <div className="min-w-0 flex-1 space-y-5">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Security</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Your password, where you are logged in, and what happened recently.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your password, two-step verification, where you are logged in, and what happened recently.
+          </p>
         </div>
 
-        {!profile || !sessions || !activity ? (
+        {!profile || !sessions || !activity || !mfa ? (
           <div className="space-y-3" role="status" aria-label="Loading your security settings">
             <Skeleton className="h-40 w-full" />
             <Skeleton className="h-56 w-full" />
@@ -200,6 +207,8 @@ export function SecurityPage() {
                 </Button>
               )}
             </Card>
+
+            <TwoStepCard status={mfa} email={profile.email} onChanged={load} />
 
             <section aria-labelledby="sessions-heading" className="@container space-y-4 rounded-[10px] border bg-card p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">

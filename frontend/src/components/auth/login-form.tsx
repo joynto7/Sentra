@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ApiError, apiFetch, safeNextPath } from "@/lib/api"
 import { type InvitationDetails, invitationDetails } from "@/lib/members"
+import { type LoginResult, secondStepPath } from "@/lib/mfa"
 
 export function LoginForm({ next, notice }: { next?: string; notice?: string }) {
   const router = useRouter()
@@ -40,11 +41,13 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
     setPending(true)
     setError(null)
     try {
-      await apiFetch("/v1/auth/login", {
+      const result = await apiFetch<LoginResult>("/v1/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       })
-      router.replace(safeNextPath(next))
+      // With two-step verification the code comes next (UC-1.2 steps 3-4), or its setup (3b).
+      if (result.step === "done") router.replace(safeNextPath(next))
+      else router.push(secondStepPath(result.step, next))
     } catch (err) {
       setError(err instanceof ApiError ? err : null)
       setPending(false)
