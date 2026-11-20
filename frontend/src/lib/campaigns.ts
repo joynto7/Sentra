@@ -24,12 +24,25 @@ export type CampaignItem = {
 }
 
 /** UC-5.1 step 6: the tests that will run against the target and the attempts they need. */
+/** UC-5.1 step 2: the target's approved threat model and the suites saved for it (FR-3.4). */
+export type ThreatModelBrief = {
+  version: number
+  approved_at: string | null
+  approved_by: string | null
+  /** The suites the campaign starts with */
+  default_suites: string[]
+  threats_total: number
+  /** Of the threats, how many the chosen suites cover */
+  threats_covered: number
+}
+
 export type Estimate = {
   tests: number
   skipped: number
   estimated_attempts: number
   target_safe_rate: number | null
-  threat_model: boolean
+  /** null: the target has no approved threat model yet (2a) */
+  threat_model: ThreatModelBrief | null
   warnings: string[]
 }
 

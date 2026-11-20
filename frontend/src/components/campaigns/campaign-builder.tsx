@@ -90,6 +90,8 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
   const [touched, setTouched] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const leaving = useRef(false)
+  // The target whose saved suites were already applied; a suite named in the address wins.
+  const defaultsFor = useRef<string | null>(suite ? (preselected ?? null) : null)
 
   usePageCrumbs([{ label: "New Campaign" }])
 
@@ -121,7 +123,17 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
     let active = true
     const timer = setTimeout(() => {
       estimateCampaign({ target_id: targetId || null, suites: chosen, attempt_budget: whole(budget) })
-        .then((result) => active && setEstimate(result))
+        .then((result) => {
+          if (!active) return
+          setEstimate(result)
+          // UC-5.1 step 2: the suites saved for the target's threat model (FR-3.4) start ticked.
+          // Once per target, so a choice of the analyst's is never overwritten.
+          const brief = result.threat_model
+          if (targetId && brief && defaultsFor.current !== targetId) {
+            defaultsFor.current = targetId
+            if (brief.default_suites.length > 0) setChosen(brief.default_suites)
+          }
+        })
         .catch(() => undefined)
     }, 250)
     return () => {
@@ -324,6 +336,22 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
                   suites yourself.
                 </AlertDescription>
               </Alert>
+            )}
+            {target && estimate?.threat_model && (
+              // UC-5.1 step 2: what the recommendation is based on, and what it leaves untested.
+              <p className="text-sm text-muted-foreground" role="status">
+                Based on threat model v{estimate.threat_model.version}
+                {estimate.threat_model.approved_at
+                  ? `, approved ${new Date(estimate.threat_model.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                  : ""}
+                {estimate.threat_model.approved_by ? ` by ${estimate.threat_model.approved_by}` : ""}.{" "}
+                <Link
+                  href={`/threat-models/${target.id}/recommendations`}
+                  className="font-medium text-link underline underline-offset-4"
+                >
+                  Threats covered: {estimate.threat_model.threats_covered} of {estimate.threat_model.threats_total}
+                </Link>
+              </p>
             )}
             <fieldset id="campaign-suites" aria-describedby={errors.suites ? "campaign-suites-error" : undefined} className="space-y-2">
               <legend className="mb-2 text-sm font-medium">Test suites</legend>
