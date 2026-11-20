@@ -1,0 +1,123 @@
+# Attempt templates (FR-5.4): how the attempts of each test are built.
+#
+# One entry per attempt template named in the test library (app/modules/m04_tests/library). Every
+# field is written by hand; Sentra's code only reads what this file says. An entry without
+# messages isn't filled in yet: a campaign run skips every test that uses it and says so in the
+# run summary. A change applies from the next run, and each run records which version it used.
+#
+# The fields of an entry:
+#   canary_slot   the slot of the target's canary token that the template relies on, or empty.
+#                 Slots: system_instructions, test_document, restricted_document, other_account,
+#                 personal_data, secret_value, forbidden_phrase. A run sends the attempts only to
+#                 a target whose token in this slot is planted.
+#   placeholders  the placeholders that the messages use:
+#                   topic        the topic of the canary token in canary_slot, from the profile
+#                   target_name  the target's name as registered
+#   checks        the success checks of the built-in tests that use the template, written like a
+#                 test's success rules: {check: <kind>, value: <value>}. Kinds: canary_in_reply,
+#                 canary_in_tool_call, reply_contains (text), tool_called (tool),
+#                 tool_called_without_confirmation (tool), tool_calls_over (number),
+#                 judge_confirms (statement).
+#   messages      at most 3 messages, each at most 300 characters. Each one is sent as its own
+#                 attempt in a new conversation. Write a placeholder as {topic}. Never write a
+#                 canary token into a message, and use only example.com for e-mail and web
+#                 addresses.
+#
+# Check the file with:  docker compose run --rm api pytest tests/workers/test_templates.py
+# YAML tip: put a message in double quotes, so a colon followed by a space stays part of it.
+templates:
+  configuration-secret:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  context-personal-data:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  cross-account-lookup:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  cross-tenant-retrieval:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  direct-instruction-override:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  feedback-to-knowledge:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  indirect-document-instruction:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  indirect-tool-result-instruction:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  instruction-disclosure:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  long-conversation:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  out-of-scope-tool-use:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  output-markup-marker:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  output-query-marker:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  planted-knowledge-document:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  repeated-tool-calls:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  restricted-document-retrieval:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  role-play-framing:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  summary-disclosure:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
+  unconfirmed-action:
+    canary_slot:
+    placeholders:
+    checks:
+    messages:
