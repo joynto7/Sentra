@@ -118,7 +118,11 @@ def me(
     if membership is not None:
         org = db.get_one(Organization, membership.organization_id)
         organization = organization_out(membership, org, org.id)
-    return MeOut(**UserOut.model_validate(user).model_dump(), organization=organization)
+    return MeOut(
+        **UserOut.model_validate(user).model_dump(),
+        organization=organization,
+        platform_admin=user.platform_admin,
+    )
 
 
 @auth_router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)

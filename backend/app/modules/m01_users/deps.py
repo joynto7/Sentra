@@ -45,6 +45,16 @@ def current_membership(
     return membership
 
 
+def platform_admin(user: User = Depends(current_user)) -> User:
+    """Only Platform Administrators get through (UC-10.2, 1a; UC-10.3, 1a). The role is
+    platform-wide and is not an organization role, so it is checked on the user itself."""
+    if not user.platform_admin:
+        raise PermissionDeniedError(
+            "Only Platform Administrators can open this page.", code="platform_admin_only"
+        )
+    return user
+
+
 def recent_password_confirmation(
     session: UserSession = Depends(current_session),
 ) -> UserSession:
