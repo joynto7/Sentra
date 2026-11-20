@@ -51,6 +51,16 @@ def test_the_list_counts_the_drafts_and_the_findings_without_a_proposal(team, co
     assert (after["drafts"], after["without_proposal"]) == (1, 0)
     row = after["rows"][0]
     assert (row["latest"]["version"], row["latest"]["fix_count"]) == (1, 4)
+    # Screen 45 names the kinds and where each one takes effect, without their content
+    kinds = row["latest"]["fixes_in_short"]
+    assert [fix["kind"] for fix in kinds] == [
+        "system_prompt",
+        "guardrail",
+        "tool_policy",
+        "retrieval_isolation",
+    ]
+    assert kinds[1]["kind_label"] == "Guardrail policy"
+    assert {fix["enforcement"] for fix in kinds} == {"application"}  # 6a: no gateway yet
     assert row["job"] is None  # the job is done, so the page follows nothing
 
 
