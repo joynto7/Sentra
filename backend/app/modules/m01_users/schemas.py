@@ -112,6 +112,8 @@ class MemberOut(BaseModel):
     suspended_at: datetime | None = None
     suspension_reason: str | None = None
     suspended_by: str | None = None
+    # UC-10.2, 1a: only a Platform Administrator can undo a suspension of the whole account
+    suspended_by_platform: bool = False
 
 
 class RoleChangeIn(BaseModel):
