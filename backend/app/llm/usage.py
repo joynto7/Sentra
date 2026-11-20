@@ -4,13 +4,15 @@ one campaign run."""
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.llm.models import LLMUsage
+
+LLM_JUDGE = "llm_judge"  # the task that runs once per attempt (FR-6.1)
 
 
 @dataclass
@@ -44,6 +46,28 @@ def this_month(db: Session, organization_id: uuid.UUID) -> list[ModelUsage]:
 
 def cost_this_month(db: Session, organization_id: uuid.UUID) -> Decimal:
     return sum((usage.cost_usd for usage in this_month(db, organization_id)), Decimal(0))
+
+
+def cost_per_judged_attempt(
+    db: Session, organization_id: uuid.UUID, days: int = 30
+) -> Decimal | None:
+    """What one judged attempt has cost this organization on average, measured over its own
+    requests of the last `days` (FR-10.4: the estimate on Screen 34). None while there is nothing
+    to measure — then the builder says so instead of inventing a price, which a price list per
+    model could not give once a provider is switched (FR-10.3).
+    """
+    since = datetime.now(UTC) - timedelta(days=days)
+    requests, cost = db.execute(
+        select(func.count(), func.coalesce(func.sum(LLMUsage.cost_usd), 0)).where(
+            LLMUsage.organization_id == organization_id,
+            LLMUsage.task == LLM_JUDGE,
+            LLMUsage.succeeded.is_(True),
+            LLMUsage.created_at >= since,
+        )
+    ).one()
+    if not requests:
+        return None
+    return (Decimal(cost) / Decimal(requests)).quantize(Decimal("0.000001"))
 
 
 def cost_of_run(db: Session, campaign_run_id: uuid.UUID) -> Decimal:
