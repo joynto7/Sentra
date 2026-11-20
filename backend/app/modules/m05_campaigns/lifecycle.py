@@ -288,6 +288,44 @@ def notify_limit(db: Session, organization_id: uuid.UUID, sentence: str) -> None
         )
 
 
+def notify_usage_warning(db: Session, organization_id: uuid.UUID, kind, limits, used) -> None:
+    """UC-10.6 step 5: the organization is close to one of its monthly limits. It goes to the
+    Organization Administrators **and** the Security Managers — they are the people who decide
+    what the rest of the month is spent on — and `limits.watch()` sends it once a month per limit.
+    """
+    from app.modules.m05_campaigns.limits import KIND_LABELS, next_month_label, shares
+    from app.modules.m09_reporting.notifications import notify
+
+    people = db.scalars(
+        select(Membership.user_id).where(
+            Membership.organization_id == organization_id,
+            Membership.role.in_([Role.ORG_ADMIN, Role.SECURITY_MANAGER]),
+            Membership.status == MembershipStatus.ACTIVE,
+        )
+    ).all()
+    if not people:
+        return
+    amounts = {
+        "campaign_runs": f"{used.campaign_runs:,} of {limits.campaign_runs:,} campaign runs",
+        "attempts": f"{used.attempts:,} of {limits.attempts:,} attempts",
+        "llm_cost": f"${used.llm_cost_usd:,.2f} of ${limits.llm_cost_usd:,.2f} LLM cost",
+    }
+    notify(
+        db,
+        event="usage_limit_warning",
+        user_ids=list(people),
+        organization_id=organization_id,
+        text=(
+            f"This month's {KIND_LABELS[kind]} have reached {shares(limits, used)[kind]}% of the "
+            f"monthly limit: {amounts[kind]}. No new work starts once the limit is reached, until "
+            f"{next_month_label()}."
+        ),
+        subject=f"Nearing the monthly limit of {KIND_LABELS[kind]}",
+        link="/campaigns",
+        group_key=f"usage_warning:{organization_id}:{kind}",
+    )
+
+
 # ---------------------------------------------------------------- the controls of UC-5.7
 
 
