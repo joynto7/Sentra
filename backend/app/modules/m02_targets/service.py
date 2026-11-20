@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core import addresses
+from app.core import addresses, audit
 from app.core.config import get_settings
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.core.tenancy import scoped_select
@@ -173,6 +173,14 @@ def register(db: Session, membership: Membership, data: TargetIn) -> Target:
     db.add(target)
     db.flush()  # gives the target its ID, which every encrypted credential is bound to
     _store(target, credentials)
+    _audit(
+        db,
+        membership,
+        target,
+        "target.registered",
+        f"Registered target {target.name}",
+        {"endpoint_url": url, "environment": target.environment, "type": target.type},
+    )
     db.commit()
     return get_target(db, membership.organization_id, target.id)
 
@@ -201,14 +209,29 @@ def update(db: Session, membership: Membership, target_id: uuid.UUID, data: Targ
         )
     errors.raise_if_any()
 
+    changed = [
+        field
+        for field, before, after in [
+            ("name", target.name, name),
+            ("max_request_rate", target.max_request_rate, rate),
+            ("environment", target.environment, data.environment or target.environment),
+            ("request_format", (target.request_template, target.response_template), templates),
+            ("endpoint_url", target.endpoint_url, url),
+        ]
+        if before != after
+    ]
     target.name, target.max_request_rate = name, rate
     if data.environment is not None:
         target.environment = data.environment
     target.request_template, target.response_template = templates
+    summary = f"Changed the configuration of target {target.name}"
     if url != target.endpoint_url:
         target.endpoint_url = url
         target.status = TargetStatus.UNVERIFIED  # ownership must be proved again (FR-2.6)
         target.verification_token = secrets.token_hex(16)
+        summary += "; its new endpoint must be verified again"
+    if changed:
+        _audit(db, membership, target, "target.updated", summary, {"changed": changed})
     db.commit()
     return get_target(db, membership.organization_id, target.id)
 
@@ -224,6 +247,15 @@ def replace_credentials(
     target.credentials.clear()
     db.flush()  # the old rows are deleted before new ones with the same header names are added
     _store(target, credentials)
+    # Only the header names: a secret never reaches the audit log (UC-10.3).
+    _audit(
+        db,
+        membership,
+        target,
+        "target.credentials_replaced",
+        f"Replaced the credentials of target {target.name}",
+        {"headers": [name for name, _, _ in credentials]},
+    )
     db.commit()
     return get_target(db, membership.organization_id, target.id)
 
@@ -239,6 +271,20 @@ def _changeable(db: Session, membership: Membership, target_id: uuid.UUID) -> Ta
     if target.status == TargetStatus.ARCHIVED:
         raise ConflictError(ARCHIVED, code="target_archived")
     return target
+
+
+def _audit(
+    db: Session, membership: Membership, target: Target, action: str, summary: str, details: dict
+) -> None:
+    audit.record(
+        db,
+        organization_id=membership.organization_id,
+        actor=db.get_one(User, membership.user_id),
+        action=action,
+        summary=summary,
+        item=audit.Item("target", target.id, target.name),
+        details=details,
+    )
 
 
 def _store(target: Target, credentials: list[tuple[str, CredentialType, str]]) -> None:
