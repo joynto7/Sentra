@@ -8,6 +8,7 @@ import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
 import { useSession } from "@/components/session-provider"
+import { AddToSuiteDialog } from "@/components/test-library/add-to-suite-dialog"
 import { RetireDialog } from "@/components/test-library/retire-dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -38,9 +39,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function TestDefinitionView({ code, version }: { code: string; version?: number }) {
   const organization = useSession().organization?.name ?? "your organization"
   const canManage = useCan("manage_custom_tests")
+  const canBuild = useCan("manage_test_suites")
   const [test, setTest] = useState<TestDetail | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [retiring, setRetiring] = useState(false)
+  const [adding, setAdding] = useState(false)
 
   usePageCrumbs(version ? [{ label: code, href: `/test-library/${code}` }, { label: `v${version}` }] : [{ label: code }])
 
@@ -109,23 +112,31 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
             <SeverityBadge severity={test.severity} />
           </div>
         </div>
-        {canManage && test.is_current && (
+        {(canManage || canBuild) && test.is_current && (
           <div className="flex flex-wrap gap-2">
-            {custom && !test.retired ? (
-              <>
-                <Button asChild className="h-9 hover:bg-primary-hover">
-                  <Link href={`/test-library/${encodeURIComponent(test.code)}/edit`}>Edit</Link>
-                </Button>
-                <Button asChild variant="outline" className="h-9">
-                  <Link href={duplicate}>Duplicate</Link>
-                </Button>
-                <Button variant="outline" className="h-9 text-destructive" onClick={() => setRetiring(true)}>
-                  Retire
-                </Button>
-              </>
-            ) : (
+            {canManage && custom && !test.retired && (
+              <Button asChild className="h-9 hover:bg-primary-hover">
+                <Link href={`/test-library/${encodeURIComponent(test.code)}/edit`}>Edit</Link>
+              </Button>
+            )}
+            {canManage && !custom && (
               <Button asChild className="h-9 hover:bg-primary-hover">
                 <Link href={duplicate}>Duplicate as custom test</Link>
+              </Button>
+            )}
+            {canBuild && !test.retired && (
+              <Button variant="outline" className="h-9" onClick={() => setAdding(true)}>
+                Add to suite
+              </Button>
+            )}
+            {canManage && custom && (
+              <Button asChild variant="outline" className="h-9">
+                <Link href={duplicate}>Duplicate</Link>
+              </Button>
+            )}
+            {canManage && custom && !test.retired && (
+              <Button variant="outline" className="h-9 text-destructive" onClick={() => setRetiring(true)}>
+                Retire
               </Button>
             )}
           </div>
@@ -224,6 +235,27 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
           </section>
 
           <section className="rounded-[10px] border bg-card p-5">
+            <h2 className="mb-3 text-[15px] font-semibold">Used by</h2>
+            {test.suites.length ? (
+              <ul className="space-y-1.5 text-sm">
+                {test.suites.map((suite) => (
+                  <li key={suite.code} className="flex items-baseline gap-2">
+                    <Link href={`/test-library/suites/${suite.code}`} className="text-link hover:underline">
+                      {suite.name}
+                    </Link>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {suite.origin === "custom" ? "Custom" : "Built-in"} · v{suite.version}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No test suite includes it yet.</p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">Campaign runs that used it appear here once campaigns run.</p>
+          </section>
+
+          <section className="rounded-[10px] border bg-card p-5">
             <h2 className="mb-3 text-[15px] font-semibold">Version history</h2>
             <ul className="space-y-2.5">
               {test.versions.map((v) => (
@@ -251,6 +283,7 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
       {retiring && (
         <RetireDialog test={test} open={retiring} onOpenChange={setRetiring} onRetired={(retired) => setTest(retired)} />
       )}
+      {adding && <AddToSuiteDialog test={test} open={adding} onOpenChange={setAdding} onAdded={load} />}
     </div>
   )
 }
