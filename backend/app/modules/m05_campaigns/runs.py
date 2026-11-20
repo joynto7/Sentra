@@ -236,6 +236,53 @@ def list_runs(db: Session, organization_id: uuid.UUID, code: str) -> list[dict]:
     return [_row(run, campaign, names) for run in runs]
 
 
+def list_organization_runs(
+    db: Session,
+    organization_id: uuid.UUID,
+    *,
+    target_id: uuid.UUID | None = None,
+    status: str = "",
+    limit: int = 50,
+) -> list[dict]:
+    """Every run of the organization, newest first (UC-5.6 step 1, and the recent runs of a
+    target on Screen 20). A campaign's own runs are `list_runs`."""
+    query = scoped_select(CampaignRun, organization_id).order_by(CampaignRun.created_at.desc())
+    if target_id is not None:
+        query = query.where(CampaignRun.target_id == target_id)
+    if status:
+        query = query.where(CampaignRun.status == status)
+    runs = list(db.scalars(query.limit(limit)))
+    campaigns = {
+        c.id: c
+        for c in db.scalars(
+            scoped_select(Campaign, organization_id).where(
+                Campaign.id.in_({r.campaign_id for r in runs if r.campaign_id})
+            )
+        )
+    }
+    targets = {
+        t.id: t
+        for t in db.scalars(
+            scoped_select(Target, organization_id).where(Target.id.in_({r.target_id for r in runs}))
+        )
+    }
+    names = _names(db, runs)
+    rows = []
+    for run in runs:
+        campaign = campaigns.get(run.campaign_id) if run.campaign_id else None
+        target = targets.get(run.target_id)
+        rows.append(
+            {
+                **_row(run, campaign, names),
+                "campaign": {"code": campaign.code, "name": campaign.name} if campaign else None,
+                "target": (
+                    {"id": target.id, "name": target.name, "type": target.type} if target else None
+                ),
+            }
+        )
+    return rows
+
+
 def run_detail(db: Session, campaign: Campaign, run: CampaignRun) -> dict:
     """Step 2 and 5: the run's state, its progress and limits, and when it has ended its summary.
     `last_event_id` is where the monitor follows the live events from (step 3)."""
@@ -281,8 +328,9 @@ def list_attempts(
     return list(rows), total
 
 
-def _row(run: CampaignRun, campaign: Campaign, names: dict) -> dict:
+def _row(run: CampaignRun, campaign: Campaign | None, names: dict) -> dict:
     return {
+        "id": run.id,
         "code": lifecycle.code(run, campaign),
         "number": run.number,
         "status": run.status,
