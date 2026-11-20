@@ -12,6 +12,7 @@ from app.core.models import Organization
 from app.modules.m01_users import emails
 from app.modules.m01_users.models import ROLE_LABELS, Membership, Role, User
 from app.modules.m01_users.security import verify_password
+from app.modules.m09_reporting.notifications import notify
 
 WRONG_PASSWORD = "That password is incorrect."
 
@@ -63,6 +64,16 @@ def change_role(
         send_email,
         user.email,
         *emails.role_changed(user.name, organization.name, ROLE_LABELS[role]),
+    )
+    # UC-10.1 step 6: told in the application as well (FR-9.3).
+    notify(
+        db,
+        event="account_security",
+        user_ids=[user.id],
+        organization_id=organization.id,
+        text=f"{admin_user.name} changed your role to {ROLE_LABELS[role]}",
+        subject=ROLE_LABELS[role],
+        email=False,
     )
     return membership, user
 

@@ -30,6 +30,7 @@ from app.modules.m01_users.service import (
     check_password,
     record,
 )
+from app.modules.m09_reporting.notifications import notify
 
 CHANGE_EMAIL_VALID_FOR = timedelta(hours=24)
 RECENT_EVENTS = 20
@@ -116,6 +117,17 @@ def confirm_email_change(db: Session, raw: str, background: BackgroundTasks) -> 
     record(db, user, AccountEventKind.EMAIL_CHANGED)
     db.commit()
     _send(background, old_email, emails.email_changed(user.name, new_email))
+    # An account alert in the application too (FR-9.3); the e-mail above is the other channel.
+    notify(
+        db,
+        event="account_security",
+        user_ids=[user.id],
+        organization_id=None,
+        text=f"Your e-mail address was changed to {new_email}",
+        subject=new_email,
+        link="/account/profile",
+        email=False,
+    )
     return user
 
 
@@ -144,6 +156,16 @@ def change_password(
     record(db, user, AccountEventKind.PASSWORD_CHANGED, ip_address)
     db.commit()
     _send(background, user.email, emails.password_changed_in_profile(user.name))
+    notify(
+        db,
+        event="account_security",
+        user_ids=[user.id],
+        organization_id=None,
+        text="Your password was changed, and your other sessions were logged out",
+        subject="password",
+        link="/account/security",
+        email=False,
+    )
 
 
 # ---------------------------------------------------------------- sessions (steps 6-7)
