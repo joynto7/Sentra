@@ -3,7 +3,7 @@
 import { Fragment } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Bell, CircleHelp, Search } from "lucide-react"
+import { CircleHelp, Search } from "lucide-react"
 
 import { usePageCrumbsValue } from "@/components/layout/breadcrumbs"
 import {
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 import { findNavItem } from "@/config/navigation"
 
 export function TopBar() {
@@ -93,9 +94,7 @@ export function TopBar() {
           </kbd>
         </label>
         <ThemeToggle />
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell aria-hidden="true" />
-        </Button>
+        <NotificationBell />
         <Button variant="ghost" size="icon" aria-label="Help">
           <CircleHelp aria-hidden="true" />
         </Button>
