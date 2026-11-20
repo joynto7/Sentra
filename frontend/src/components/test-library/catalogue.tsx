@@ -33,22 +33,32 @@ function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
 }
 
-/** "Create custom test" in the page header, for the roles that may (FR-1.6, FR-4.3). */
+/** "Create custom test" and "Create test suite" in the page header, for the roles that may (FR-1.6). */
 export function CatalogueActions() {
   const canCreate = useCan("manage_custom_tests")
-  if (!canCreate) return null
+  const canBuild = useCan("manage_test_suites")
+  if (!canCreate && !canBuild) return null
   return (
-    <Button asChild className="h-9 shrink-0 hover:bg-primary-hover">
-      <Link href="/test-library/new">
-        <Plus aria-hidden="true" />
-        Create custom test
-      </Link>
-    </Button>
+    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+      {canBuild && (
+        <Button asChild variant="outline" className="h-9">
+          <Link href="/test-library/suites/new">Create test suite</Link>
+        </Button>
+      )}
+      {canCreate && (
+        <Button asChild className="h-9 hover:bg-primary-hover">
+          <Link href="/test-library/new">
+            <Plus aria-hidden="true" />
+            Create custom test
+          </Link>
+        </Button>
+      )}
+    </div>
   )
 }
 
 /** The test catalogue: coverage, search, filters with counts and the results table (UC-4.1). */
-export function TestCatalogue() {
+export function TestCatalogue({ coverage }: { coverage: CoverageRow[] }) {
   const router = useRouter()
   const organization = useSession().organization?.name ?? "Your organization"
   const canCreate = useCan("manage_custom_tests")
@@ -59,14 +69,7 @@ export function TestCatalogue() {
   const [origins, setOrigins] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [data, setData] = useState<Catalogue | null>(null)
-  const [coverage, setCoverage] = useState<CoverageRow[]>([])
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    apiFetch<CoverageRow[]>("/v1/test-definitions/coverage")
-      .then(setCoverage)
-      .catch(() => undefined)
-  }, [])
 
   useEffect(() => {
     const controller = new AbortController()

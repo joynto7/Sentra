@@ -448,6 +448,16 @@ export function CustomTestEditor({ code, from }: { code?: string; from?: string 
           <AlertDescription>{formError}</AlertDescription>
         </Alert>
       )}
+      {original && original.suites.length > 0 && (
+        // UC-4.3 step 2: the suites that include the test, which use the new version from their next run.
+        <Alert className="mb-5">
+          <AlertDescription>
+            Included in {original.suites.length === 1 ? "1 suite" : `${original.suites.length} suites`}:{" "}
+            {original.suites.map((suite) => suite.name).join(", ")}. They use the new version from their next campaign
+            run.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <form id="custom-test" onSubmit={save} noValidate className="min-w-0 space-y-6">
