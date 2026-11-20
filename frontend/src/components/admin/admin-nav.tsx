@@ -6,9 +6,11 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 // The Administration sub-menu of the UI brief, in its order. Each item appears once its page is
-// built: Organization Security with FR-1.2 (M1), Data and AI with Screen 59, Data Retention with
-// FR-10.5 (M10).
-const ITEMS = [{ href: "/admin/members", label: "Members" }]
+// built: Data and AI with Screen 59, Data Retention with FR-10.5 (M10).
+const ITEMS = [
+  { href: "/admin/members", label: "Members" },
+  { href: "/admin/security", label: "Organization Security" },
+]
 
 /** Administration sub-navigation, left of the content (Organization Administrators only). */
 export function AdminNav() {
