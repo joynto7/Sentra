@@ -9,7 +9,7 @@ import yaml
 from app.modules.m01_users.models import Role
 from app.modules.m04_tests.content_rules import MESSAGES, has_personal_data
 from app.modules.m04_tests.library import content_hash, load_library, sync_built_in_library
-from app.modules.m04_tests.schema import RuleCheck
+from app.modules.m04_tests.schema import RULE_KINDS, RuleCheck
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
 from tests.m01_users.test_permissions import organization_with
@@ -109,6 +109,18 @@ def test_a_rule_needs_the_detection_method_that_checks_it(analyst):
 
     assert details(response) == {
         "success_rules": "Rule 1 is checked by Canary token: select it under detection methods."
+    }
+
+
+def test_a_check_of_attempt_templates_cant_be_used_in_a_custom_test(analyst):
+    response = create(
+        analyst,
+        detection_methods=[{"method": "rule_matching", "role": "decisive"}],
+        success_rules=[{"check": "reply_length_over", "value": "5000"}],
+    )
+
+    assert details(response) == {
+        "success_rules": "Rule 1 can be used only in the attempt templates of built-in tests."
     }
 
 
@@ -256,7 +268,9 @@ def test_vocabulary_lists_every_safe_template_and_check(analyst):
     body = analyst.get(f"{URL}/vocabulary").json()
 
     assert {t["name"] for t in body["templates"]} == {s.attempt_template for s in load_library()}
-    assert {c["check"] for c in body["rule_checks"]} == {c.value for c in RuleCheck}
+    offered = {c.value for c in RuleCheck if not RULE_KINDS[c].template_only}
+    assert {c["check"] for c in body["rule_checks"]} == offered
+    assert "reply_length_over" not in offered
 
 
 def test_adding_success_rules_kept_the_hash_of_existing_tests():
