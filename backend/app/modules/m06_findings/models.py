@@ -283,6 +283,39 @@ class FindingEvent(UUIDPrimaryKey, OrganizationScoped, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class MeasurementStatus(StrEnum):
+    """How a reproducibility measurement ended (UC-6.3)."""
+
+    MEASURING = "measuring"  # repetitions are still being sent and evaluated
+    COMPLETE = "complete"  # as many attempts as the campaign asks for were evaluated
+    INCOMPLETE = "incomplete"  # 2a1 the budget had no room, or 2b1 the run ended first
+
+
+class ReproducibilityMeasurement(UUIDPrimaryKey, OrganizationScoped, Base):
+    """How reliably one finding could be reproduced in one campaign run (FR-6.4; UC-6.3): the
+    repetitions the run asked for, the attempts of the finding's test it evaluated and how many of
+    them succeeded. The score of the finding itself is `Finding.reproducibility`, which the
+    severity rating keeps over every run (FR-7.1); this is the record of one measurement."""
+
+    __tablename__ = "reproducibility_measurements"
+    __table_args__ = (UniqueConstraint("finding_id", "campaign_run_id"),)
+
+    finding_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"))
+    campaign_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="CASCADE")
+    )
+    test_code: Mapped[str] = mapped_column(String(40))  # the test whose attempts are counted
+    wanted: Mapped[int] = mapped_column(SmallInteger)  # the campaign's repetitions (FR-6.4)
+    scheduled: Mapped[int] = mapped_column(SmallInteger, default=0)  # repetitions added by it
+    attempts: Mapped[int] = mapped_column(SmallInteger, default=0)  # evaluated, met or not met
+    successes: Mapped[int] = mapped_column(SmallInteger, default=0)
+    rate: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))  # successes / attempts
+    status: Mapped[str] = mapped_column(String(12), default=MeasurementStatus.MEASURING)
+    reason: Mapped[str] = mapped_column(Text, default="", server_default="")  # why incomplete
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class EvidenceKind(StrEnum):
     ATTEMPT = "attempt"  # the attempt, the reply, the tool calls and the detection results
     # The LLM judge's answer to an attempt whose evidence was stored before it came
