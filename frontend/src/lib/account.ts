@@ -80,6 +80,10 @@ export const EVENT_LABEL: Record<string, string> = {
   email_changed: "E-mail address changed",
   session_ended: "Another session logged out",
   other_sessions_ended: "All other sessions logged out",
+  mfa_enabled: "Two-step verification turned on",
+  mfa_failed: "Failed login attempt (wrong code)",
+  recovery_code_used: "Logged in with a recovery code",
+  recovery_codes_renewed: "New recovery codes generated",
 }
 
 /** "13 Oct 2026, 08:02" in the browser's time zone. */

@@ -6,12 +6,15 @@ export function FormField({
   label,
   error,
   labelAction,
+  announce = false,
   children,
 }: {
   id: string
   label: string
   error?: string
   labelAction?: React.ReactNode
+  /** Read the error out at once, for a field whose error appears after the focus stays in it */
+  announce?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -22,7 +25,7 @@ export function FormField({
       </div>
       {children}
       {error && (
-        <p id={`${id}-error`} className="text-xs text-destructive">
+        <p id={`${id}-error`} role={announce ? "alert" : undefined} className="text-xs text-destructive">
           {error}
         </p>
       )}

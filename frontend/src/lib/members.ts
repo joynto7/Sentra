@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api"
+import type { LoginStep } from "@/lib/mfa"
 import type { CurrentOrganization, SessionUser } from "@/lib/session"
 
 export type Member = {
@@ -8,6 +9,7 @@ export type Member = {
   email: string
   role: string
   role_label: string
+  mfa_enabled: boolean
   last_login_at: string | null
   joined_at: string
   is_you: boolean
@@ -81,8 +83,10 @@ export function acceptInvitation(token: string) {
   return apiFetch<CurrentOrganization>("/v1/invitations/accept", { method: "POST", body: JSON.stringify({ token }) })
 }
 
+/** The new account joins; `step` is "mfa_setup" when the organization requires two-step
+ * verification, which is then set up before the first session (FR-1.2). */
 export function registerAndAccept(token: string, name: string, password: string, acceptTerms: boolean) {
-  return apiFetch<SessionUser>("/v1/invitations/register", {
+  return apiFetch<SessionUser & { step: LoginStep }>("/v1/invitations/register", {
     method: "POST",
     body: JSON.stringify({ token, name, password, accept_terms: acceptTerms }),
   })
