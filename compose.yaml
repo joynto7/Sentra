@@ -68,7 +68,9 @@ services:
 
   worker:
     <<: *backend
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    # Threads: the jobs mostly wait for targets and models, and each worker works on at least 10
+    # campaign runs at once (NFR-1.2).
+    command: celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=10
     networks: [default, lab]  # the Target Connector runs here, so the worker reaches the lab
 
   lab-rag-chatbot:
