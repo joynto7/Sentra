@@ -382,6 +382,10 @@ def save(db: Session, target: Target, user: User, data: ProfileIn) -> TargetProf
         item=audit.Item("target", target.id, target.name),
     )
     db.commit()
+    # UC-3.1: a completed review starts a new threat model. Started by name, so Module 2 doesn't
+    # depend on Module 3; if the queue can't be reached, the analyst can generate it by hand.
+    jobs.start(db, "threat_models.after_profile_review", target.id, user.id)
+    db.refresh(profile)
     return profile
 
 

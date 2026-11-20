@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.workers.targets",
         "app.workers.campaigns",
         "app.workers.detection.judge",
+        "app.workers.threat_models",
     ],
 )
 celery_app.conf.update(
