@@ -8,7 +8,12 @@ celery_app = Celery(
     "sentra",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.tasks", "app.workers.reporting.emails", "app.workers.targets"],
+    include=[
+        "app.workers.tasks",
+        "app.workers.reporting.emails",
+        "app.workers.targets",
+        "app.workers.campaigns",
+    ],
 )
 celery_app.conf.update(
     timezone="UTC",
@@ -16,4 +21,7 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
+    # A job that no worker finished is handed out again after this many seconds. A campaign run
+    # waits at most lifecycle.MAX_COUNTDOWN_SECONDS for its next job, well below it.
+    broker_transport_options={"visibility_timeout": 3600},
 )
