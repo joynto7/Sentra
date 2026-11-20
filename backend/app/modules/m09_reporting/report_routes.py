@@ -113,10 +113,7 @@ def list_reports(
     return ReportList(
         rows=[_report_out(db, one, people, names) for one in rows],
         schedules=[_schedule_out(db, plan, people) for plan in plans],
-        members=[
-            {"id": str(one), "name": name}
-            for one, name in schedules.members(db, membership.organization_id).items()
-        ],
+        members=schedules.member_options(db, membership.organization_id),
     )
 
 
