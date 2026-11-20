@@ -97,6 +97,32 @@ services:
       LAB_MODEL: simulated  # fixed answers; a local model through Ollama comes with FR-11.2
     networks: [lab]
 
+  prometheus:
+    # Operational metrics (NFR-5.5, FR-10.6): it scrapes the API's /api/metrics. Start the
+    # monitoring with:  docker compose --profile monitoring up -d
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.1.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    # The dashboards an alert of Screen 63 links to (UC-10.9 step 5). Set GRAFANA_URL to
+    # http://localhost:3001 so the links appear.
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.5.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-sentra}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
   web:
     profiles: ["web"]
     build:

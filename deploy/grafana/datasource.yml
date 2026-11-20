@@ -1,0 +1,9 @@
+# The Prometheus of deploy/prometheus, so the alert links of Screen 63 lead to a dashboard that
+# already has its data source (UC-10.9 step 5).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
