@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.workers.remediation",
         "app.workers.reporting.generate",
         "app.workers.scheduler",
+        "app.workers.lab_targets",
     ],
 )
 celery_app.conf.update(
