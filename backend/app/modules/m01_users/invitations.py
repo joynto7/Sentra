@@ -10,6 +10,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.email import send_email
 from app.core.errors import AppError, ConflictError, FieldValidationError, NotFoundError
 from app.core.models import Organization
@@ -89,6 +90,8 @@ def invite(
         invited_by_id=inviter.id,
     )
     db.add(invitation)
+    db.flush()
+    _audit(db, invitation, inviter, "invitation.sent", f"Invited {email} as {ROLE_LABELS[role]}")
     db.commit()
     _notify(
         background,
@@ -120,6 +123,9 @@ def resend(
     invitation = _pending_invitation(db, admin, invitation_id)
     raw, invitation.token_hash = new_token()
     invitation.expires_at = _now() + VALID_FOR
+    _audit(
+        db, invitation, inviter, "invitation.resent", f"Resent the invitation of {invitation.email}"
+    )
     db.commit()
     organization = db.get_one(Organization, admin.organization_id)
     _notify(
@@ -135,6 +141,14 @@ def revoke(db: Session, admin: Membership, invitation_id: uuid.UUID) -> None:
     invitation = _pending_invitation(db, admin, invitation_id)
     invitation.status = InvitationStatus.REVOKED
     invitation.closed_at = _now()
+    revoker = db.get_one(User, admin.user_id)
+    _audit(
+        db,
+        invitation,
+        revoker,
+        "invitation.revoked",
+        f"Revoked the invitation of {invitation.email}",
+    )
     db.commit()
 
 
@@ -173,6 +187,15 @@ def remove_member(
     )
     if user.last_organization_id == admin.organization_id:
         user.last_organization_id = None
+    audit.record(
+        db,
+        organization_id=admin.organization_id,
+        actor=admin_user,
+        action="member.removed",
+        summary=f"Removed {user.name} from the organization",
+        item=audit.Item("member", user.id, user.name),
+        details={"role": ROLE_LABELS[Role(membership.role)]},
+    )
     db.commit()
     organization = db.get_one(Organization, admin.organization_id)
     _notify(background, user.email, emails.removed_from(user.name, organization.name))
@@ -265,6 +288,15 @@ def decline(db: Session, raw: str, background: BackgroundTasks) -> None:
     """4a: the invitation is closed and the administrator is told."""
     invitation = find(db, raw)
     _close(invitation, InvitationStatus.DECLINED)
+    audit.record(
+        db,
+        organization_id=invitation.organization_id,
+        actor_type="person",
+        actor_name=invitation.email,
+        action="invitation.declined",
+        summary=f"{invitation.email} declined the invitation",
+        item=audit.Item("invitation", invitation.id, invitation.email),
+    )
     db.commit()
     _tell_inviter(db, invitation, background, accepted=False)
 
@@ -288,6 +320,16 @@ def _join(
         db.add(membership)
     _close(invitation, InvitationStatus.ACCEPTED)
     db.flush()
+    role = ROLE_LABELS[Role(invitation.role)]
+    audit.record(
+        db,
+        organization_id=invitation.organization_id,
+        actor=user,
+        action="member.joined",
+        summary=f"Accepted the invitation and joined as {role}",
+        item=audit.Item("member", user.id, user.name),
+        details={"role": role},
+    )
     if session is not None:
         organizations.switch(db, user, session, invitation.organization_id)  # step 6; commits
     else:  # no session yet: the organization opens after the second step of the login
@@ -295,6 +337,18 @@ def _join(
         db.commit()
     _tell_inviter(db, invitation, background, accepted=True)
     return membership
+
+
+def _audit(db: Session, invitation: Invitation, actor: User, action: str, summary: str) -> None:
+    audit.record(
+        db,
+        organization_id=invitation.organization_id,
+        actor=actor,
+        action=action,
+        summary=summary,
+        item=audit.Item("invitation", invitation.id, invitation.email),
+        details={"role": ROLE_LABELS[Role(invitation.role)]},
+    )
 
 
 def _close(invitation: Invitation, status: InvitationStatus) -> None:
