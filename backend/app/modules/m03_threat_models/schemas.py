@@ -157,6 +157,8 @@ class VersionIn(BaseModel):
 class RunRef(BaseModel):
     id: uuid.UUID
     code: str  # e.g. R-212-1
+    campaign: str | None  # the campaign's code, for the link to the run monitor (Screen 36)
+    number: int  # the run's number within its campaign
     started_at: datetime | None
 
 
