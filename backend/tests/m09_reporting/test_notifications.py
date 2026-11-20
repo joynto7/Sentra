@@ -97,9 +97,9 @@ def test_preferences_list_every_event_switched_on_by_default(maya):
     preferences = maya["client"].get(f"{URL}/preferences").json()
 
     # with "Target profile ready for review" (UC-2.4 step 4), "Threat model ready for review"
-    # (UC-3.1 step 6), "Remediation proposal ready for review" (UC-8.2 step 6) and "API key about
-    # to expire" (UC-9.6, 3a1)
-    assert len(preferences) == 12
+    # (UC-3.1 step 6), "Remediation proposal ready for review" (UC-8.2 step 6), "API key about
+    # to expire" (UC-9.6, 3a1) and "Scheduled campaign that can't run" (FR-5.3)
+    assert len(preferences) == 13
     assert all(p["in_app"] and p["email"] for p in preferences)
     assert preferences[0]["label"] == "Campaign run completed"
 
