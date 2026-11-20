@@ -1,11 +1,13 @@
 import uuid
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.core.models import UUIDPrimaryKey
+from app.core.models import OrganizationScoped, UUIDPrimaryKey
 
 
 def _now() -> datetime:
@@ -52,3 +54,48 @@ class NotificationPreference(UUIDPrimaryKey, Base):
     event: Mapped[str] = mapped_column(String(40))
     in_app: Mapped[bool]
     email: Mapped[bool]
+
+
+class ApiKeyScope(StrEnum):
+    """What an integration may do with a key (UC-9.6 step 2, the five of Screen 56). None of them
+    touches members, roles or other keys: a leaked key can never take over the organization
+    (UC-9.6, quality requirement 2)."""
+
+    RUN_SECURITY_GATE = "run_security_gate"
+    READ_GATE_RESULTS = "read_gate_results"
+    READ_FINDINGS = "read_findings"
+    READ_REPORTS = "read_reports"
+    LAUNCH_CAMPAIGNS = "launch_campaigns"
+
+
+class ApiKey(UUIDPrimaryKey, OrganizationScoped, Base):
+    """A key an integration authenticates with (FR-9.5, UC-9.6). Sentra keeps the first characters
+    of the key, so a person can tell one key from another, and the SHA-256 of the whole key, never
+    the key itself (NFR-3.1): it is shown once, when it is created."""
+
+    __tablename__ = "api_keys"
+    __table_args__ = (UniqueConstraint("prefix"),)
+
+    name: Mapped[str] = mapped_column(String(80))
+    purpose: Mapped[str] = mapped_column(String(300))
+    prefix: Mapped[str] = mapped_column(String(16))  # snt_3f9a2b1c, shown on the page
+    key_hash: Mapped[str] = mapped_column(String(64))
+    scopes: Mapped[list] = mapped_column(JSONB, default=list)
+    # The targets the key is limited to; empty means every target of the organization (step 2).
+    target_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # 1a1: a revoked key is refused at once and stays listed with the date it was revoked.
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # So that unused keys can be found and revoked (UC-9.6, quality requirement 3)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 3a1: the administrators are told once that the key is about to expire
+    expiry_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
