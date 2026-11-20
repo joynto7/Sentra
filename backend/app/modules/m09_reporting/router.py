@@ -10,6 +10,7 @@ from app.modules.m01_users.models import User, UserSession
 from app.modules.m09_reporting import notifications
 from app.modules.m09_reporting.api_key_routes import router as api_key_router
 from app.modules.m09_reporting.events import EVENTS
+from app.modules.m09_reporting.report_routes import router as report_router
 from app.modules.m09_reporting.schemas import (
     MarkedOut,
     NotificationList,
@@ -105,3 +106,4 @@ def mark_read(
 
 router.include_router(notifications_router)
 router.include_router(api_key_router)
+router.include_router(report_router)
