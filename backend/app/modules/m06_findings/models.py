@@ -193,7 +193,31 @@ class Finding(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
     # Successful attempts divided by the attempts that tried this weakness (FR-6.4 measures it
     # with the campaign's repetitions; until then the attempts the runs have sent count)
     reproducibility: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    # Who adjusted the severity and why (FR-6.5; UC-6.6, quality requirement 3). The history
+    # keeps every adjustment; this is the justification of the one in force.
+    severity_justification: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[str] = mapped_column(String(25))
+    # The triage of FR-6.5 (UC-6.6): the owner who will fix it, who confirmed it, and why and by
+    # whom it was closed (a false positive's reason, or the finding it was merged into).
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    close_reason: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # FR-6.6 (UC-6.6, 2b1): the finding this one duplicates. Evidence is written once and never
+    # moved (NFR-2.4), so the two stay separate rows and their evidence and history are read
+    # together through this link.
+    merged_into_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("findings.id", ondelete="SET NULL"), index=True
+    )
     description: Mapped[str] = mapped_column(Text)  # the observed behaviour, masked
     first_run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("campaign_runs.id", ondelete="RESTRICT")
@@ -208,6 +232,55 @@ class Finding(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
     @property
     def code(self) -> str:
         return f"F-{self.number:03d}"
+
+
+class FindingEventKind(StrEnum):
+    """What the history of a finding records (FR-6.5; UC-6.6 step 5): every triage action, and the
+    two things Sentra itself does to a finding — recording it and reopening it as a regression.
+    Which runs found the finding again is read from its evidence instead (UC-6.5 step 3)."""
+
+    DETECTED = "detected"  # UC-6.2 step 2: the finding was recorded in a campaign run
+    REOPENED = "reopened"  # 2b1: detected again after it was fixed and verified (a regression)
+    CONFIRMED = "confirmed"  # UC-6.6 step 2
+    FALSE_POSITIVE = "false_positive"  # 2a1, with the reason
+    SEVERITY_ADJUSTED = "severity_adjusted"  # step 3, with the justification (FR-7.1, UC-7.1 4a)
+    ASSIGNED = "assigned"  # step 4
+    COMMENTED = "commented"  # step 4
+    MERGED = "merged"  # 2b1: this finding was merged into another one, which closes it
+    MERGED_IN = "merged_in"  # the other side: a duplicate was merged into this finding
+
+
+class FindingEvent(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One entry of a finding's history, numbered within the finding (FR-6.5). The history is
+    append-only, so that every decision can be traced (UC-6.6, quality requirement 5): a trigger
+    refuses every change, as it does for evidence. The audit log holds the same actions for the
+    organization as a whole (FR-10.2)."""
+
+    __tablename__ = "finding_events"
+    __table_args__ = (UniqueConstraint("finding_id", "event_no"),)
+
+    finding_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"))
+    event_no: Mapped[int]  # 1, 2, 3 … within the finding
+    kind: Mapped[str] = mapped_column(String(25))
+    # Who did it; None and "Sentra" when Sentra itself did. The name is kept, so the history
+    # still reads correctly after a member leaves the organization.
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    actor_name: Mapped[str] = mapped_column(String(200))
+    # The reason, justification or comment the analyst gave, and what changed
+    text: Mapped[str] = mapped_column(Text, default="")
+    was: Mapped[str | None] = mapped_column(String(25))
+    became: Mapped[str | None] = mapped_column(String(25))
+    campaign_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL")
+    )
+    # The other finding of a merge, and the owner of an assignment
+    related_finding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("findings.id", ondelete="SET NULL")
+    )
+    related_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class EvidenceKind(StrEnum):
@@ -261,3 +334,22 @@ READ_ONLY_TRIGGER = DDL(
 )
 event.listen(Evidence.__table__, "after_create", READ_ONLY_FUNCTION)
 event.listen(Evidence.__table__, "after_create", READ_ONLY_TRIGGER)
+
+# UC-6.6, quality requirement 5: the history of a finding is append-only, so that every decision
+# can be traced. Entries are only ever added; a correction is a new entry.
+HISTORY_FUNCTION = DDL(
+    """
+CREATE OR REPLACE FUNCTION sentra_finding_events_append_only() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'The history of a finding can''t be changed or deleted.'
+        USING ERRCODE = 'insufficient_privilege';
+END
+$$ LANGUAGE plpgsql
+"""
+)
+HISTORY_TRIGGER = DDL(
+    "CREATE TRIGGER finding_events_append_only BEFORE UPDATE OR DELETE ON finding_events "
+    "FOR EACH ROW EXECUTE FUNCTION sentra_finding_events_append_only()"
+)
+event.listen(FindingEvent.__table__, "after_create", HISTORY_FUNCTION)
+event.listen(FindingEvent.__table__, "after_create", HISTORY_TRIGGER)
