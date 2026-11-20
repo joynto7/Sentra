@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Search } from "lucide-react"
+import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Rocket, Search } from "lucide-react"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
@@ -33,7 +33,9 @@ type Tab = "active" | "archived"
 export function TargetsList() {
   const organization = useSession().organization
   const canManage = useCan("manage_targets")
+  const canCampaign = useCan("manage_campaigns") // "Create campaign" on a target (UC-5.1 trigger)
   const [tab, setTab] = useState<Tab>("active")
+  const hasActions = (canManage || canCampaign) && tab === "active"
   const [search, setSearch] = useState("")
   const [type, setType] = useState("")
   const [environment, setEnvironment] = useState("")
@@ -197,7 +199,7 @@ export function TargetsList() {
                   <TableHead className="text-xs">Environment</TableHead>
                   <TableHead className="text-xs">Ownership</TableHead>
                   <TableHead className="text-xs">Owner</TableHead>
-                  {canManage && tab === "active" && (
+                  {hasActions && (
                     <TableHead className="w-12 text-xs">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -231,7 +233,7 @@ export function TargetsList() {
                         </Tooltip>
                       )}
                     </TableCell>
-                    {canManage && tab === "active" && (
+                    {hasActions && (
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -243,9 +245,17 @@ export function TargetsList() {
                             <DropdownMenuItem asChild>
                               <Link href={`/targets/${target.id}/edit`}>
                                 <Pencil aria-hidden="true" />
-                                Edit
+                                {canManage ? "Edit" : "View settings"}
                               </Link>
                             </DropdownMenuItem>
+                            {canCampaign && target.status === "verified" && (
+                              <DropdownMenuItem asChild>
+                                <Link href={`/campaigns/new?target=${target.id}`}>
+                                  <Rocket aria-hidden="true" />
+                                  Create campaign
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
