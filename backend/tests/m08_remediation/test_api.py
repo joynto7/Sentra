@@ -1,0 +1,93 @@
+"""The remediation API behind Screens 45 and 46: who may ask for a proposal (FR-1.6), what the
+list and the page show, and the isolation between organizations (NFR-3.3)."""
+
+from app.modules.m06_findings.models import FindingStatus
+from tests.m01_users.test_organizations import create as create_organization
+from tests.m01_users.test_organizations import log_in, new_user
+from tests.m08_remediation.conftest import API, proposal
+
+
+def test_only_developers_and_analysts_ask_for_a_proposal(team, confirmed, model):
+    """UC-8.2 primary actors: the application's developer and a security analyst. A Security
+    Manager reads the proposal but doesn't ask for one."""
+    model(proposal())
+
+    log_in(team.client, "sofia@example.com")  # Security Manager
+    refused = team.client.post(f"{API}/{confirmed.code}/generate")
+
+    assert refused.status_code == 403
+    assert team.client.get(f"{API}/{confirmed.code}").status_code == 200
+    log_in(team.client, "maya@example.com")  # AI Application Developer
+    assert team.client.post(f"{API}/{confirmed.code}/generate").status_code == 202
+
+
+def test_the_page_shows_one_version_at_a_time(team, confirmed, model):
+    model(proposal())
+    team.client.post(f"{API}/{confirmed.code}/generate")
+    team.client.post(f"{API}/{confirmed.code}/generate")  # a revision: version 2
+
+    body = team.client.get(f"{API}/{confirmed.code}?version=1").json()
+
+    assert body["current"]["version"] == 1
+    assert [v["version"] for v in body["versions"]] == [2, 1]
+    assert body["finding"]["code"] == confirmed.code
+    assert body["finding"]["component"].startswith("System prompt")
+    assert body["finding"]["target_name"] == "Payments Operations Agent"
+    assert body["blocker"] is None
+    assert team.client.get(f"{API}/{confirmed.code}?version=7").status_code == 404
+    assert team.client.get(f"{API}/F-999").status_code == 404
+
+
+def test_the_list_counts_the_drafts_and_the_findings_without_a_proposal(team, confirmed, model):
+    model(proposal())
+
+    before = team.client.get(API).json()
+
+    assert [row["finding"]["code"] for row in before["rows"]] == [confirmed.code]
+    assert (before["drafts"], before["without_proposal"]) == (0, 1)
+    assert before["rows"][0]["latest"] is None
+    team.client.post(f"{API}/{confirmed.code}/generate")
+    after = team.client.get(API).json()
+    assert (after["drafts"], after["without_proposal"]) == (1, 0)
+    row = after["rows"][0]
+    assert (row["latest"]["version"], row["latest"]["fix_count"]) == (1, 4)
+    assert row["job"] is None  # the job is done, so the page follows nothing
+
+
+def test_a_finding_nobody_confirmed_is_not_in_the_list(team, confirmed):
+    confirmed.status = FindingStatus.NEW
+    team.db.commit()
+
+    body = team.client.get(API).json()
+
+    assert body["rows"] == [] and body["without_proposal"] == 0
+
+
+def test_a_failed_generation_stays_on_the_page(team, confirmed, monkeypatch):
+    from app.workers import jobs
+
+    monkeypatch.setattr(jobs, "start", lambda *args, **options: False)  # the queue is down
+
+    response = team.client.post(f"{API}/{confirmed.code}/generate")
+
+    assert response.status_code == 202 and response.json()["status"] == "failed"
+    page = team.client.get(f"{API}/{confirmed.code}").json()
+    assert page["job"]["status"] == "failed"
+    assert "background workers can't be reached" in page["job"]["message"]
+    assert page["current"] is None
+    job_id = page["job"]["id"]
+    assert team.client.get(f"{API}/{confirmed.code}/jobs/{job_id}").json()["status"] == "failed"
+
+
+def test_another_organizations_finding_is_out_of_reach(team, confirmed, model):
+    """NFR-3.3: a member of another organization neither reads nor changes this finding."""
+    model(proposal())
+    new_user(team.db, "jonas@example.com")
+    log_in(team.client, "jonas@example.com")
+    create_organization(team.client, "Kestrel Logistics")
+
+    assert team.client.get(f"{API}/{confirmed.code}").status_code == 404
+    assert team.client.get(API).json()["rows"] == []
+    # The permission is checked before the finding is looked up, so Kestrel's administrator is
+    # refused for his role before the finding is even searched for.
+    assert team.client.post(f"{API}/{confirmed.code}/generate").status_code == 403
