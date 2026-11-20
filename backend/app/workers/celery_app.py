@@ -13,10 +13,14 @@ celery_app = Celery(
         "app.workers.reporting.emails",
         "app.workers.targets",
         "app.workers.campaigns",
+        "app.workers.detection.judge",
     ],
 )
 celery_app.conf.update(
     timezone="UTC",
+    # The LLM judge's evaluations (FR-6.1) wait on a model, so they have their own queue and
+    # worker (compose.yaml, analysis-worker) and never hold up the attempts of a run (NFR-1.4).
+    task_routes={"detection.*": {"queue": "analysis"}},
     # A job whose worker stops before finishing goes back to the queue (NFR-2.2).
     task_acks_late=True,
     task_reject_on_worker_lost=True,
