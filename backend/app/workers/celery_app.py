@@ -8,7 +8,7 @@ celery_app = Celery(
     "sentra",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.tasks"],
+    include=["app.workers.tasks", "app.workers.reporting.emails"],
 )
 celery_app.conf.update(
     timezone="UTC",
