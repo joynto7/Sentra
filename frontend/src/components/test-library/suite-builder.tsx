@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { ApiError } from "@/lib/api"
+import { type CampaignItem, listCampaigns } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 import {
   CATEGORIES,
@@ -77,6 +78,7 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
   const [touched, setTouched] = useState(!!test)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [announcement, setAnnouncement] = useState("")
+  const [campaigns, setCampaigns] = useState<CampaignItem[]>([])
   const leaving = useRef(false)
   const suitePanel = useRef<HTMLDivElement>(null)
   const suiteHeading = useRef<HTMLHeadingElement>(null)
@@ -93,6 +95,14 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
       .then(setLibrary)
       .catch(() => setLoadError("failed"))
   }, [])
+
+  // UC-4.5 step 2: the campaigns a change will affect, before saving.
+  useEffect(() => {
+    if (!code) return
+    listCampaigns(new URLSearchParams({ suite: code }))
+      .then(setCampaigns)
+      .catch(() => undefined)
+  }, [code])
 
   // Edit: the current version. Duplicate (?from=CODE, UC-4.5 1a): a copy to adapt.
   useEffect(() => {
@@ -303,7 +313,11 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
       {editing && (
         <Alert className="mb-5">
           <AlertDescription>
-            Changes apply from the next campaign run that uses this suite. Earlier runs keep the version they used.
+            {campaigns.length > 0
+              ? `Used by ${campaigns.length === 1 ? "1 campaign" : `${campaigns.length} campaigns`} (${campaigns
+                  .map((c) => c.code)
+                  .join(", ")}). Changes apply from their next run; earlier runs keep the version they used.`
+              : "No campaign uses this suite yet. Changes apply from the next run that uses it."}
           </AlertDescription>
         </Alert>
       )}

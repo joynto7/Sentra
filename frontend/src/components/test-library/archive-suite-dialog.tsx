@@ -16,16 +16,19 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { ApiError, fieldErrors } from "@/lib/api"
+import type { CampaignItem } from "@/lib/campaigns"
 import { type SuiteDetail, archiveSuite } from "@/lib/test-library"
 
 /** UC-4.5, alternative 3a: archive a suite, with the reason, after showing what happens. */
 export function ArchiveSuiteDialog({
   suite,
+  campaigns,
   open,
   onOpenChange,
   onArchived,
 }: {
   suite: SuiteDetail
+  campaigns: CampaignItem[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onArchived: (suite: SuiteDetail) => void
@@ -66,6 +69,12 @@ export function ArchiveSuiteDialog({
             <li>Past campaign runs keep showing it, with the version they used.</li>
             <li>An archived suite can&apos;t be changed. To use it again, duplicate it.</li>
           </ul>
+          {campaigns.length > 0 && (
+            <p className="rounded-[10px] border border-warning/40 bg-warning/5 p-3 text-sm text-warning">
+              Used by {campaigns.length === 1 ? "1 campaign" : `${campaigns.length} campaigns`}:{" "}
+              {campaigns.map((c) => `${c.code} ${c.name}`).join(", ")}. Replace the suite in them before their next run.
+            </p>
+          )}
           <FormField id="archive-reason" label="Reason" error={error ?? undefined}>
             <Textarea
               id="archive-reason"
