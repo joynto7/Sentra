@@ -53,7 +53,7 @@ def evaluate(
     for detection in detections:
         own = [rule for rule in rules if rule.method == detection.method]
         if detection.method == DetectionMethod.LLM_JUDGE:
-            results.append(judge.first_result(attempt, detection.role, own))
+            results.append(judge.first_result(db, attempt, detection.role, own))
             continue
         found = methods.evaluate(detection.method, detection.role, own, seen)
         spent += found.duration_ms or 0
