@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { CircleCheck, CircleX, TriangleAlert } from "lucide-react"
 
+import { HistoryEntry } from "@/components/findings/finding-activity"
 import { Reproducibility } from "@/components/findings/finding-badges"
 import { FindingHeader } from "@/components/findings/finding-header"
 import { FindingTabs } from "@/components/findings/finding-tabs"
@@ -11,8 +12,10 @@ import { EmptyState } from "@/components/layout/empty-state"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
-import { type FindingDetail, getFinding } from "@/lib/findings"
-import { type FindingSeverity, getFindingSeverity } from "@/lib/risk"
+import { TriagePanel } from "@/components/findings/triage-panel"
+import { type FindingDetail, type HistoryItem, getFinding, getHistory } from "@/lib/findings"
+import { useCan } from "@/lib/permissions"
+import { OPEN_STATUSES, type FindingSeverity, getFindingSeverity } from "@/lib/risk"
 import { formatDate, formatDateTime } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
@@ -97,7 +100,10 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
 
 /** Screen 39: one finding in plain language, with its rating, its detection and its details. */
 export function FindingView({ code }: { code: string }) {
+  const canTriage = useCan("triage_findings")
   const [finding, setFinding] = useState<FindingDetail | null>(null)
+  const [history, setHistory] = useState<HistoryItem[] | null>(null)
+  const [triaging, setTriaging] = useState(false)
   const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
@@ -107,6 +113,9 @@ export function FindingView({ code }: { code: string }) {
       .catch((error) => {
         if (error instanceof ApiError && error.status === 404) setNotFound(true)
       })
+    getHistory(code, controller.signal)
+      .then(setHistory)
+      .catch(() => undefined)
     return () => controller.abort()
   }, [code])
 
@@ -137,10 +146,41 @@ export function FindingView({ code }: { code: string }) {
 
   return (
     <div>
-      <FindingHeader finding={finding} />
+      <FindingHeader
+        finding={finding}
+        action={
+          canTriage &&
+          (OPEN_STATUSES as readonly string[]).includes(finding.status) && (
+            <Button className="h-9 hover:bg-primary-hover" onClick={() => setTriaging(true)}>
+              Triage
+            </Button>
+          )
+        }
+      />
       <FindingTabs code={finding.code} active="summary" />
 
-      {detection?.requires_confirmation && (
+      <TriagePanel finding={finding} open={triaging} onOpenChange={setTriaging} onDone={setFinding} />
+
+      {finding.merged_into && (
+        <p role="status" className="mb-5 rounded-[10px] border bg-card p-4 text-sm">
+          This finding was merged into{" "}
+          <Link href={`/findings/${finding.merged_into}`} className="text-link underline underline-offset-2">
+            {finding.merged_into}
+          </Link>
+          , which has the same root cause. Its evidence and history are read there as well (FR-6.6).
+        </p>
+      )}
+
+      {finding.status === "false_positive" && (
+        <p role="status" className="mb-5 rounded-[10px] border bg-card p-4 text-sm">
+          <span className="font-medium">Marked a false positive</span>
+          {finding.closed_by ? ` by ${finding.closed_by}` : ""}
+          {finding.closed_at ? ` on ${formatDate(finding.closed_at)}` : ""}: {finding.close_reason} It is kept, so
+          that the quality of Sentra&apos;s detection can be measured (UC-6.6, 2a1).
+        </p>
+      )}
+
+      {detection?.requires_confirmation && (OPEN_STATUSES as readonly string[]).includes(finding.status) && (
         <p
           role="status"
           className="mb-5 flex items-start gap-2 rounded-[10px] border border-warning/40 bg-warning/5 p-4 text-sm text-warning"
@@ -223,7 +263,27 @@ export function FindingView({ code }: { code: string }) {
               </Row>
               <Row term="Reproducibility">
                 <Reproducibility value={finding.reproducibility} className="ml-auto" />
+                {finding.repetitions && (
+                  <div className="text-xs text-muted-foreground">
+                    {finding.repetitions.label}
+                    {finding.repetitions.status === "incomplete" ? ", incomplete" : ""}
+                  </div>
+                )}
               </Row>
+              <Row term="Owner">{finding.owner ? finding.owner.name : "Nobody yet"}</Row>
+              {finding.confirmed_by && (
+                <Row term="Confirmed">
+                  {finding.confirmed_by}
+                  <div className="text-xs text-muted-foreground">
+                    {finding.confirmed_at ? formatDateTime(finding.confirmed_at) : ""}
+                  </div>
+                </Row>
+              )}
+              {finding.severity_adjusted && (
+                <Row term="Severity set by an analyst">
+                  <span className="text-xs text-muted-foreground">{finding.severity_justification}</span>
+                </Row>
+              )}
               <Row term="Evidence records">{finding.evidence_count}</Row>
               <Row term="First seen">
                 {formatDateTime(finding.first_seen_at)}
@@ -234,6 +294,26 @@ export function FindingView({ code }: { code: string }) {
                 <div className="font-mono text-xs text-muted-foreground">{finding.last_run.code}</div>
               </Row>
             </dl>
+          </Card>
+
+          <Card title="Latest activity">
+            {history === null ? (
+              <Skeleton className="h-16 w-full" />
+            ) : history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
+            ) : (
+              <ul className="flex flex-col">
+                {history
+                  .slice(-3)
+                  .reverse()
+                  .map((entry) => (
+                    <HistoryEntry key={`${entry.finding}-${entry.number}`} entry={entry} code={finding.code} />
+                  ))}
+              </ul>
+            )}
+            <Button asChild variant="outline" size="sm" className="h-8 w-fit">
+              <Link href={`/findings/${finding.code}/activity`}>The whole history</Link>
+            </Button>
           </Card>
 
           <Card title={`Campaign runs (${finding.runs.length})`}>

@@ -11,7 +11,7 @@ const TABS: { id: FindingTab; label: string; path?: string; comesWith?: string }
   { id: "summary", label: "Summary", path: "" },
   { id: "evidence", label: "Evidence", path: "/evidence" },
   { id: "remediation", label: "Remediation", comesWith: "the remediation of findings (M8)" },
-  { id: "activity", label: "Activity", comesWith: "the triage of findings (FR-6.5)" },
+  { id: "activity", label: "Activity", path: "/activity" },
 ]
 
 const SHARED = "flex h-10 items-center border-b-2 px-0.5 text-sm whitespace-nowrap"

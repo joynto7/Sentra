@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Search } from "lucide-react"
 import { StatusBadge, Reproducibility } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
+import { TriagePanel } from "@/components/findings/triage-panel"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { SeverityBadge, type Severity } from "@/components/sentra/severity-badge"
 import { useSession } from "@/components/session-provider"
@@ -29,10 +30,12 @@ import {
   getFinding,
   listFindings,
 } from "@/lib/findings"
+import { useCan } from "@/lib/permissions"
+import { OPEN_STATUSES } from "@/lib/risk"
 import { formatDate } from "@/lib/targets"
 
 const PAGE_SIZE = 25
-const VIEWS: FindingView[] = ["open", "requires_confirmation", "closed"]
+const VIEWS: FindingView[] = ["open", "assigned", "requires_confirmation", "closed"]
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"]
 const STATUSES = [
   "new",
@@ -45,7 +48,16 @@ const STATUSES = [
 ] as const
 
 /** The side panel of Screen 38: what a finding is about, before opening it (UC-6.4 step 5). */
-function FindingPanel({ code, onClose }: { code: string | null; onClose: () => void }) {
+function FindingPanel({
+  code,
+  onClose,
+  onTriage,
+}: {
+  code: string | null
+  onClose: () => void
+  onTriage: (finding: FindingDetail) => void
+}) {
+  const canTriage = useCan("triage_findings")
   const [finding, setFinding] = useState<FindingDetail | null>(null)
 
   useEffect(() => {
@@ -107,9 +119,16 @@ function FindingPanel({ code, onClose }: { code: string | null; onClose: () => v
                   Only the LLM judge supports this finding. An analyst confirms or rejects it (FR-6.5).
                 </p>
               )}
-              <Button asChild className="h-9 hover:bg-primary-hover">
-                <Link href={`/findings/${shown.code}`}>Open finding</Link>
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild className="h-9 hover:bg-primary-hover">
+                  <Link href={`/findings/${shown.code}`}>Open finding</Link>
+                </Button>
+                {canTriage && (OPEN_STATUSES as readonly string[]).includes(shown.status) && (
+                  <Button variant="outline" className="h-9" onClick={() => onTriage(shown)}>
+                    Triage
+                  </Button>
+                )}
+              </div>
             </div>
           </>
         ) : (
@@ -143,6 +162,9 @@ export function FindingsList() {
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
+  const [owner, setOwner] = useState("")
+  // The finding whose triage panel is open (Screen 41)
+  const [triaging, setTriaging] = useState<FindingDetail | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -162,6 +184,7 @@ export function FindingsList() {
       if (category) params.set("category", category)
       if (status) params.set("status", status)
       if (runId) params.set("run_id", runId)
+      if (owner) params.set("owner_id", owner)
       listFindings(params, controller.signal)
         .then((found) => {
           setData(found)
@@ -173,9 +196,9 @@ export function FindingsList() {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [view, search, target, severity, category, status, runId, page, attempt])
+  }, [view, search, target, severity, category, status, runId, owner, page, attempt])
 
-  const filtered = Boolean(search.trim() || target || severity || category || status || runId)
+  const filtered = Boolean(search.trim() || target || severity || category || status || runId || owner)
   const clearFilters = useCallback(() => {
     setSearch("")
     setTarget("")
@@ -183,6 +206,7 @@ export function FindingsList() {
     setCategory("")
     setStatus("")
     setRunId("")
+    setOwner("")
     setPage(1)
   }, [])
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
@@ -245,6 +269,15 @@ export function FindingsList() {
             value,
             label: value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
           }))}
+        />
+        <FilterSelect
+          label="Owner"
+          value={owner}
+          onChange={(value) => {
+            setOwner(value)
+            setPage(1)
+          }}
+          options={(options?.owners ?? []).map((row) => ({ value: row.id, label: row.name }))}
         />
         <FilterSelect
           label="Campaign run"
@@ -336,6 +369,7 @@ export function FindingsList() {
                 <TableHead className="text-xs">Category</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
                 <TableHead className="text-xs">Reproducibility</TableHead>
+                <TableHead className="text-xs">Owner</TableHead>
                 <TableHead className="text-xs">Last seen</TableHead>
                 <TableHead className="w-24 text-xs">
                   <span className="sr-only">Preview</span>
@@ -365,6 +399,12 @@ export function FindingsList() {
                   </TableCell>
                   <TableCell>
                     <Reproducibility value={finding.reproducibility} />
+                    {finding.repetitions && (
+                      <div className="text-xs text-muted-foreground">{finding.repetitions.label}</div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-[13px]">
+                    {finding.owner ? finding.owner.name : <span className="text-muted-foreground">Nobody yet</span>}
                   </TableCell>
                   <TableCell className="text-[13px]">
                     {formatDate(finding.last_seen_at)}
@@ -424,7 +464,12 @@ export function FindingsList() {
         }}
         className="gap-4"
       >
-        <TabsList variant="line" aria-label="Findings" className="h-10 w-full justify-start gap-6 border-b px-0">
+        {/* Four quick views don't fit a tablet, so the strip scrolls instead of the page. */}
+        <TabsList
+          variant="line"
+          aria-label="Findings"
+          className="h-10 w-full justify-start gap-6 overflow-x-auto border-b px-0"
+        >
           {VIEWS.map((value) => (
             <TabsTrigger key={value} value={value} className="flex-none gap-2 px-0.5">
               {VIEW_LABEL[value]}
@@ -446,7 +491,27 @@ export function FindingsList() {
       </Tabs>
 
 
-      <FindingPanel code={selected} onClose={() => setSelected(null)} />
+      <FindingPanel
+        code={selected}
+        onClose={() => setSelected(null)}
+        onTriage={(finding) => {
+          // The preview closes first: Screen 41 is the panel in front, not a second one beside it.
+          setSelected(null)
+          setTriaging(finding)
+        }}
+      />
+      {triaging && (
+        <TriagePanel
+          finding={triaging}
+          open
+          onOpenChange={(open) => !open && setTriaging(null)}
+          onDone={() => {
+            setTriaging(null)
+            setSelected(null)
+            setAttempt((count) => count + 1)
+          }}
+        />
+      )}
     </>
   )
 }
