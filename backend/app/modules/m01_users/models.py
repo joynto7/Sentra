@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
@@ -33,11 +33,20 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     last_organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="SET NULL")
     )
+    # Profile (FR-1.7)
+    phone: Mapped[str | None] = mapped_column(String(32))
+    # A new address waiting for its confirmation link (UC-1.11, 2a); the address in use stays
+    # `email` until then.
+    pending_email: Mapped[str | None] = mapped_column(String(320))
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=func.now()
+    )
 
 
 class TokenPurpose(StrEnum):
     VERIFY_EMAIL = "verify_email"
     RESET_PASSWORD = "reset_password"
+    CHANGE_EMAIL = "change_email"  # confirms the new address of UC-1.11, 2a
 
 
 class OneTimeToken(UUIDPrimaryKey, Base):
@@ -72,6 +81,36 @@ class UserSession(UUIDPrimaryKey, Base):
     ip_address: Mapped[str | None] = mapped_column(String(45))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AccountEventKind(StrEnum):
+    """Security events of an account, shown under "Recent activity" (UC-1.11 step 6)."""
+
+    LOGGED_IN = "logged_in"
+    LOGIN_FAILED = "login_failed"  # the right address with a wrong password
+    PASSWORD_CHANGED = "password_changed"
+    PASSWORD_RESET = "password_reset"
+    EMAIL_CHANGE_REQUESTED = "email_change_requested"
+    EMAIL_CHANGED = "email_changed"
+    SESSION_ENDED = "session_ended"  # the user logged out one of their other sessions
+    OTHER_SESSIONS_ENDED = "other_sessions_ended"
+
+
+class AccountEvent(UUIDPrimaryKey, Base):
+    """One security event of a user's account, with where it came from."""
+
+    __tablename__ = "account_events"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(40))
+    ip_address: Mapped[str | None] = mapped_column(String(45))
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    # The moment of the event itself: the database's now() is the same for a whole transaction.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now()
+    )
 
 
 class Role(StrEnum):
