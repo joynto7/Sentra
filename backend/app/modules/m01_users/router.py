@@ -5,7 +5,10 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.models import Organization
 from app.modules.m01_users import organizations, service
+from app.modules.m01_users.cookies import set_session_cookie
 from app.modules.m01_users.deps import current_session, current_user
+from app.modules.m01_users.invitation_routes import admin_router as invitation_admin_router
+from app.modules.m01_users.invitation_routes import public_router as invitation_router
 from app.modules.m01_users.member_routes import router as member_router
 from app.modules.m01_users.models import User, UserSession
 from app.modules.m01_users.organization_routes import organization_out
@@ -25,18 +28,6 @@ from app.modules.m01_users.schemas import (
 auth_router = APIRouter(prefix="/auth", tags=["M1 Authentication"])
 
 CHECK_EMAIL = "If the address can be used, we've sent an e-mail with the next step."
-
-
-def _set_session_cookie(response: Response, raw: str) -> None:
-    settings = get_settings()
-    response.set_cookie(
-        settings.session_cookie_name,
-        raw,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        path="/",
-    )
 
 
 @auth_router.get("/password-policy")
@@ -78,7 +69,7 @@ def login(
         request.headers.get("user-agent"),
         request.client.host if request.client else None,
     )
-    _set_session_cookie(response, raw)
+    set_session_cookie(response, raw)
     return UserOut.model_validate(user)
 
 
@@ -130,3 +121,5 @@ router = APIRouter()
 router.include_router(auth_router)
 router.include_router(organization_router)
 router.include_router(member_router)
+router.include_router(invitation_admin_router)
+router.include_router(invitation_router)

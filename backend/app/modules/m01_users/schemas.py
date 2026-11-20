@@ -92,3 +92,50 @@ class MemberOut(BaseModel):
 class RoleChangeIn(BaseModel):
     role: Role
     password: str = Field(min_length=1, max_length=256)  # UC-10.1 step 4 (NFR-3.5)
+
+
+class InviteIn(BaseModel):
+    email: EmailStr
+    role: Role
+
+
+class InvitationOut(BaseModel):
+    """A pending or expired invitation, for the Pending invitations tab (Screen 12)."""
+
+    id: uuid.UUID
+    email: str
+    role: str
+    role_label: str
+    invited_by: str | None
+    status: str  # pending or expired
+    expires_at: datetime
+    created_at: datetime
+
+
+class InvitationTokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+class InvitationRegisterIn(InvitationTokenIn):
+    """Create an account from an invitation (UC-1.9 step 3). The e-mail is the invited one."""
+
+    name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=1, max_length=256)
+    accept_terms: bool
+
+
+class InvitationDetailsOut(BaseModel):
+    """What the invited person sees before accepting (Screen 05)."""
+
+    organization: str
+    email: str
+    role: str
+    role_label: str
+    role_description: str
+    invited_by: str | None
+    has_account: bool
+    logged_in_as: str | None  # the e-mail of the account logged in in this browser, if any
+
+
+class PasswordIn(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
