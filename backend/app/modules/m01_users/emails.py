@@ -60,10 +60,11 @@ def role_changed(name: str, organization: str, role: str) -> tuple[str, str]:
 
 def invitation(organization: str, inviter: str, role: str, token: str) -> tuple[str, str]:
     link = f"{get_settings().web_url}/invitations/accept?token={token}"
+    article = "an" if role[0] in "AEIOU" else "a"
     return (
         f"{inviter} invited you to {organization} on Sentra",
         f"Hello,\n\n"
-        f"{inviter} invited you to join {organization} on Sentra as a {role}.\n\n"
+        f"{inviter} invited you to join {organization} on Sentra as {article} {role}.\n\n"
         f"Accept the invitation here:\n{link}\n\n"
         "The link works once, only for this e-mail address, and expires in 7 days.\n"
         "If you did not expect this invitation, you can ignore this e-mail.\n",
