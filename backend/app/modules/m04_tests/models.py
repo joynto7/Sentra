@@ -60,3 +60,41 @@ class TestDefinition(UUIDPrimaryKey, Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     change_note: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TestSuite(UUIDPrimaryKey, Base):
+    """One version of a test suite (FR-4.4). Like a test definition, a change adds a new current
+    version and never edits an earlier one, so campaign runs stay reproducible (FR-4.5)."""
+
+    __tablename__ = "test_suites"
+    __test__ = False  # not a pytest test class
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", "version", postgresql_nulls_not_distinct=True),
+        Index(
+            "uq_test_suites_one_current",
+            "organization_id",
+            "code",
+            unique=True,
+            postgresql_where=text("is_current"),
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
+
+    code: Mapped[str] = mapped_column(String(40))
+    version: Mapped[int]
+    is_current: Mapped[bool]
+    origin: Mapped[str] = mapped_column(String(20))  # "built_in" or "custom"
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE")
+    )
+    # "active" or "archived" (UC-4.5, 3a); archiving is saved as a new version.
+    status: Mapped[str] = mapped_column(String(10), default="active", server_default="active")
+
+    name: Mapped[str] = mapped_column(String(80))
+    purpose: Mapped[str] = mapped_column(String(300))
+    # The codes of the tests, not copies of them: a suite always uses their current versions.
+    tests: Mapped[list[str]] = mapped_column(JSONB)
+
+    content_hash: Mapped[str] = mapped_column(String(64))
+    change_note: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
