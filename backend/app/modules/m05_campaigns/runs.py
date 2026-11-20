@@ -79,9 +79,8 @@ def launch(
             "until it ends, or stop it first.",
             code="run_in_progress",
         )
-    reached = limits.reached(
-        limits.limits_for(db, organization_id), limits.usage(db, organization_id), launching=True
-    )
+    in_force, used = limits.limits_for(db, organization_id), limits.usage(db, organization_id)
+    reached = limits.reached(in_force, used, launching=True)
     if reached is not None:  # 3a
         db.rollback()
         lifecycle.notify_limit(db, organization_id, reached[1])
@@ -143,6 +142,9 @@ def launch(
         },
     )
     db.commit()
+    # UC-10.6 step 5, with the run counted: the organization hears once a month that a limit is
+    # coming close. It is after the commit, so the launch never waits for a notification.
+    limits.watch(db, organization_id, in_force, limits.usage(db, organization_id))
     lifecycle.publish_status(run)
     if not lifecycle.dispatch(db, run):  # the Task Queue can't be reached
         lifecycle.cancel_unqueued(db, run.id)
