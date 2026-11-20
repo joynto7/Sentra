@@ -28,13 +28,18 @@ class Settings(BaseSettings):
     session_cookie_name: str = "sentra_session"
     session_idle_minutes: int = 30
     cookie_secure: bool = True
+    # The second step of a login with two-step verification (FR-1.2)
+    second_step_cookie_name: str = "sentra_second_step"
+    # How long an entered password allows changing security settings (UC-1.7 step 2)
+    password_confirmation_minutes: int = 10
 
     # Slowing down repeated failed logins (UC-1.2)
     login_max_failures: int = 5
     login_lock_minutes: int = 15
 
-    # Encryption of target credentials (FR-2.2, NFR-3.1): an AES-256 key, base64-encoded, kept
-    # outside the database. Make one with:
+    # Encryption of stored secrets, such as target credentials (FR-2.2) and the secrets of
+    # two-step verification (FR-1.2), NFR-3.1: an AES-256 key, base64-encoded, kept outside the
+    # database. Make one with:
     #   python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"
     credentials_key: str = ""
     # Server-side request forgery protection (NFR-3.4): targets on private network addresses are

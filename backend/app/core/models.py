@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func, text
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.core.database import Base
@@ -27,6 +27,8 @@ class Organization(UUIDPrimaryKey, Timestamps, Base):
 
     name: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(80), unique=True)
+    # Every member must use two-step verification (FR-1.2, UC-1.7).
+    mfa_required: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
 
 
 class OrganizationScoped:
