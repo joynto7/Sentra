@@ -28,6 +28,7 @@ from app.modules.m02_targets.models import (
     TargetStatus,
 )
 from app.modules.m02_targets.schemas import (
+    ActiveRunOut,
     ArchiveConsequencesOut,
     ArchiveIn,
     CanaryIn,
@@ -54,6 +55,7 @@ from app.modules.m02_targets.schemas import (
     TargetPatch,
     VerificationOut,
 )
+from app.modules.m05_campaigns.lifecycle import code as campaign_code
 
 router = APIRouter(prefix="/targets", tags=["M2 Target Management"])
 
@@ -68,7 +70,11 @@ can_map = require(Action.MAP_TARGET_PROFILES)
 def targets_out(db: Session, targets: list[Target]) -> list[TargetOut]:
     """The targets with their owners, verification, last connection test and profile status."""
     ids = [t.id for t in targets]
-    people = service.owner_names(db, targets) | _names(db, [t.verified_by_id for t in targets])
+    people = (
+        service.owner_names(db, targets)
+        | _names(db, [t.verified_by_id for t in targets])
+        | _names(db, [t.archived_by_id for t in targets])
+    )
     tests = connection.latest_of(db, ids)
     profiles = profile.status_of(db, ids)
     return [target_out(t, people, tests.get(t.id), profiles.get(t.id)) for t in targets]
@@ -79,6 +85,7 @@ def target_out(
     owners: dict[uuid.UUID, str],
     last_test: ConnectionTest | None = None,
     profile_status: str | None = None,
+    active_run: ActiveRunOut | None = None,
 ) -> TargetOut:
     response = target.response_template or {}
     return TargetOut(
@@ -119,6 +126,11 @@ def target_out(
         if last_test is not None
         else None,
         profile_status=profile_status,
+        archived_at=target.archived_at,
+        archived_by=OwnerOut(id=target.archived_by_id, name=owners[target.archived_by_id])
+        if target.archived_by_id in owners
+        else None,
+        active_run=active_run,
     )
 
 
@@ -130,7 +142,18 @@ def _names(db: Session, ids: list[uuid.UUID | None]) -> dict[uuid.UUID, str]:
 
 
 def _one(db: Session, target: Target) -> TargetOut:
-    return targets_out(db, [target])[0]
+    """One target, with the campaign run that is going on if there is one (UC-2.5, 3b)."""
+    out = targets_out(db, [target])[0]
+    found = lifecycle.active_run(db, target.id)
+    if found is not None:
+        run, campaign = found
+        out.active_run = ActiveRunOut(
+            id=run.id,
+            code=campaign_code(run, campaign),
+            number=run.number,
+            campaign=campaign.code if campaign else None,
+        )
+    return out
 
 
 @router.get("")

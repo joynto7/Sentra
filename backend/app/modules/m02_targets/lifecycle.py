@@ -387,7 +387,12 @@ def _run_events(
                     "trigger": run.trigger,
                     "end_reason": run.end_reason,
                 },
-                "run": {"id": run.id, "code": label, "number": run.number},
+                "run": {
+                    "id": run.id,
+                    "code": label,
+                    "number": run.number,
+                    "campaign": campaign.code if campaign else None,
+                },
                 "details_deleted": deleted,  # 5a1
             }
         )

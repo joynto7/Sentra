@@ -107,6 +107,19 @@ class TargetOut(BaseModel):
     verification_method: str | None = None
     last_connection_test: ConnectionSummary | None = None
     profile_status: str | None = None  # None until the first mapping (FR-2.5)
+    # When it was retired and by whom (FR-2.6; UC-2.6)
+    archived_at: datetime | None = None
+    archived_by: OwnerOut | None = None
+    # The campaign run that is going on, if any: while it runs, the endpoint and the credentials
+    # can't change and the target can't be archived (UC-2.5, 3b; UC-2.6, 2a). Only on one target.
+    active_run: "ActiveRunOut | None" = None
+
+
+class ActiveRunOut(BaseModel):
+    id: uuid.UUID
+    code: str  # R-238-2
+    number: int
+    campaign: str | None  # C-238
 
 
 class TargetListOut(BaseModel):
@@ -277,6 +290,7 @@ class HistoryRunRef(BaseModel):
     id: uuid.UUID
     code: str  # R-001-2
     number: int
+    campaign: str | None  # C-001, so the page can open the run
 
 
 class HistoryEvent(BaseModel):
