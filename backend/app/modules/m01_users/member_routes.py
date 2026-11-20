@@ -19,7 +19,9 @@ from app.modules.m01_users.schemas import MemberOut, PermissionOut, RoleChangeIn
 router = APIRouter(prefix="/organizations", tags=["M1 Organizations"])
 
 
-def member_out(membership: Membership, user: User, me: User) -> MemberOut:
+def member_out(
+    membership: Membership, user: User, me: User, suspended_by: str | None = None
+) -> MemberOut:
     return MemberOut(
         membership_id=membership.id,
         user_id=user.id,
@@ -31,6 +33,10 @@ def member_out(membership: Membership, user: User, me: User) -> MemberOut:
         last_login_at=user.last_login_at,
         joined_at=membership.created_at,
         is_you=user.id == me.id,
+        status=membership.status,
+        suspended_at=membership.suspended_at,
+        suspension_reason=membership.suspension_reason,
+        suspended_by=suspended_by,
     )
 
 
@@ -59,7 +65,9 @@ def list_members(
     db: Session = Depends(get_db),
 ) -> list[MemberOut]:
     """The members of the current organization, for its administrators (Screen 12)."""
-    return [member_out(m, u, user) for m, u in members.list_members(db, membership.organization_id)]
+    rows = members.list_members(db, membership.organization_id)
+    names = members.suspender_names(db, [m for m, _ in rows])
+    return [member_out(m, u, user, names.get(m.id)) for m, u in rows]
 
 
 @router.patch("/current/members/{membership_id}")
