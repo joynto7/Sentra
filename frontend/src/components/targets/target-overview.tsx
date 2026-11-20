@@ -12,6 +12,7 @@ import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
 import { ConnectionSummary, TestConnectionButton, useConnectionTest } from "@/components/targets/connection-test"
 import { EnvironmentBadge, OwnershipBadge } from "@/components/targets/target-badges"
 import { TargetTabs } from "@/components/targets/target-tabs"
+import { TargetThreatModel } from "@/components/threat-models/target-threat-model"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -396,7 +397,9 @@ export function TargetOverview({ id }: { id: string }) {
               </Link>
             )}
           </Card>
-          <LaterCard title="Threat model" comesWith="the threat models (M3)" />
+          <Card title="Threat model">
+            <TargetThreatModel targetId={target.id} />
+          </Card>
           <LaterCard title="Framework coverage" comesWith="the framework coverage view (FR-7.4)" />
         </div>
       </div>

@@ -110,7 +110,9 @@ def test_a_run_records_the_versions_and_settings_it_uses(team, use):
     assert all(s["version"] >= 1 for s in versions["suites"])
     assert len(versions["tests"]) == 6
     assert {"id", "code", "version", "suites"} <= set(versions["tests"][0])
-    assert versions["threat_model"] is None  # FR-3.1 comes in Sprint 3
+    # None: this campaign's target has no approved threat model (FR-3.3, UC-5.1, 2a)
+    assert versions["threat_model"] is None
+    assert team.db.get(CampaignRun, uuid.UUID(body["id"])).threat_model_id is None
     assert body["settings"]["attempt_budget"] == 10
     assert (body["settings"]["window_start"], body["settings"]["time_zone"]) == (None, "UTC")
     assert body["trigger"] == "manual"

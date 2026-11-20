@@ -111,7 +111,12 @@ def launch(
         status_message="Waiting for a worker.",
         launched_by_id=user.id,
         settings=_settings(campaign),
-        versions={"suites": suites, "tests": tests, "threat_model": None},  # FR-3.1: Sprint 3
+        threat_model_id=campaign.threat_model_id,  # FR-3.3: the version it was based on
+        versions={
+            "suites": suites,
+            "tests": tests,
+            "threat_model": service._version(db, campaign.threat_model_id),
+        },
         attempt_budget=campaign.attempt_budget,
         request_rate=min(campaign.request_rate, target.max_request_rate),
     )

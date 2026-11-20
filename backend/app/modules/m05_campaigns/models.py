@@ -169,6 +169,12 @@ class CampaignRun(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
 
     # The campaign's settings at launch: a later change of the campaign doesn't change a run
     settings: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # FR-3.3: the threat model version the run was based on, taken from the campaign when it was
+    # launched; None when the campaign had none (UC-5.1, 2a). `versions` holds its number, this
+    # column answers which runs a version was used by (UC-3.4 step 2).
+    threat_model_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("threat_models.id", ondelete="SET NULL"), index=True
+    )
     # The exact versions it uses (UC-5.3 step 4, FR-4.5): suites, tests, threat model, templates
     versions: Mapped[dict] = mapped_column(JSONB, default=dict)
     # Each test with "planned" or "skipped" and the reason (UC-5.4 step 2)
