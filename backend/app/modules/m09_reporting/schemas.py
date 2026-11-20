@@ -135,6 +135,7 @@ class ReportOut(BaseModel):
 class RecipientRef(BaseModel):
     id: str
     name: str
+    email: str | None = None  # Screen 53 matches a typed address against these (UC-9.2, 3a1)
 
 
 class ScheduleOut(BaseModel):
