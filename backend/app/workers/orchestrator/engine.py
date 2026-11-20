@@ -336,8 +336,11 @@ class RunContext:
             self._end(RunStatus.STOPPED, EndReason.OWNERSHIP_NOT_VERIFIED, self._unverified_text())
             return False
         used = limits.usage(db, run.organization_id)
-        reached = limits.reached(limits.limits_for(db, run.organization_id), used, launching=False)
+        in_force = limits.limits_for(db, run.organization_id)
+        reached = limits.reached(in_force, used, launching=False)
         db.commit()
+        # UC-10.6 step 5: the organization is told once a month when a limit comes close.
+        limits.watch(db, run.organization_id, in_force, used)
         if reached:
             self._end(
                 RunStatus.STOPPED,
