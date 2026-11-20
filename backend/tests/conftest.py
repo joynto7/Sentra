@@ -1,4 +1,5 @@
 import os
+import tempfile
 from collections.abc import Iterator
 
 # Test settings, set before the app reads its configuration.
@@ -11,6 +12,8 @@ os.environ.setdefault("CREDENTIALS_KEY", "c2VudHJhLXRlc3RzLW9ubHktbm90LWEtcmVhbC
 os.environ.setdefault("RUN_JOBS_INLINE", "true")
 # The live events of campaign runs stay in this process: the tests have no Redis.
 os.environ.setdefault("LIVE_EVENTS_BACKEND", "memory")
+# The object storage of the tests is a new empty directory, never the volume of compose.yaml.
+os.environ.setdefault("OBJECT_STORAGE_DIR", tempfile.mkdtemp(prefix="sentra-objects-"))
 
 import httpx
 import pytest

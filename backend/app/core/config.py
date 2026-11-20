@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     # The live stream of a run closes after this many seconds and the browser reconnects with the
     # last event it saw, so the session and the membership are checked again (NFR-3.3).
     live_stream_seconds: int = 60
+    # The object storage (app/core/storage.py): a directory that the API and the workers share,
+    # a Docker volume in compose.yaml. It holds evidence documents over 64 KB (FR-6.3, NFR-6.2).
+    object_storage_dir: str = "/data/objects"
 
     # Server-side request forgery protection (NFR-3.4): targets on private network addresses are
     # refused, unless an on-premises deployment allows them.
