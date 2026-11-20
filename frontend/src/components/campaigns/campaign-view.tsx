@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { TriangleAlert } from "lucide-react"
 
+import { LaunchRunButton } from "@/components/campaigns/launch-run"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { EnvironmentBadge } from "@/components/targets/target-badges"
@@ -11,7 +12,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
-import { type CampaignDetail, formatCount, getCampaign, windowText } from "@/lib/campaigns"
+import {
+  type CampaignDetail,
+  type RunOverviewItem,
+  RUN_STATUS_LABEL,
+  formatCount,
+  getCampaign,
+  listRuns,
+  windowText,
+} from "@/lib/campaigns"
 import { TYPE_LABEL, type Environment, type TargetType } from "@/lib/targets"
 import { formatDate } from "@/lib/test-library"
 
@@ -36,16 +45,23 @@ function Row({ term, children }: { term: string; children: React.ReactNode }) {
 /** A saved campaign: its target, suites, limits and estimate (UC-5.1). Runs come with FR-5.4. */
 export function CampaignView({ code }: { code: string }) {
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null)
+  const [runs, setRuns] = useState<RunOverviewItem[] | null>(null)
   const [notFound, setNotFound] = useState(false)
 
   usePageCrumbs([{ label: campaign?.name ?? code }])
 
   useEffect(() => {
+    const controller = new AbortController()
     getCampaign(code)
       .then(setCampaign)
       .catch((error) => {
         if (error instanceof ApiError && error.status === 404) setNotFound(true)
       })
+    // The campaign's own runs (UC-5.6 step 1); they carry no campaign, because it is this one.
+    listRuns(code, controller.signal)
+      .then((found) => setRuns(found.map((run) => ({ ...run, campaign: null, target: null }))))
+      .catch(() => setRuns([]))
+    return () => controller.abort()
   }, [code])
 
   if (notFound) {
@@ -74,7 +90,8 @@ export function CampaignView({ code }: { code: string }) {
 
   return (
     <div className="space-y-5">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
         <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           <span className="font-mono">{campaign.code}</span>
@@ -85,6 +102,8 @@ export function CampaignView({ code }: { code: string }) {
             Created by {campaign.created_by ?? "a former member"} on {formatDate(campaign.created_at)}
           </span>
         </div>
+        </div>
+        <LaunchRunButton code={campaign.code} targetVerified={target?.status === "verified"} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
@@ -160,7 +179,24 @@ export function CampaignView({ code }: { code: string }) {
             ))}
           </Card>
           <Card title="Runs">
-            <p className="text-sm text-muted-foreground">Not run yet.</p>
+            {runs === null ? (
+              <Skeleton className="h-16 w-full" />
+            ) : runs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Not run yet. A run sends this campaign&apos;s tests to the target and can be followed live.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {runs.slice(0, 5).map((run) => (
+                  <li key={run.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <Link href={`/campaigns/${campaign.code}/runs/${run.number}`} className="font-mono text-[13px] text-link hover:underline">
+                      {run.code}
+                    </Link>
+                    <span className="text-muted-foreground">{RUN_STATUS_LABEL[run.status]}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
       </div>
