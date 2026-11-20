@@ -96,7 +96,9 @@ def test_account_security_alerts_cannot_be_turned_off(maya):
 def test_preferences_list_every_event_switched_on_by_default(maya):
     preferences = maya["client"].get(f"{URL}/preferences").json()
 
-    assert len(preferences) == 9  # with "Target profile ready for review" (UC-2.4 step 4)
+    # with "Target profile ready for review" (UC-2.4 step 4) and "Threat model ready for review"
+    # (UC-3.1 step 6)
+    assert len(preferences) == 10
     assert all(p["in_app"] and p["email"] for p in preferences)
     assert preferences[0]["label"] == "Campaign run completed"
 
