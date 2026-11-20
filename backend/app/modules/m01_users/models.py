@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.core.models import Timestamps, UUIDPrimaryKey
+from app.core.models import OrganizationScoped, Timestamps, UUIDPrimaryKey
 
 
 class UserStatus(StrEnum):
@@ -104,3 +104,27 @@ class Membership(UUIDPrimaryKey, Timestamps, Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(30))
+
+
+class InvitationStatus(StrEnum):
+    PENDING = "pending"  # shown as "expired" once expires_at has passed (UC-1.8, 5b)
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    REVOKED = "revoked"
+
+
+class Invitation(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
+    """An invitation to join an organization with a role (FR-1.5). The link works once, only for
+    this e-mail address, and expires; only a hash of its token is stored."""
+
+    __tablename__ = "invitations"
+
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    role: Mapped[str] = mapped_column(String(30))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    status: Mapped[str] = mapped_column(String(20), server_default=InvitationStatus.PENDING.value)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    invited_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
