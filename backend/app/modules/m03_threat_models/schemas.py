@@ -110,7 +110,7 @@ class ThreatModelList(BaseModel):
     rows: list[ThreatModelRow]
     drafts_to_review: int  # targets whose newest version is a draft
     approved: int  # targets whose newest version is approved
-    without_threat_model: int  # verified targets that have no threat model yet
+    without_threat_model: int  # targets (not archived) that have no threat model yet
 
 
 # ---------------------------------------------------------------- reviewing (UC-3.2)

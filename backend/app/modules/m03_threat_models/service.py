@@ -323,9 +323,8 @@ def overview(db: Session, organization_id: uuid.UUID) -> ThreatModelList:
         rows=rows,
         drafts_to_review=sum(m.status == ThreatModelStatus.DRAFT for m in newest.values()),
         approved=sum(m.status == ThreatModelStatus.APPROVED for m in newest.values()),
-        without_threat_model=sum(
-            t.status == TargetStatus.VERIFIED and t.id not in newest for t in targets
-        ),
+        # Screen 25: unverified targets count too; their row says what to do first.
+        without_threat_model=sum(t.id not in newest for t in targets),
     )
 
 
