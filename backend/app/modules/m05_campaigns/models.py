@@ -71,6 +71,78 @@ class Campaign(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
         return f"C-{self.number:03d}"
 
 
+class ScheduleKind(StrEnum):
+    """UC-5.1 step 5: when the campaign runs. "Immediately" launches the first run at once
+    (UC-5.3) and saves no schedule, so only these two kinds are ever stored."""
+
+    ONCE = "once"
+    RECURRING = "recurring"
+
+
+class ScheduleFrequency(StrEnum):
+    """How often a recurring schedule runs (FR-5.3: "such as weekly")."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class ScheduleStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    FINISHED = "finished"  # a one-off that has had its moment
+
+
+class ScheduleResult(StrEnum):
+    """What came of the schedule's last moment, shown with it (Screens 33 and 35)."""
+
+    LAUNCHED = "launched"
+    SKIPPED = "skipped"  # the campaign couldn't be launched then (UC-5.3, 3a and 4a)
+    MISSED = "missed"  # the moment passed while Sentra wasn't running
+
+
+class CampaignSchedule(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
+    """When a campaign runs by itself (FR-5.3): once at a moment, or daily, weekly or monthly at
+    a clock time in the campaign's own time zone. The scheduler (app/workers/scheduler.py)
+    launches a due schedule through UC-5.3 with the permissions of the member who saved it (1a1).
+    A campaign has at most one schedule, and a run launched by hand doesn't change it."""
+
+    __tablename__ = "campaign_schedules"
+    __table_args__ = (
+        UniqueConstraint("campaign_id"),
+        Index("ix_campaign_schedules_due", "status", "next_run_at"),
+        CheckConstraint("weekday IS NULL OR weekday BETWEEN 0 AND 6", name="schedule_weekday"),
+        # 1-28, so that the day exists in every month
+        CheckConstraint(
+            "day_of_month IS NULL OR day_of_month BETWEEN 1 AND 28", name="schedule_day_of_month"
+        ),
+    )
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(10))
+    frequency: Mapped[str | None] = mapped_column(String(10))  # recurring only
+    run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # once only
+    # Recurring: the clock time in the campaign's time zone, and which day it falls on
+    at_time: Mapped[time | None] = mapped_column(Time)
+    weekday: Mapped[int | None] = mapped_column(SmallInteger)  # weekly: 0 = Monday … 6 = Sunday
+    day_of_month: Mapped[int | None] = mapped_column(SmallInteger)  # monthly
+    status: Mapped[str] = mapped_column(String(10), default=ScheduleStatus.ACTIVE)
+    # When the next run starts, in UTC; None while the schedule is paused or finished
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_result: Mapped[str | None] = mapped_column(String(10))
+    last_message: Mapped[str] = mapped_column(Text, default="", server_default="")
+    last_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL")
+    )
+    # Moments in a row that started no run; after a few the schedule pauses itself (scheduler.py)
+    misses: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Whose permissions a scheduled run uses (UC-5.3, 1a1)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
 class RunType(StrEnum):
     CAMPAIGN = "campaign"
     RETEST = "retest"  # UC-8.6: a run without a campaign
