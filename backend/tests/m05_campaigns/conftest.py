@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import select
 
 from app.modules.m01_users.models import Role
 from app.modules.m02_targets import verification
@@ -104,6 +105,19 @@ class StubSender:
                 self.during(run, attempt)
 
 
+def configure(db, code: str = "C-001", **changes):
+    """Changes the campaign's settings before a run is launched; a run copies them at launch. A
+    test that measures reproducibility (FR-6.4) says so here, e.g. configure(db, repetitions=5)."""
+    from app.modules.m05_campaigns.models import Campaign
+
+    number = int(code.removeprefix("C-"))
+    found = db.scalar(select(Campaign).where(Campaign.number == number))
+    for name, value in changes.items():
+        setattr(found, name, value)
+    db.commit()
+    return found
+
+
 def confirmed(target, method) -> verification.Outcome:
     return verification.Outcome(True, "sentra-verification=found", "The token was found.")
 
@@ -138,6 +152,7 @@ def team(client, db, monkeypatch):
             agent.id,
             attempt_budget=10,
             request_rate=20,
+            repetitions=1,  # FR-6.4 measures nothing here; configure() turns it on per test
             window_start=None,
             window_end=None,
             time_zone="UTC",
