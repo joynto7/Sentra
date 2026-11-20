@@ -21,6 +21,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.crypto import decrypt, encrypt
 from app.core.errors import ConflictError, FieldValidationError
 from app.core.models import Organization
@@ -290,13 +291,28 @@ def members_without_mfa(db: Session, organization_id: uuid.UUID) -> list[User]:
 
 
 def require_mfa(
-    db: Session, organization: Organization, required: bool, background: BackgroundTasks
+    db: Session,
+    organization: Organization,
+    admin: User,
+    required: bool,
+    background: BackgroundTasks,
 ) -> None:
     """Steps 3, 6 and 7 (3a). It applies from each member's next login (UC-1.2, 3b); the members
     who haven't turned it on are told now. Turning it off tells nobody."""
     if organization.mfa_required == required:
         return
     organization.mfa_required = required
+    audit.record(
+        db,
+        organization_id=organization.id,
+        actor=admin,
+        action="organization.security_changed",
+        summary="Required two-step verification for every member"
+        if required
+        else "Stopped requiring two-step verification",
+        item=audit.Item("organization", organization.id, organization.name),
+        details={"before": {"mfa_required": not required}, "after": {"mfa_required": required}},
+    )
     db.commit()
     if not required:
         return

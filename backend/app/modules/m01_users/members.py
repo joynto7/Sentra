@@ -6,6 +6,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.email import send_email
 from app.core.errors import ConflictError, FieldValidationError, NotFoundError
 from app.core.models import Organization
@@ -57,7 +58,17 @@ def change_role(
             code="last_admin",
         )
 
+    before = ROLE_LABELS[Role(membership.role)]
     membership.role = role
+    audit.record(
+        db,
+        organization_id=admin.organization_id,
+        actor=admin_user,
+        action="member.role_changed",
+        summary=f"Changed the role of {user.name}: {before} → {ROLE_LABELS[role]}",
+        item=audit.Item("member", user.id, user.name),
+        details={"before": {"role": before}, "after": {"role": ROLE_LABELS[role]}},
+    )
     db.commit()
     organization = db.get_one(Organization, admin.organization_id)
     background.add_task(

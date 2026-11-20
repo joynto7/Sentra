@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.errors import FieldValidationError, NotFoundError
 from app.core.models import Organization
 from app.modules.m01_users.models import Membership, Role, User, UserSession
@@ -35,6 +36,14 @@ def create(db: Session, user: User, session: UserSession, name: str) -> Membersh
     membership = Membership(user_id=user.id, organization_id=organization.id, role=Role.ORG_ADMIN)
     db.add(membership)
     _open(user, session, organization.id)
+    audit.record(
+        db,
+        organization_id=organization.id,
+        actor=user,
+        action="organization.created",
+        summary=f"Created the organization {organization.name}",
+        item=audit.Item("organization", organization.id, organization.name),
+    )
     db.commit()
     return membership
 

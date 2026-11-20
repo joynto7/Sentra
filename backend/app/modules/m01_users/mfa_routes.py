@@ -198,5 +198,6 @@ def update_organization_security(
 ) -> OrganizationSecurityOut:
     """Steps 3, 6 and 7 (3a), with the password confirmed in the last 10 minutes (step 2)."""
     organization = db.get_one(Organization, membership.organization_id)
-    mfa.require_mfa(db, organization, data.mfa_required, background)
+    admin = db.get_one(User, membership.user_id)
+    mfa.require_mfa(db, organization, admin, data.mfa_required, background)
     return _security_out(db, membership, session)
