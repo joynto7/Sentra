@@ -11,7 +11,7 @@ from app.core.email import send_email
 from app.core.errors import ConflictError, FieldValidationError, NotFoundError
 from app.core.models import Organization
 from app.modules.m01_users import emails
-from app.modules.m01_users.models import ROLE_LABELS, Membership, Role, User
+from app.modules.m01_users.models import ROLE_LABELS, Membership, MembershipStatus, Role, User
 from app.modules.m01_users.security import verify_password
 from app.modules.m09_reporting.notifications import notify
 
@@ -26,6 +26,21 @@ def list_members(db: Session, organization_id: uuid.UUID) -> list[tuple[Membersh
         .order_by(User.name)
     )
     return [(m, u) for m, u in rows]
+
+
+def suspender_names(db: Session, memberships: list[Membership]) -> dict[uuid.UUID, str]:
+    """Who suspended each suspended membership: a name, or the Sentra platform (UC-10.2, 1a)."""
+    ids = {m.suspended_by_id for m in memberships if m.suspended_by_id}
+    names = (
+        dict(db.execute(select(User.id, User.name).where(User.id.in_(ids))).all()) if ids else {}
+    )
+    result = {}
+    for m in memberships:
+        if m.status != MembershipStatus.SUSPENDED:
+            continue
+        name = names.get(m.suspended_by_id, "an administrator")
+        result[m.id] = f"{name} (Sentra platform)" if m.suspended_by_platform else name
+    return result
 
 
 def change_role(
@@ -51,7 +66,7 @@ def change_role(
     user = db.get_one(User, membership.user_id)
     if membership.role == role:
         return membership, user
-    if membership.role == Role.ORG_ADMIN and admin_count(db, admin.organization_id) == 1:
+    if is_last_admin(db, membership):
         raise ConflictError(
             f"{user.name} is the only Organization Administrator. "
             "Give another member this role first.",
@@ -90,8 +105,23 @@ def change_role(
 
 
 def admin_count(db: Session, organization_id: uuid.UUID) -> int:
+    """The organization's active administrators: a suspended one can't administer (UC-10.2)."""
     return db.scalar(
         select(func.count())
         .select_from(Membership)
-        .where(Membership.organization_id == organization_id, Membership.role == Role.ORG_ADMIN)
+        .where(
+            Membership.organization_id == organization_id,
+            Membership.role == Role.ORG_ADMIN,
+            Membership.status == MembershipStatus.ACTIVE,
+        )
+    )
+
+
+def is_last_admin(db: Session, membership: Membership) -> bool:
+    """Whether the organization would be left without an active administrator (UC-1.10, 2a;
+    UC-10.1, 2a; UC-10.2)."""
+    return (
+        membership.role == Role.ORG_ADMIN
+        and membership.active
+        and admin_count(db, membership.organization_id) == 1
     )

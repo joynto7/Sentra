@@ -55,6 +55,7 @@ class OrganizationOut(BaseModel):
     role: str
     role_label: str
     is_current: bool = False
+    status: str = "active"  # "suspended": shown in the organization menu, but it can't be opened
 
 
 class MeOut(UserOut):
@@ -106,6 +107,11 @@ class MemberOut(BaseModel):
     last_login_at: datetime | None
     joined_at: datetime
     is_you: bool
+    # FR-10.1: the Status column; a suspension keeps its reason, time and who suspended
+    status: str = "active"
+    suspended_at: datetime | None = None
+    suspension_reason: str | None = None
+    suspended_by: str | None = None
 
 
 class RoleChangeIn(BaseModel):

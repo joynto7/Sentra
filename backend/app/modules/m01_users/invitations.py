@@ -16,7 +16,7 @@ from app.core.errors import AppError, ConflictError, FieldValidationError, NotFo
 from app.core.models import Organization
 from app.core.tenancy import scoped_select
 from app.modules.m01_users import emails, organizations, service
-from app.modules.m01_users.members import WRONG_PASSWORD, admin_count
+from app.modules.m01_users.members import WRONG_PASSWORD, is_last_admin
 from app.modules.m01_users.models import (
     ROLE_LABELS,
     Invitation,
@@ -172,7 +172,7 @@ def remove_member(
     if membership.user_id == admin_user.id:
         raise ConflictError("You can't remove yourself from the organization.", code="remove_self")
     user = db.get_one(User, membership.user_id)
-    if membership.role == Role.ORG_ADMIN and admin_count(db, admin.organization_id) == 1:
+    if is_last_admin(db, membership):
         raise ConflictError(
             f"{user.name} is the only Organization Administrator. "
             "Give another member this role first.",
