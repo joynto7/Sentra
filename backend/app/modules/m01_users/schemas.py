@@ -270,3 +270,23 @@ class OrganizationSecurityOut(BaseModel):
     # This session's last password confirmation, and until when it allows changes (step 2).
     password_confirmed_at: datetime | None
     password_confirmed_until: datetime | None
+
+
+class FirstStepTarget(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class FirstStepsOut(BaseModel):
+    """Screen 07: which of the five first steps are done (UC-1.6 step 6, NFR-4.1)."""
+
+    organization: str
+    created_at: datetime
+    created_by: str | None
+    members: int
+    open_invitations: int
+    first_target: FirstStepTarget | None  # the first target registered (step 3)
+    unverified_target: FirstStepTarget | None  # the target to verify next (step 4)
+    verified_target: FirstStepTarget | None  # the target for the first campaign (step 5)
+    campaign_run_finished: bool
+    done: list[str]  # organization, team, target, verification, campaign_run
