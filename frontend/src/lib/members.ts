@@ -13,6 +13,20 @@ export type Member = {
   last_login_at: string | null
   joined_at: string
   is_you: boolean
+  /** FR-10.1: a suspended member keeps the role and history but can't open the organization. */
+  status: "active" | "suspended"
+  suspended_at: string | null
+  suspension_reason: string | null
+  suspended_by: string | null
+  /** The whole account was suspended by a Sentra Platform Administrator (UC-10.2, 1a). */
+  suspended_by_platform: boolean
+}
+
+/** UC-10.2 step 2: what suspending a member does, shown before confirming. */
+export type SuspensionImpact = {
+  member: string
+  sessions: number
+  other_administrators: string[]
 }
 
 export type Invitation = {
@@ -50,6 +64,26 @@ export function changeRole(membershipId: string, role: string, password: string)
 
 export function removeMember(membershipId: string, password: string) {
   return apiFetch<null>(`/v1/organizations/current/members/${membershipId}/remove`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function suspensionImpact(membershipId: string) {
+  return apiFetch<SuspensionImpact>(`/v1/admin/members/${membershipId}/suspension`)
+}
+
+/** UC-10.2: the member's access to the organization ends at once; the role and history stay. */
+export function suspendMember(membershipId: string, reason: string, password: string) {
+  return apiFetch<{ status: string }>(`/v1/admin/members/${membershipId}/suspend`, {
+    method: "POST",
+    body: JSON.stringify({ reason, password }),
+  })
+}
+
+/** UC-10.2, 1b: the access returns with the previous role. */
+export function reactivateMember(membershipId: string, password: string) {
+  return apiFetch<{ status: string }>(`/v1/admin/members/${membershipId}/reactivate`, {
     method: "POST",
     body: JSON.stringify({ password }),
   })
