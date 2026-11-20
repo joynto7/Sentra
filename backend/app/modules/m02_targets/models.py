@@ -80,6 +80,11 @@ class Target(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # When it was retired and by whom (FR-2.6; UC-2.6). Both are cleared when it is restored.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
 
     credentials: Mapped[list["TargetCredential"]] = relationship(
         back_populates="target", cascade="all, delete-orphan", order_by="TargetCredential.name"
