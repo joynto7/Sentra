@@ -3,9 +3,8 @@ organization and verifies its ownership with the normal check, placing the token
 connection test and the target profile follow as for any target (UC-2.2, UC-2.4).
 
 Users can't register lab addresses themselves (UC-11.1, quality requirement 4), so this is the
-only way a lab target becomes a target. Starting a separate lab target for each organization
-(steps 2 and 3) and the lab catalogue page come with FR-11.2; until then every organization uses
-the one lab target of `docker compose --profile lab up -d`:
+only way a lab target becomes a target. The Security Lab page does this with its Deploy button
+(FR-11.2, `deployment.py`); the same thing from the command line:
 
     docker compose run --rm api python -m app.modules.m11_lab.registration <analyst e-mail>
 
@@ -17,7 +16,6 @@ import argparse
 import secrets
 import sys
 import uuid
-from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
@@ -35,32 +33,9 @@ from app.modules.m02_targets.models import (
     Target,
     TargetCredential,
     TargetStatus,
-    TargetType,
     VerificationMethod,
 )
-
-
-@dataclass(frozen=True)
-class LabTarget:
-    key: str
-    name: str
-    type: TargetType
-    endpoint_url: str
-    max_request_rate: int
-
-
-# The lab catalogue (FR-11.1). The support agent, the SQL agent and the document agent join in
-# Sprint 4.
-CATALOGUE = {
-    "rag-chatbot": LabTarget(
-        "rag-chatbot",
-        "RAG chatbot (lab)",
-        TargetType.RAG_APPLICATION,
-        "http://lab-rag-chatbot:8080/v1/chat/completions",
-        60,
-    ),
-}
-LAB_DISABLED = "The Security Lab isn't enabled in this deployment (LAB_HOSTS is empty)."
+from app.modules.m11_lab.catalogue import CATALOGUE, LAB_DISABLED
 
 
 def register(
