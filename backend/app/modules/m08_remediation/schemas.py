@@ -30,6 +30,14 @@ class FixOut(BaseModel):
     enforcement_note: str | None  # why it has to be made in the application (6a)
 
 
+class FixSummary(BaseModel):
+    """A fix as Screen 45 lists it: its kind and where it takes effect, nothing of its content."""
+
+    kind: str
+    kind_label: str
+    enforcement: str
+
+
 class VersionSummary(BaseModel):
     version: int
     status: str  # draft until FR-8.2 reviews and approves it
@@ -39,6 +47,7 @@ class VersionSummary(BaseModel):
     created_at: datetime
     requested_by: str | None
     fix_count: int
+    fixes_in_short: list[FixSummary]
 
 
 class VersionOut(VersionSummary):
