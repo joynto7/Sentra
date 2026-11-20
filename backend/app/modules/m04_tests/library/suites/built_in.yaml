@@ -1,0 +1,53 @@
+# Built-in test suites (FR-4.4). A suite refers to built-in tests by their code, so it always uses
+# their current versions. When the API starts, a new suite becomes version 1 and a changed suite
+# gets a new version (FR-4.5). The tests check that every code exists.
+suites:
+  - code: QUICK-REGRESSION
+    name: Quick Regression
+    purpose: One test of each OWASP category in Sentra's scope. A fast first campaign and a good start for a CI/CD security gate.
+    tests: [PI-DIR-001, SID-XACC-003, DMP-RAG-002, OUT-HTML-005, EA-TOOL-007, SPL-REV-002, VEW-ACL-001, UBC-LOOP-002]
+
+  - code: FULL-ASSESSMENT
+    name: Full Assessment
+    purpose: Every built-in test, for a complete assessment before a release.
+    tests: [PI-DIR-001, PI-IND-014, PI-IND-021, PI-JB-004, SID-XACC-003, SID-PII-009, SID-SEC-002, DMP-RAG-002, DMP-FB-001, OUT-HTML-005, OUT-SQL-003, EA-TOOL-007, EA-SCOPE-002, SPL-REV-002, SPL-PART-004, VEW-ACL-001, VEW-TEN-003, UBC-LEN-001, UBC-LOOP-002]
+
+  - code: LLM01-PROMPT-INJECTION
+    name: Prompt Injection
+    purpose: Direct and indirect instructions that try to change what the target does (LLM01).
+    tests: [PI-DIR-001, PI-IND-014, PI-IND-021, PI-JB-004]
+
+  - code: LLM02-SENSITIVE-INFORMATION
+    name: Sensitive Information Disclosure
+    purpose: Secrets, personal data and other customers' data in replies (LLM02).
+    tests: [SID-XACC-003, SID-PII-009, SID-SEC-002]
+
+  - code: LLM04-POISONING
+    name: Data and Model Poisoning
+    purpose: Planted or unreviewed content that changes later answers (LLM04).
+    tests: [DMP-RAG-002, DMP-FB-001]
+
+  - code: LLM05-OUTPUT-HANDLING
+    name: Improper Output Handling
+    purpose: Replies that other systems would run as code or queries (LLM05).
+    tests: [OUT-HTML-005, OUT-SQL-003]
+
+  - code: LLM06-EXCESSIVE-AGENCY
+    name: Excessive Agency
+    purpose: Tool actions without confirmation or outside their allowed scope (LLM06).
+    tests: [EA-TOOL-007, EA-SCOPE-002]
+
+  - code: LLM07-SYSTEM-PROMPT
+    name: System Prompt Leakage
+    purpose: The system prompt revealed directly or in parts (LLM07).
+    tests: [SPL-REV-002, SPL-PART-004]
+
+  - code: LLM08-VECTOR-ACCESS
+    name: Vector and Embedding Weaknesses
+    purpose: Retrieval that ignores who may see a document, or mixes customers' data (LLM08).
+    tests: [VEW-ACL-001, VEW-TEN-003]
+
+  - code: LLM10-SAFE-LIMITS
+    name: Unbounded Consumption
+    purpose: Conversations and tool loops that exhaust budgets, measured within safe limits (LLM10).
+    tests: [UBC-LEN-001, UBC-LOOP-002]
