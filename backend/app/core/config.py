@@ -87,6 +87,19 @@ class Settings(BaseSettings):
     default_monthly_llm_cost_usd: float = 100.0
     # The share of a limit at which an organization is warned (FR-10.4, UC-10.6 step 3).
     default_usage_warn_percent: int = 80
+
+    # System health (FR-10.6, UC-10.9 step 3): the platform's default alert thresholds, until a
+    # Platform Administrator sets them on Screen 63.
+    default_queue_length_alert: int = 1_000  # jobs waiting in the Task Queue
+    default_error_rate_alert: float = 2.0  # per cent of the API's requests
+    default_worker_load_alert: int = 90  # per cent of the workers' capacity in use
+    default_storage_alert: int = 85  # per cent of the object storage's disk in use
+    default_gateway_silence_minutes: int = 5  # a Sentra Shield gateway that stopped reporting
+    # Where an alert links to (UC-10.9 step 5). Empty means the alert carries no such link.
+    grafana_url: str = ""
+    logs_url: str = ""
+    # When set, GET /api/metrics needs `Authorization: Bearer <token>` (NFR-5.5).
+    metrics_token: str = ""
     # The LLM judge (FR-6.1; UC-6.1, 3a): a judge that can't answer (the provider fails, or the
     # monthly LLM cost limit is reached) tries again after these delays in seconds; after the last
     # one the attempt is marked as not evaluated by the judge.
