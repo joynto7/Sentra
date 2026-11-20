@@ -18,6 +18,8 @@ x-backend: &backend
     # Encrypts target credentials (FR-2.2). This key is for local development only;
     # a CREDENTIALS_KEY in .env replaces it, and every real deployment sets its own.
     CREDENTIALS_KEY: "${CREDENTIALS_KEY:-kqmQKFLVD12H8tuxKcXU0ZIN4O2Y/EMTbbrptiL5Yew=}"
+    # Sentra's own lab targets, which only the Target Connector may reach (FR-11.2)
+    LAB_HOSTS: '["lab-rag-chatbot"]'
   volumes:
     - ./backend:/app
   depends_on:
@@ -67,6 +69,16 @@ services:
   worker:
     <<: *backend
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    networks: [default, lab]  # the Target Connector runs here, so the worker reaches the lab
+
+  lab-rag-chatbot:
+    # The first lab target (FR-11.1): an intentionally vulnerable RAG chatbot with synthetic data.
+    # Start it with:  docker compose --profile lab up -d
+    profiles: ["lab"]
+    build: ./lab/targets/rag-chatbot
+    environment:
+      LAB_MODEL: simulated  # fixed answers; a local model through Ollama comes with FR-11.2
+    networks: [lab]
 
   web:
     profiles: ["web"]
@@ -83,6 +95,11 @@ services:
       - /app/.next
     depends_on:
       - api
+
+networks:
+  lab:
+    # The isolated lab network (FR-11.2): no way out to the internet or to the laptop's network.
+    internal: true
 
 volumes:
   db-data:
