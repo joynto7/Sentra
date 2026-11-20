@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { TriangleAlert } from "lucide-react"
+import { toast } from "sonner"
 
 import { LaunchRunButton } from "@/components/campaigns/launch-run"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
@@ -17,11 +18,34 @@ import {
   type RunOverviewItem,
   RUN_STATUS_LABEL,
   formatCount,
+  SCHEDULE_RESULT_LABEL,
+  SCHEDULE_STATUS_LABEL,
+  type Schedule,
   getCampaign,
   listRuns,
+  pauseSchedule,
+  removeSchedule,
+  resumeSchedule,
+  saveSchedule,
   windowText,
 } from "@/lib/campaigns"
-import { TYPE_LABEL, type Environment, type TargetType } from "@/lib/targets"
+import {
+  type ScheduleDraft,
+  ScheduleFields,
+  draftOf,
+  scheduleInput,
+  scheduleProblem,
+} from "@/components/campaigns/schedule-fields"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { useCan } from "@/lib/permissions"
+import { TYPE_LABEL, type Environment, type TargetType, formatDateTime } from "@/lib/targets"
 import { formatDate } from "@/lib/test-library"
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -42,10 +66,167 @@ function Row({ term, children }: { term: string; children: React.ReactNode }) {
   )
 }
 
-/** A saved campaign: its target, suites, limits and estimate (UC-5.1). Runs come with FR-5.4. */
+/**
+ * The campaign's schedule on its own page (FR-5.3): what it is, when it next runs, what came of
+ * its last moment, and the controls of UC-5.1 step 5 — change it, pause it, start it again or
+ * remove it. Only a Security Analyst sees the controls (FR-1.6).
+ */
+function ScheduleCard({
+  campaign,
+  schedule,
+  onChange,
+}: {
+  campaign: CampaignDetail
+  schedule: Schedule | null
+  onChange: (schedule: Schedule | null) => void
+}) {
+  const canManage = useCan("manage_campaigns")
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<ScheduleDraft>(() => draftOf(schedule))
+  const [problem, setProblem] = useState<string | undefined>(undefined)
+  const [busy, setBusy] = useState(false)
+
+  const act = async (what: () => Promise<Schedule | null>, done: string) => {
+    setBusy(true)
+    setProblem(undefined)
+    try {
+      onChange(await what())
+      toast.success(done)
+      setEditing(false)
+    } catch (error) {
+      setProblem(error instanceof ApiError ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const open = (next: boolean) => {
+    setDraft(draftOf(schedule))
+    setProblem(undefined)
+    setEditing(next)
+  }
+
+  return (
+    <Card title="Schedule">
+      {schedule ? (
+        <dl className="divide-y">
+          <Row term="Runs">{schedule.summary}</Row>
+          <Row term="Status">{SCHEDULE_STATUS_LABEL[schedule.status]}</Row>
+          <Row term="Next run">
+            {schedule.next_run_at ? formatDateTime(schedule.next_run_at) : "Not planned"}
+          </Row>
+          {schedule.last_run_at && (
+            <Row term="Last moment">
+              {formatDateTime(schedule.last_run_at)}
+              <div className="text-xs text-muted-foreground">
+                {schedule.last_result ? SCHEDULE_RESULT_LABEL[schedule.last_result] : ""}
+                {schedule.last_message ? `: ${schedule.last_message}` : ""}
+              </div>
+            </Row>
+          )}
+          {schedule.created_by && <Row term="Runs with the permissions of">{schedule.created_by}</Row>}
+        </dl>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          This campaign runs only when someone launches it. A schedule starts it by itself, with the
+          permissions of whoever saved it.
+        </p>
+      )}
+
+      {canManage && (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => open(true)} disabled={busy}>
+            {schedule ? "Change schedule" : "Add a schedule"}
+          </Button>
+          {schedule?.status === "active" && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => act(() => pauseSchedule(campaign.code), "The schedule is paused.")}
+            >
+              Pause
+            </Button>
+          )}
+          {schedule && schedule.status !== "active" && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => act(() => resumeSchedule(campaign.code), "The schedule runs again.")}
+            >
+              Start again
+            </Button>
+          )}
+          {schedule && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                act(async () => {
+                  await removeSchedule(campaign.code)
+                  return null
+                }, "The schedule is removed.")
+              }
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+      )}
+      {problem && !editing && (
+        <p role="alert" className="text-[13px] text-destructive">
+          {problem}
+        </p>
+      )}
+
+      <Dialog open={editing} onOpenChange={open}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>When {campaign.code} runs</DialogTitle>
+            <DialogDescription>
+              A schedule starts the campaign by itself, with the permissions of whoever saves it.
+            </DialogDescription>
+          </DialogHeader>
+          <ScheduleFields
+            draft={draft}
+            onChange={setDraft}
+            timeZone={campaign.time_zone}
+            withImmediately={false}
+            error={problem}
+            disabled={busy}
+            idPrefix="campaign-schedule"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                const wrong = scheduleProblem(draft)
+                if (wrong) {
+                  setProblem(wrong)
+                  return
+                }
+                void act(() => saveSchedule(campaign.code, scheduleInput(draft)), "The schedule is saved.")
+              }}
+            >
+              Save schedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
+
+/** A saved campaign: its target, suites, limits, schedule and estimate (UC-5.1, FR-5.3). */
 export function CampaignView({ code }: { code: string }) {
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null)
   const [runs, setRuns] = useState<RunOverviewItem[] | null>(null)
+  const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [notFound, setNotFound] = useState(false)
 
   usePageCrumbs([{ label: campaign?.name ?? code }])
@@ -53,7 +234,10 @@ export function CampaignView({ code }: { code: string }) {
   useEffect(() => {
     const controller = new AbortController()
     getCampaign(code)
-      .then(setCampaign)
+      .then((found) => {
+        setCampaign(found)
+        setSchedule(found.schedule)
+      })
       .catch((error) => {
         if (error instanceof ApiError && error.status === 404) setNotFound(true)
       })
@@ -178,6 +362,7 @@ export function CampaignView({ code }: { code: string }) {
               </p>
             ))}
           </Card>
+          <ScheduleCard campaign={campaign} schedule={schedule} onChange={setSchedule} />
           <Card title="Runs">
             {runs === null ? (
               <Skeleton className="h-16 w-full" />
