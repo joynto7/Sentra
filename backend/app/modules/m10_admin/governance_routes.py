@@ -1,5 +1,6 @@
-"""Module 10, governance part (Azizul): the audit log (FR-10.2) for Organization Administrators,
-and the platform audit log for Platform Administrators (UC-10.3, 1a).
+"""Module 10, governance part (Azizul): user administration (FR-10.1) and the audit log
+(FR-10.2), for Organization Administrators and, platform-wide, for Platform Administrators
+(UC-10.2, 1a; UC-10.3, 1a).
 
 The organization always comes from the session, never from the request (NFR-3.3).
 """
@@ -7,7 +8,7 @@ The organization always comes from the session, never from the request (NFR-3.3)
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -16,8 +17,11 @@ from app.core.database import get_db
 from app.modules.m01_users.deps import current_user, platform_admin
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m10_admin import audit_log
+from app.modules.m10_admin import audit_log, user_admin
 from app.modules.m10_admin.schemas import (
+    AccountOrganizationOut,
+    AccountOut,
+    AccountPage,
     ActorOut,
     AuditEntryDetail,
     AuditEntryOut,
@@ -26,10 +30,15 @@ from app.modules.m10_admin.schemas import (
     AuditLogPage,
     IntegrityOut,
     ItemOut,
+    MembershipStatusOut,
+    PasswordConfirmIn,
+    SuspendIn,
+    SuspensionImpactOut,
 )
 
 router = APIRouter(prefix="/admin", tags=["M10 Administration"])
 can_view = require(Action.VIEW_AUDIT_LOG)  # Organization Administrators (FR-1.6)
+can_manage_members = require(Action.MANAGE_MEMBERS)  # Organization Administrators
 
 
 def entry_out(entry: AuditLogEntry) -> AuditEntryOut:
@@ -203,3 +212,121 @@ def get_platform_audit_entry(
     entry_id: uuid.UUID, _: User = Depends(platform_admin), db: Session = Depends(get_db)
 ) -> AuditEntryDetail:
     return detail_out(audit_log.get_entry(db, None, entry_id))
+
+
+# ---------------------------------------------------------------- user administration (FR-10.1)
+
+
+def status_out(membership: Membership) -> MembershipStatusOut:
+    return MembershipStatusOut(
+        membership_id=membership.id,
+        status=membership.status,
+        suspended_at=membership.suspended_at,
+        suspension_reason=membership.suspension_reason,
+    )
+
+
+@router.get("/members/{membership_id}/suspension")
+def suspension_impact(
+    membership_id: uuid.UUID,
+    membership: Membership = Depends(can_manage_members),
+    db: Session = Depends(get_db),
+) -> SuspensionImpactOut:
+    """UC-10.2 step 2: what suspending this member does."""
+    result = user_admin.impact(db, membership, membership_id)
+    return SuspensionImpactOut(**result.__dict__)
+
+
+@router.post("/members/{membership_id}/suspend")
+def suspend_member(
+    membership_id: uuid.UUID,
+    data: SuspendIn,
+    background: BackgroundTasks,
+    membership: Membership = Depends(can_manage_members),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> MembershipStatusOut:
+    """UC-10.2 Suspend User Account, confirmed with the administrator's password."""
+    suspended = user_admin.suspend_member(
+        db, membership, user, membership_id, data.reason, data.password, background
+    )
+    return status_out(suspended)
+
+
+@router.post("/members/{membership_id}/reactivate")
+def reactivate_member(
+    membership_id: uuid.UUID,
+    data: PasswordConfirmIn,
+    background: BackgroundTasks,
+    membership: Membership = Depends(can_manage_members),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> MembershipStatusOut:
+    """UC-10.2, 1b: the access returns with the previous role."""
+    reactivated = user_admin.reactivate_member(
+        db, membership, user, membership_id, data.password, background
+    )
+    return status_out(reactivated)
+
+
+def account_out(row: user_admin.AccountRow) -> AccountOut:
+    user = row.user
+    return AccountOut(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        organizations=[AccountOrganizationOut(name=n, status=s) for n, s in row.organizations],
+        mfa_enabled=user.mfa_enabled,
+        last_login_at=user.last_login_at,
+        last_login_new_address=row.last_login_new_address,
+        status="suspended" if user.status == "disabled" else "active",
+        suspended_at=user.suspended_at,
+        suspension_reason=user.suspension_reason,
+        platform_admin=user.platform_admin,
+    )
+
+
+@router.get("/platform/accounts")
+def list_accounts(
+    search: str = Query(default="", max_length=200),
+    status: str = Query(default="", pattern="^(|active|suspended)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+    _: User = Depends(platform_admin),
+    db: Session = Depends(get_db),
+) -> AccountPage:
+    """Every account, for security and support (Screen 64)."""
+    wanted = {"active": "active", "suspended": "disabled"}.get(status, "")
+    rows, total = user_admin.list_accounts(db, search, wanted, page, page_size)
+    return AccountPage(
+        items=[account_out(r) for r in rows], total=total, page=page, page_size=page_size
+    )
+
+
+@router.post("/platform/accounts/{user_id}/suspend")
+def suspend_account(
+    user_id: uuid.UUID,
+    data: SuspendIn,
+    background: BackgroundTasks,
+    admin: User = Depends(platform_admin),
+    db: Session = Depends(get_db),
+) -> AccountOut:
+    """UC-10.2, 1a: suspended in every organization at once."""
+    user_admin.suspend_account(db, admin, user_id, data.reason, data.password, background)
+    return _account_row(db, user_id)
+
+
+@router.post("/platform/accounts/{user_id}/reactivate")
+def reactivate_account(
+    user_id: uuid.UUID,
+    data: PasswordConfirmIn,
+    background: BackgroundTasks,
+    admin: User = Depends(platform_admin),
+    db: Session = Depends(get_db),
+) -> AccountOut:
+    user_admin.reactivate_account(db, admin, user_id, data.password, background)
+    return _account_row(db, user_id)
+
+
+def _account_row(db: Session, user_id: uuid.UUID) -> AccountOut:
+    return account_out(user_admin.account_row(db, user_id))

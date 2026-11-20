@@ -76,3 +76,56 @@ class AuditExportIn(BaseModel):
     item_type: str = Field(default="", max_length=30)
     item_id: str = Field(default="", max_length=64)
     search: str = Field(default="", max_length=200)
+
+
+class SuspendIn(BaseModel):
+    reason: str = Field(default="", max_length=1000)
+    password: str = Field(min_length=1, max_length=256)  # UC-10.2 step 3 (NFR-3.5)
+
+
+class PasswordConfirmIn(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+
+
+class SuspensionImpactOut(BaseModel):
+    """UC-10.2 step 2: the consequences, shown before the administrator confirms."""
+
+    member: str
+    sessions: int
+    other_administrators: list[str]
+
+
+class MembershipStatusOut(BaseModel):
+    membership_id: uuid.UUID
+    status: str
+    suspended_at: datetime | None
+    suspension_reason: str | None
+
+
+class AccountOrganizationOut(BaseModel):
+    name: str
+    status: str  # the membership's status in it
+
+
+class AccountOut(BaseModel):
+    """One account on the Accounts page (Screen 64): account data only, never an organization's
+    content (NFR-3.3)."""
+
+    id: uuid.UUID
+    name: str
+    email: str
+    organizations: list[AccountOrganizationOut]
+    mfa_enabled: bool
+    last_login_at: datetime | None
+    last_login_new_address: bool
+    status: str  # "active" or "suspended"
+    suspended_at: datetime | None
+    suspension_reason: str | None
+    platform_admin: bool
+
+
+class AccountPage(BaseModel):
+    items: list[AccountOut]
+    total: int
+    page: int
+    page_size: int
