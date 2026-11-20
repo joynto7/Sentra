@@ -234,6 +234,11 @@ def rate(db: Session, finding: Finding, *, run: CampaignRun | None = None) -> Fa
     (step 5). An analyst's severity stays (4a). Returns the factors, or None when the finding
     can't be rated because no attempt of it has been evaluated yet."""
     was = finding.severity
+    before = (
+        finding.calculated_severity,
+        finding.severity_provisional,
+        finding.reproducibility,
+    )
     factors = factors_of(db, finding, run=run)
     if factors is None:
         return None
@@ -244,10 +249,17 @@ def rate(db: Session, finding: Finding, *, run: CampaignRun | None = None) -> Fa
     finding.reproducibility = factors.reproducibility
     if not finding.severity_adjusted:
         finding.severity = factors.severity.value
+    changed = before != (
+        finding.calculated_severity,
+        finding.severity_provisional,
+        finding.reproducibility,
+    )
     db.commit()
-    if run is not None:
+    # Rating a finding again with the same result says nothing: the measurement of FR-6.4 rates it
+    # when it ends, and the end of the run rates every open finding once more.
+    if run is not None and changed:
         _show(run, finding, factors)
-    if RANK[Severity(finding.severity)] > RANK[Severity(was)]:
+    if changed and RANK[Severity(finding.severity)] > RANK[Severity(was)]:
         _notify(db, finding, was)
     return factors
 
