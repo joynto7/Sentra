@@ -67,7 +67,7 @@ function Section({ number, id, title, children }: { number: number; id: string; 
  * numbered sections and a summary card that estimates the attempts before saving. Creating a
  * campaign sends nothing to the target.
  */
-export function CampaignBuilder({ target: preselected }: { target?: string }) {
+export function CampaignBuilder({ target: preselected, suite }: { target?: string; suite?: string }) {
   const router = useRouter()
   const canCreate = useCan("manage_campaigns")
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", [])
@@ -76,7 +76,7 @@ export function CampaignBuilder({ target: preselected }: { target?: string }) {
   const [failed, setFailed] = useState(false)
   const [name, setName] = useState("")
   const [targetId, setTargetId] = useState(preselected ?? "")
-  const [chosen, setChosen] = useState<string[]>([])
+  const [chosen, setChosen] = useState<string[]>(suite ? [suite] : [])
   const [adaptive, setAdaptive] = useState(false)
   const [budget, setBudget] = useState("1000")
   const [rate, setRate] = useState("")
@@ -104,7 +104,11 @@ export function CampaignBuilder({ target: preselected }: { target?: string }) {
       })
       .catch(() => setFailed(true))
     listSuites()
-      .then(setSuites)
+      .then((found) => {
+        setSuites(found)
+        // A suite chosen in advance that doesn't exist (any more) isn't kept.
+        setChosen((current) => current.filter((code) => found.some((s) => s.code === code)))
+      })
       .catch(() => setFailed(true))
   }, [preselected])
 
