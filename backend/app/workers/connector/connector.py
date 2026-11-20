@@ -1,5 +1,9 @@
 """The Target Connector: the only code that sends requests to targets (architecture, 2.5.3).
 
+It sends three kinds of request: the attempts of campaign runs and the discovery requests of a
+target profile (send()), the one harmless request of a connection test (check_connection(),
+FR-2.4) and the download of the ownership token (fetch_well_known(), FR-2.3).
+
 send() delivers one attempt to a target and returns its reply. Before every request it
 1. refuses a target that isn't verified, and an attempt beyond the budget (FR-5.7);
 2. checks the endpoint's address again and connects to exactly the IP address it checked, so a
@@ -15,7 +19,7 @@ import ipaddress
 import json
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlsplit, urlunsplit
 
@@ -47,6 +51,15 @@ from app.workers.connector.errors import (
 
 USER_AGENT = f"Sentra-Target-Connector/{__version__} (authorized AI security testing)"
 MAX_ANSWER_BYTES = 1_000_000
+MAX_TOKEN_FILE_BYTES = 4_096
+WELL_KNOWN_PATH = "/.well-known/sentra-verification.txt"
+# The connection test is one harmless request and never a security test (UC-2.2, quality
+# requirement 1).
+CONNECTION_TEST_MESSAGE = (
+    "Hello, this is a connection test from Sentra. Please reply with a short greeting."
+)
+# The network, which the tests replace with httpx's MockTransport when they go through the API.
+TRANSPORT: httpx.BaseTransport | None = None
 
 
 @dataclass
@@ -56,6 +69,9 @@ class Reply:
     status_code: int
     duration_ms: int
     body: str  # the whole answer (at most 1 MB), for the evidence (FR-6.3)
+    reply_path: str = ""  # where the reply was found, e.g. $.output.text (Screen 19)
+    # Headers such as X-RateLimit-Limit, for the observed rate limits of a profile (FR-2.5)
+    rate_limit_headers: dict[str, str] = field(default_factory=dict)
 
 
 class AttemptBudget(Protocol):
@@ -92,6 +108,58 @@ def send(
         raise NotVerified()
     if budget is not None:
         budget.take()
+    return _post(db, target, message, session_id, rate_per_minute, transport)
+
+
+def check_connection(
+    db: Session, target: Target, *, transport: httpx.BaseTransport | None = None
+) -> Reply:
+    """UC-2.2: one harmless request, also before the target is verified, because it only proves
+    that the endpoint, the format and the credentials work. Every other protection applies: the
+    address check, the pinned address, the rate, no redirects, the size limit."""
+    return _post(db, target, CONNECTION_TEST_MESSAGE, None, None, transport)
+
+
+def fetch_well_known(target: Target, *, transport: httpx.BaseTransport | None = None) -> str | None:
+    """UC-2.3 step 4: the file /.well-known/sentra-verification.txt on the endpoint's own host
+    (quality requirement 4: a token published elsewhere doesn't count). None if it isn't there."""
+    parts = urlsplit(target.endpoint_url)
+    url = urlunsplit((parts.scheme, parts.netloc, WELL_KNOWN_PATH, "", ""))
+    pinned, host_header, extensions = _pinned(url)
+    headers = {"User-Agent": USER_AGENT, "Accept": "text/plain"}
+    if host_header:
+        headers["Host"] = host_header
+    try:
+        with (
+            httpx.Client(
+                transport=transport or TRANSPORT,
+                timeout=httpx.Timeout(10, connect=5),
+                follow_redirects=False,
+            ) as client,
+            client.stream("GET", pinned, headers=headers, extensions=extensions) as answer,
+        ):
+            if answer.status_code == 404:
+                return None
+            if 300 <= answer.status_code < 400:
+                raise TargetRedirect(answer.status_code)
+            if answer.status_code >= 400:
+                raise TargetHTTPError(answer.status_code)
+            raw = _read(answer, MAX_TOKEN_FILE_BYTES, "The verification file is larger than 4 KB.")
+            return raw.decode("utf-8", errors="replace")
+    except httpx.TimeoutException as exc:
+        raise TargetTimeout(10) from exc
+    except httpx.TransportError as exc:
+        raise TargetUnreachable(f"The target can't be reached: {_reason(exc)}") from exc
+
+
+def _post(
+    db: Session,
+    target: Target,
+    message: str,
+    session_id: str | None,
+    rate_per_minute: int | None,
+    transport: httpx.BaseTransport | None,
+) -> Reply:
     url, host_header, extensions = _pinned(target.endpoint_url)
 
     rate = min(rate_per_minute or target.max_request_rate, target.max_request_rate)
@@ -106,7 +174,7 @@ def send(
     try:
         with (
             httpx.Client(
-                transport=transport,
+                transport=transport or TRANSPORT,
                 timeout=httpx.Timeout(timeout, connect=10),
                 follow_redirects=False,
             ) as client,
@@ -115,6 +183,9 @@ def send(
             raw = _read(answer)
             status_code = answer.status_code
             retry_after = answer.headers.get("retry-after")
+            rate_headers = {
+                k.lower(): v for k, v in answer.headers.items() if "ratelimit" in k.lower()
+            }
     except httpx.TimeoutException as exc:
         raise TargetTimeout(timeout) from exc
     except httpx.TransportError as exc:
@@ -127,7 +198,9 @@ def send(
         raise TargetRedirect(status_code)
     if status_code >= 400:
         raise TargetHTTPError(status_code)
-    return _reply(target, raw, status_code, duration_ms)
+    reply = _reply(target, raw, status_code, duration_ms)
+    reply.rate_limit_headers = rate_headers
+    return reply
 
 
 def _pinned(url: str) -> tuple[str, str | None, dict]:
@@ -186,12 +259,16 @@ def _request_body(target: Target, message: str, session_id: str) -> dict:
     return render(target.request_template, message, session_id)
 
 
-def _read(answer: httpx.Response) -> bytes:
+def _read(
+    answer: httpx.Response,
+    limit: int = MAX_ANSWER_BYTES,
+    too_large: str = "The target's answer is larger than 1 MB.",
+) -> bytes:
     chunks, size = [], 0
     for chunk in answer.iter_bytes():
         size += len(chunk)
-        if size > MAX_ANSWER_BYTES:
-            raise BadResponse("The target's answer is larger than 1 MB.")
+        if size > limit:
+            raise BadResponse(too_large)
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -201,7 +278,7 @@ def _reply(target: Target, raw: bytes, status_code: int, duration_ms: int) -> Re
     try:
         answer = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise BadResponse("The target's answer isn't JSON.") from exc
+        raise BadResponse("The target's answer isn't JSON.", excerpt=text) from exc
     if target.request_template is None:
         reply_path, tools_path = OPENAI_REPLY_PATH, OPENAI_TOOL_CALLS_PATH
     else:
@@ -209,7 +286,7 @@ def _reply(target: Target, raw: bytes, status_code: int, duration_ms: int) -> Re
         reply_path, tools_path = template.get("reply", ""), template.get("tool_calls")
     reply = extract(answer, reply_path)
     if reply is None:
-        raise BadResponse(f"There's no reply at {reply_path} in the target's answer.")
+        raise BadResponse(f"There's no reply at {reply_path} in the target's answer.", excerpt=text)
     tool_calls = extract(answer, tools_path) if tools_path else None
     return Reply(
         text=reply if isinstance(reply, str) else json.dumps(reply),
@@ -217,6 +294,7 @@ def _reply(target: Target, raw: bytes, status_code: int, duration_ms: int) -> Re
         status_code=status_code,
         duration_ms=duration_ms,
         body=text,
+        reply_path=reply_path,
     )
 
 
