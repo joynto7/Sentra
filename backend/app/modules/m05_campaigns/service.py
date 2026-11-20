@@ -7,6 +7,7 @@ runs are runs.py; the schedule of step 5 is scheduling.py.
 import re
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, or_, select
@@ -15,11 +16,13 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.core.tenancy import scoped_select
+from app.llm.usage import cost_per_judged_attempt
 from app.modules.m01_users.models import Membership, User
 from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m04_tests.models import TestDefinition, TestSuite
+from app.modules.m04_tests.schema import DetectionMethod
 from app.modules.m04_tests.suites import ATTEMPTS_PER_TEST
-from app.modules.m05_campaigns import scheduling
+from app.modules.m05_campaigns import limits, scheduling
 from app.modules.m05_campaigns.models import Campaign
 from app.modules.m05_campaigns.window import clock_time
 
@@ -118,7 +121,60 @@ def estimate(
         "target_safe_rate": target.max_request_rate if target else None,
         # UC-5.1 step 2; None without an approved threat model (2a)
         "threat_model": _threat_model(db, organization_id, target, codes),
+        # FR-10.4 on Screen 34: what this run may cost, and what the month has left
+        "llm_cost": _llm_cost(db, organization_id, applicable),
+        "monthly": _monthly(db, organization_id),
         "warnings": warnings,
+    }
+
+
+def _llm_cost(db: Session, organization_id: uuid.UUID, tests: list[TestDefinition]) -> dict:
+    """UC-5.1 step 6 with FR-10.4: what the LLM judge of this run may cost, measured from the
+    organization's own judged attempts of the last 30 days, as a range of ±20 %. With nothing to
+    measure it says so; a price list per model would stop being true the moment a Platform
+    Administrator switches the provider (FR-10.3)."""
+    judged = [
+        test
+        for test in tests
+        if any(m.get("method") == DetectionMethod.LLM_JUDGE for m in test.detection_methods)
+    ]
+    attempts = ATTEMPTS_PER_TEST * len(judged)
+    each = cost_per_judged_attempt(db, organization_id)
+    if each is None or not attempts:
+        return {"judged_attempts": attempts, "low_usd": None, "high_usd": None}
+    total = each * attempts
+    cent = Decimal("0.01")
+    return {
+        "judged_attempts": attempts,
+        "low_usd": (total * Decimal("0.8")).quantize(cent),
+        "high_usd": (total * Decimal("1.2")).quantize(cent),
+    }
+
+
+def _monthly(db: Session, organization_id: uuid.UUID) -> dict:
+    """UC-10.6 step 1 as the builder shows it (FR-10.4): this month's usage against the limits, so
+    a campaign is planned knowing what is left."""
+    in_force = limits.limits_for(db, organization_id)
+    used = limits.usage(db, organization_id)
+    shares = limits.shares(in_force, used)
+    return {
+        "warn_percent": in_force.warn_percent,
+        "limits": [
+            {
+                "kind": kind,
+                "label": limits.KIND_LABELS[kind],
+                "used": amount,
+                "limit": limit,
+                "percent": shares[kind],
+                "reached": shares[kind] >= 100,
+                "warning": in_force.warn_percent <= shares[kind] < 100,
+            }
+            for kind, amount, limit in (
+                ("campaign_runs", Decimal(used.campaign_runs), Decimal(in_force.campaign_runs)),
+                ("attempts", Decimal(used.attempts), Decimal(in_force.attempts)),
+                ("llm_cost", used.llm_cost_usd, in_force.llm_cost_usd),
+            )
+        ],
     }
 
 

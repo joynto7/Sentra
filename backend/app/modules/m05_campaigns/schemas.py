@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, time
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,6 +75,32 @@ class ThreatModelBrief(BaseModel):
     threats_covered: int  # by the tests of the chosen suites
 
 
+class CostEstimate(BaseModel):
+    """What the LLM judge of this run may cost (FR-10.4 on Screen 34), measured from the
+    organization's own judged attempts. `low_usd` is None when there is nothing to measure yet."""
+
+    judged_attempts: int
+    low_usd: Decimal | None
+    high_usd: Decimal | None
+
+
+class MonthlyLimit(BaseModel):
+    kind: str  # "campaign_runs", "attempts" or "llm_cost"
+    label: str
+    used: Decimal
+    limit: Decimal
+    percent: int
+    reached: bool
+    warning: bool
+
+
+class MonthlyUsage(BaseModel):
+    """UC-10.6 step 1 in the builder: what the organization has used of its month."""
+
+    warn_percent: int
+    limits: list[MonthlyLimit]
+
+
 class EstimateOut(BaseModel):
     """UC-5.1 step 6: the tests that will run and the attempts they need."""
 
@@ -82,6 +109,8 @@ class EstimateOut(BaseModel):
     estimated_attempts: int
     target_safe_rate: int | None
     threat_model: ThreatModelBrief | None  # None: no approved threat model yet (2a)
+    llm_cost: CostEstimate
+    monthly: MonthlyUsage
     warnings: list[str]
 
 
