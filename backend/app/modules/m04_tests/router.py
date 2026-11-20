@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.errors import FieldValidationError
-from app.modules.m01_users import organizations
-from app.modules.m01_users.deps import current_session, current_user
-from app.modules.m01_users.models import Membership, UserSession
+from app.modules.m01_users.deps import current_user
+from app.modules.m01_users.models import Membership
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m04_tests import custom, service
+from app.modules.m04_tests import custom, service, suites
+from app.modules.m04_tests.deps import organization_id
 from app.modules.m04_tests.schemas import (
     CatalogueOut,
     CheckOut,
@@ -22,8 +22,9 @@ from app.modules.m04_tests.schemas import (
     TestDefinitionSummary,
     VocabularyOut,
 )
+from app.modules.m04_tests.suite_routes import suites_router
 
-router = APIRouter(
+tests_router = APIRouter(
     prefix="/test-definitions",
     tags=["M4 Test Library"],
     dependencies=[Depends(current_user)],  # every endpoint needs a logged-in user
@@ -31,15 +32,7 @@ router = APIRouter(
 can_manage = require(Action.MANAGE_CUSTOM_TESTS)  # Security Analysts (FR-1.6)
 
 
-def organization_id(
-    session: UserSession = Depends(current_session), db: Session = Depends(get_db)
-) -> uuid.UUID | None:
-    """The member's organization, whose custom tests they see; None for a user without one."""
-    membership = organizations.current(db, session)
-    return membership.organization_id if membership else None
-
-
-@router.get("")
+@tests_router.get("")
 def list_test_definitions(
     search: str = "",
     category: list[str] = Query(default=[]),
@@ -64,7 +57,7 @@ def list_test_definitions(
     )
 
 
-@router.get("/coverage")
+@tests_router.get("/coverage")
 def coverage(
     org: uuid.UUID | None = Depends(organization_id), db: Session = Depends(get_db)
 ) -> list[CoverageOut]:
@@ -72,13 +65,13 @@ def coverage(
     return [CoverageOut(**row) for row in service.coverage(db, org)]
 
 
-@router.get("/vocabulary")
+@tests_router.get("/vocabulary")
 def vocabulary() -> VocabularyOut:
     """For the custom test editor: the safe attempt templates and the success-condition checks."""
     return VocabularyOut(**custom.vocabulary())
 
 
-@router.post("/validate")
+@tests_router.post("/validate")
 def validate(data: DefinitionIn, _: Membership = Depends(can_manage)) -> CheckOut:
     """UC-4.2 step 5 without saving: the editor's live "Validation" panel (Screen 31)."""
     result = custom.check_input(data.definition, data.file)
@@ -92,7 +85,7 @@ def validate(data: DefinitionIn, _: Membership = Depends(can_manage)) -> CheckOu
     )
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@tests_router.post("", status_code=status.HTTP_201_CREATED)
 def create_custom_test(
     data: DefinitionIn,
     membership: Membership = Depends(can_manage),
@@ -104,14 +97,14 @@ def create_custom_test(
     return _detail(db, membership.organization_id, test.code)
 
 
-@router.get("/{code}")
+@tests_router.get("/{code}")
 def get_test_definition(
     code: str, org: uuid.UUID | None = Depends(organization_id), db: Session = Depends(get_db)
 ) -> TestDefinitionDetail:
     return _detail(db, org, code)
 
 
-@router.get("/{code}/versions/{version}")
+@tests_router.get("/{code}/versions/{version}")
 def get_test_definition_version(
     code: str,
     version: int,
@@ -119,10 +112,10 @@ def get_test_definition_version(
     db: Session = Depends(get_db),
 ) -> TestDefinitionDetail:
     """An earlier version, read-only (UC-4.1, alternative 6a)."""
-    return TestDefinitionDetail.model_validate(service.get_definition(db, org, code, version))
+    return _detail(db, org, code, version)
 
 
-@router.post("/{code}/versions", status_code=status.HTTP_201_CREATED)
+@tests_router.post("/{code}/versions", status_code=status.HTTP_201_CREATED)
 def save_new_version(
     code: str,
     data: NewVersionIn,
@@ -137,7 +130,7 @@ def save_new_version(
     return _detail(db, membership.organization_id, code)
 
 
-@router.post("/{code}/retire")
+@tests_router.post("/{code}/retire")
 def retire_test(
     code: str,
     data: RetireIn,
@@ -157,5 +150,13 @@ def _reason(reason: str) -> str:
     return reason
 
 
-def _detail(db: Session, org: uuid.UUID | None, code: str) -> TestDefinitionDetail:
-    return TestDefinitionDetail.model_validate(service.get_definition(db, org, code))
+def _detail(
+    db: Session, org: uuid.UUID | None, code: str, version: int | None = None
+) -> TestDefinitionDetail:
+    data = service.get_definition(db, org, code, version)
+    return TestDefinitionDetail.model_validate(data | {"suites": suites.containing(db, org, code)})
+
+
+router = APIRouter()
+router.include_router(tests_router)
+router.include_router(suites_router)
