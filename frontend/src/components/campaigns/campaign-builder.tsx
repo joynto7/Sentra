@@ -27,6 +27,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { ApiError } from "@/lib/api"
+import {
+  EMPTY_DRAFT,
+  type ScheduleDraft,
+  ScheduleFields,
+  scheduleInput,
+  scheduleProblem,
+} from "@/components/campaigns/schedule-fields"
 import { type Estimate, createCampaign, estimateCampaign, formatCount } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 import { ENVIRONMENT_LABEL, TYPE_LABEL, type Target, listTargets } from "@/lib/targets"
@@ -42,6 +49,9 @@ const FIELD_IDS: Record<string, string> = {
   request_rate: "request-rate",
   window: "window-start",
   repetitions: "repetitions",
+  schedule_kind: "schedule-once",
+  schedule_run_at: "schedule-run-at",
+  schedule_at_time: "schedule-at-time",
 }
 
 const whole = (text: string) => (/^\d+$/.test(text.trim()) ? Number(text.trim()) : null)
@@ -84,6 +94,8 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
   const [repetitions, setRepetitions] = useState("5")
   const [windowStart, setWindowStart] = useState("")
   const [windowEnd, setWindowEnd] = useState("")
+  // UC-5.1 step 5: when the campaign runs. It saves no schedule when it runs immediately.
+  const [schedule, setSchedule] = useState<ScheduleDraft>(EMPTY_DRAFT)
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -181,6 +193,12 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
   async function save(event: React.FormEvent) {
     event.preventDefault()
     setFormError(null)
+    const wrong = scheduleProblem(schedule)
+    if (wrong) {
+      setErrors({ [schedule.kind === "once" ? "schedule_run_at" : "schedule_at_time"]: wrong })
+      focusFirst({ [schedule.kind === "once" ? "schedule_run_at" : "schedule_at_time"]: wrong })
+      return
+    }
     setBusy(true)
     try {
       const saved = await createCampaign({
@@ -194,9 +212,19 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
         window_start: windowStart || null,
         window_end: windowEnd || null,
         time_zone: timeZone,
+        schedule: scheduleInput(schedule),
       })
       leaving.current = true
-      toast.success(`${saved.code} saved`, { description: "Nothing has been sent to the target." })
+      // UC-5.1 step 7: a campaign that runs immediately has its first run already (UC-5.3), and
+      // the monitor is where it is followed; 7a and 3a say why no run started.
+      if (saved.launched_run) {
+        toast.success(`${saved.code} saved and launched`, { description: `Run ${saved.launched_run.code}` })
+        router.push(`/campaigns/${saved.code}/runs/${saved.launched_run.number}`)
+        return
+      }
+      toast.success(`${saved.code} saved`, {
+        description: saved.launch_error ?? "Nothing has been sent to the target.",
+      })
       router.push(`/campaigns/${saved.code}`)
     } catch (error) {
       setBusy(false)
@@ -509,6 +537,15 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
                 Each successful attempt is repeated to measure how reliably it works.
               </p>
             </FormField>
+          </Section>
+
+          <Section number={4} id="schedule-heading" title="When it runs">
+            <ScheduleFields
+              draft={schedule}
+              onChange={setSchedule}
+              timeZone={timeZone}
+              error={errors.schedule_kind ?? errors.schedule_run_at ?? errors.schedule_at_time}
+            />
           </Section>
         </form>
 
