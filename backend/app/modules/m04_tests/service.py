@@ -1,15 +1,22 @@
 """Catalogue queries (FR-4.1, UC-4.1)."""
 
+import uuid
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.modules.m04_tests.models import TestDefinition
-from app.modules.m04_tests.schema import CATEGORY_NAMES, OUT_OF_SCOPE, Severity
+from app.modules.m04_tests.schema import (
+    CATEGORY_NAMES,
+    OUT_OF_SCOPE,
+    RULE_KINDS,
+    RuleCheck,
+    Severity,
+)
 
 SEVERITY_ORDER = {s.value: i for i, s in enumerate(Severity)}
 
@@ -24,13 +31,25 @@ class CatalogueFilters:
     atlas: str = ""
 
 
-def _visible_current(db: Session) -> list[TestDefinition]:
-    # Built-in tests are visible to everyone. Custom tests (FR-4.3) will be added here,
-    # limited to the user's own organization.
+def _visible(organization_id: uuid.UUID | None):
+    """Built-in tests are visible to everyone; custom tests only within their organization
+    (FR-4.3). A user without an organization sees the built-in tests."""
+    return or_(
+        TestDefinition.organization_id.is_(None),
+        TestDefinition.organization_id == organization_id,
+    )
+
+
+def _visible_current(db: Session, organization_id: uuid.UUID | None) -> list[TestDefinition]:
+    # Retired custom tests are left out (UC-4.3, 3a); their pages still open by address.
     return list(
         db.scalars(
             select(TestDefinition)
-            .where(TestDefinition.is_current.is_(True), TestDefinition.organization_id.is_(None))
+            .where(
+                TestDefinition.is_current.is_(True),
+                TestDefinition.retired.is_(False),
+                _visible(organization_id),
+            )
             .order_by(TestDefinition.category, TestDefinition.code)
         )
     )
@@ -57,9 +76,13 @@ def _checks(filters: CatalogueFilters) -> dict[str, Callable[[TestDefinition], b
 
 
 def list_catalogue(
-    db: Session, filters: CatalogueFilters, page: int, page_size: int
+    db: Session,
+    organization_id: uuid.UUID | None,
+    filters: CatalogueFilters,
+    page: int,
+    page_size: int,
 ) -> tuple[list[TestDefinition], int, dict[str, dict[str, int]]]:
-    tests = _visible_current(db)
+    tests = _visible_current(db, organization_id)
     checks = _checks(filters)
 
     def passes(test: TestDefinition, skip: str | None = None) -> bool:
@@ -85,9 +108,9 @@ def list_catalogue(
     )
 
 
-def coverage(db: Session) -> list[dict]:
+def coverage(db: Session, organization_id: uuid.UUID | None) -> list[dict]:
     """Tests per OWASP category, including the two categories outside Sentra's scope."""
-    counts = Counter(t.category for t in _visible_current(db))
+    counts = Counter(t.category for t in _visible_current(db, organization_id))
     return [
         {
             "category": code,
@@ -99,12 +122,15 @@ def coverage(db: Session) -> list[dict]:
     ]
 
 
-def get_definition(db: Session, code: str, version: int | None = None) -> dict:
-    """A test definition (the current version, or the one asked for) with its version history."""
+def get_definition(
+    db: Session, organization_id: uuid.UUID | None, code: str, version: int | None = None
+) -> dict:
+    """A test definition (the current version, or the one asked for) with its version history.
+    Another organization's custom test is "not found", as if it did not exist (FR-4.3)."""
     rows = list(
         db.scalars(
             select(TestDefinition)
-            .where(TestDefinition.code == code, TestDefinition.organization_id.is_(None))
+            .where(TestDefinition.code == code, _visible(organization_id))
             .order_by(TestDefinition.version.desc())
         )
     )
@@ -117,5 +143,12 @@ def get_definition(db: Session, code: str, version: int | None = None) -> dict:
     return {
         **{c.key: getattr(chosen, c.key) for c in TestDefinition.__table__.columns},
         "category_name": CATEGORY_NAMES[chosen.category],
+        "success_rules": [_described(rule) for rule in chosen.success_rules],
         "versions": rows,
     }
+
+
+def _described(rule: dict) -> dict:
+    kind = RULE_KINDS[RuleCheck(rule["check"])]
+    value = rule.get("value", "")
+    return {**rule, "method": kind.method, "sentence": kind.sentence.format(value=value)}
