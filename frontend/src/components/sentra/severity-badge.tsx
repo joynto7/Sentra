@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils"
 
 export type Severity = "critical" | "high" | "medium" | "low" | "informational"
 
-const LABEL: Record<Severity, string> = {
+export const SEVERITY_LABEL: Record<Severity, string> = {
   critical: "Critical",
   high: "High",
   medium: "Medium",
@@ -19,7 +19,7 @@ const STYLE: Record<Severity, string> = {
 }
 
 /** Shape + colour + label, so severity never depends on colour alone (WCAG 2.2). */
-function SeverityShape({ severity }: { severity: Severity }) {
+export function SeverityShape({ severity }: { severity: Severity }) {
   const common = { width: 10, height: 10, viewBox: "0 0 10 10", "aria-hidden": true } as const
   switch (severity) {
     case "critical":
@@ -65,7 +65,7 @@ export function SeverityBadge({ severity, className }: { severity: Severity; cla
       )}
     >
       <SeverityShape severity={severity} />
-      {LABEL[severity]}
+      {SEVERITY_LABEL[severity]}
     </span>
   )
 }
