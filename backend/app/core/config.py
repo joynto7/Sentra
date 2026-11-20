@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # Host names of Sentra's own lab targets in the isolated lab network (FR-11.2). Only the
     # connector may reach their private addresses; users can't register such addresses.
     lab_hosts: list[str] = []
+    # The lab targets' own administration token: Sentra places the ownership token of a lab target
+    # itself and reads its current canary tokens with it (FR-11.1, lifecycle diagram of a target).
+    lab_admin_token: str = "lab-admin-rag-chatbot"
+    # The API key with which Sentra registers its RAG chatbot lab target (UC-11.1 step 4).
+    lab_api_key: str = "lab-key-rag-chatbot"
+
+    # Background jobs (connection tests, ownership checks, profile mapping, campaign runs) run on
+    # the workers. The tests set this to run them at once, inside the request.
+    run_jobs_inline: bool = False
 
     # Server-side request forgery protection (NFR-3.4): targets on private network addresses are
     # refused, unless an on-premises deployment allows them.
