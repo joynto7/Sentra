@@ -221,6 +221,10 @@ def _item(finding: Finding, target_names: dict, run_refs: dict) -> dict:
             "label": component_label(finding.component_kind, finding.component_name),
         },
         "evidence_count": finding.evidence_count,
+        # Successful attempts / attempts that tried this weakness (FR-6.4; rated by FR-7.1)
+        "reproducibility": (
+            None if finding.reproducibility is None else str(finding.reproducibility)
+        ),
         "first_run": run_refs[finding.first_run_id],
         "last_run": run_refs[finding.last_run_id],
         "first_seen_at": finding.first_seen_at,
