@@ -47,7 +47,8 @@ def encrypt(plaintext: str, context: str) -> str:
 
 
 def decrypt(token: str, context: str) -> str:
-    """Only the Target Connector decrypts credentials, at the moment it calls a target (FR-2.2)."""
+    """Decrypts a value of encrypt(); the context must be the same. Target credentials are
+    decrypted only by the Target Connector, at the moment it calls a target (FR-2.2)."""
     if not token.startswith(VERSION):
         raise CryptoError("Unknown encryption format.")
     try:
