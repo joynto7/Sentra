@@ -23,7 +23,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ApiError } from "@/lib/api"
-import { RUN_STATUS_LABEL, type RunItem, listCampaigns, listRuns } from "@/lib/campaigns"
+import { RUN_STATUS_LABEL, type RunOverviewItem, listOrganizationRuns } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 import { type TargetRisk, getTargetRisk, notScoredText } from "@/lib/risk"
 import {
@@ -39,7 +39,6 @@ import {
 } from "@/lib/targets"
 
 const RUNS_SHOWN = 3
-const CAMPAIGNS_READ = 5 // enough for the card; the campaigns page shows them all
 
 function Card({
   title,
@@ -70,19 +69,12 @@ function LaterCard({ title, comesWith }: { title: string; comesWith: string }) {
   )
 }
 
-/** The target's runs, newest first: its campaigns' runs, which Screen 36 then shows in full. */
-async function recentRuns(targetId: string, signal: AbortSignal): Promise<{ run: RunItem; campaign: string }[]> {
-  const campaigns = await listCampaigns(new URLSearchParams({ target_id: targetId }))
-  const lists = await Promise.all(
-    campaigns.slice(0, CAMPAIGNS_READ).map(async (campaign) => {
-      const runs = await listRuns(campaign.code, signal).catch(() => [])
-      return runs.map((run) => ({ run, campaign: campaign.name }))
-    }),
+/** The target's runs, newest first; the monitor of each one is Screen 36. */
+function recentRuns(targetId: string, signal: AbortSignal): Promise<RunOverviewItem[]> {
+  return listOrganizationRuns(
+    new URLSearchParams({ target_id: targetId, limit: String(RUNS_SHOWN) }),
+    signal,
   )
-  return lists
-    .flat()
-    .sort((a, b) => b.run.created_at.localeCompare(a.run.created_at))
-    .slice(0, RUNS_SHOWN)
 }
 
 /**
@@ -99,7 +91,7 @@ export function TargetOverview({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false)
   const [risk, setRisk] = useState<TargetRisk | null>(null)
   const [verification, setVerification] = useState<Verification | null>(null)
-  const [runs, setRuns] = useState<{ run: RunItem; campaign: string }[] | null>(null)
+  const [runs, setRuns] = useState<RunOverviewItem[] | null>(null)
   const [mapping, setMapping] = useState(false)
 
   usePageCrumbs([{ label: target?.name ?? "Target" }])
@@ -344,10 +336,21 @@ export function TargetOverview({ id }: { id: string }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {runs.map(({ run, campaign }) => (
-                      <TableRow key={run.code}>
-                        <TableCell className="font-mono text-[13px]">{run.code}</TableCell>
-                        <TableCell className="text-[13px]">{campaign}</TableCell>
+                    {runs.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell className="font-mono text-[13px]">
+                          {run.campaign ? (
+                            <Link
+                              href={`/campaigns/${run.campaign.code}/runs/${run.number}`}
+                              className="text-link hover:underline"
+                            >
+                              {run.code}
+                            </Link>
+                          ) : (
+                            run.code
+                          )}
+                        </TableCell>
+                        <TableCell className="text-[13px]">{run.campaign?.name ?? "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-normal">
                             {RUN_STATUS_LABEL[run.status] ?? run.status}
