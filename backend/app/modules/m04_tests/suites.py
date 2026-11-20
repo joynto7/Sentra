@@ -258,9 +258,15 @@ class SuiteInput:
 
 
 def _check(
-    db: Session, organization: Organization, data: SuiteInput, code: str | None
+    db: Session,
+    organization: Organization,
+    data: SuiteInput,
+    code: str | None,
+    kept: list[str] | None = None,
 ) -> SuiteInput:
-    """UC-4.4 step 6 and UC-4.5 step 4: every problem at once, next to its field (6a, 4a)."""
+    """UC-4.4 step 6 and UC-4.5 step 4: every problem at once, next to its field (6a, 4a).
+    `kept` are the tests of the current version: one retired since may stay, and is skipped in
+    runs (UC-4.3, 3a), but a retired test can't be added."""
     name, purpose = data.name.strip(), data.purpose.strip()
     errors: list[dict] = []
     if not name:
@@ -283,7 +289,9 @@ def _check(
         )
     else:
         missing = [c for c in tests if c not in available]
-        retired = [c for c in tests if c in available and available[c].retired]
+        retired = [
+            c for c in tests if c in available and available[c].retired and c not in (kept or [])
+        ]
         if missing:
             errors.append({"field": "tests", "message": f"Not found: {', '.join(missing)}."})
         if retired:
@@ -350,7 +358,7 @@ def new_version(
     their next run; earlier versions stay as they were (FR-4.5)."""
     current = editable(db, membership.organization_id, code)
     organization = db.get_one(Organization, membership.organization_id)
-    checked = _check(db, organization, data, code)
+    checked = _check(db, organization, data, code, current.tests)
     digest = _hash(checked.name, checked.purpose, checked.tests)
     if digest == current.content_hash:
         raise AppError(
