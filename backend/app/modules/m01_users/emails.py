@@ -56,3 +56,34 @@ def role_changed(name: str, organization: str, role: str) -> tuple[str, str]:
         "It applies from your next action in Sentra.\n\n"
         "If you have questions, contact your organization administrator.\n",
     )
+
+
+def invitation(organization: str, inviter: str, role: str, token: str) -> tuple[str, str]:
+    link = f"{get_settings().web_url}/invitations/accept?token={token}"
+    return (
+        f"{inviter} invited you to {organization} on Sentra",
+        f"Hello,\n\n"
+        f"{inviter} invited you to join {organization} on Sentra as a {role}.\n\n"
+        f"Accept the invitation here:\n{link}\n\n"
+        "The link works once, only for this e-mail address, and expires in 7 days.\n"
+        "If you did not expect this invitation, you can ignore this e-mail.\n",
+    )
+
+
+def invitation_answered(
+    name: str, email: str, organization: str, accepted: bool
+) -> tuple[str, str]:
+    answer = "accepted" if accepted else "declined"
+    return (
+        f"{email} {answer} your invitation to {organization}",
+        f"Hello {name},\n\n{email} {answer} your invitation to join {organization} on Sentra.\n",
+    )
+
+
+def removed_from(name: str, organization: str) -> tuple[str, str]:
+    return (
+        f"You were removed from {organization}",
+        f"Hello {name},\n\n"
+        f"An administrator removed you from {organization} on Sentra, so you can no longer open "
+        "its data. If you think this is a mistake, contact the organization's administrator.\n",
+    )
