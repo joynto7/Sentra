@@ -5,10 +5,11 @@ target profile (send()), the one harmless request of a connection test (check_co
 FR-2.4) and the download of the ownership token (fetch_well_known(), FR-2.3).
 
 send() delivers one attempt to a target and returns its reply. Before every request it
-1. refuses a target that isn't verified, and an attempt beyond the budget (FR-5.7);
+1. refuses a target that isn't verified (FR-5.7);
 2. checks the endpoint's address again and connects to exactly the IP address it checked, so a
    host name that turns to a private address after the check can't divert the request (NFR-3.4);
-3. waits for the target's turn, so requests are spaced to the target's rate (pacing.py, FR-5.7).
+3. waits for the target's turn, so requests are spaced to the target's rate (pacing.py, FR-5.7);
+4. takes one attempt of the budget, and refuses the request when none is left (FR-5.7).
 Then it builds the request in the target's format (FR-2.1), adds the credentials, decrypted only
 now (FR-2.2), and reads the reply and the tool calls from the answer. Whatever the target sends
 back is returned only as data (NFR-3.6). Redirects are not followed: one could lead to a private
@@ -19,6 +20,7 @@ import ipaddress
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlsplit, urlunsplit
@@ -101,14 +103,19 @@ def send(
     rate_per_minute: int | None = None,
     budget: AttemptBudget | None = None,
     transport: httpx.BaseTransport | None = None,
+    wait: Callable[[float], None] | None = None,
+    max_wait: float | None = None,
 ) -> Reply:
     """Sends `message` to `target` and returns its reply. `rate_per_minute` may lower the target's
-    rate for a campaign, never raise it. `transport` replaces the network in the tests."""
+    rate for a campaign, never raise it. `wait` replaces time.sleep for the wait for the target's
+    turn, so a campaign run can stop while it waits (FR-5.6); if it raises, nothing is sent. With
+    `max_wait`, a longer wait raises pacing.TooLongToWait instead. The budget is taken after the
+    wait, at the last moment before the request. `transport` replaces the network in the tests."""
     if target.status != TargetStatus.VERIFIED:
         raise NotVerified()
-    if budget is not None:
-        budget.take()
-    return _post(db, target, message, session_id, rate_per_minute, transport)
+    return _post(
+        db, target, message, session_id, rate_per_minute, transport, wait, max_wait, budget
+    )
 
 
 def check_connection(
@@ -159,13 +166,18 @@ def _post(
     session_id: str | None,
     rate_per_minute: int | None,
     transport: httpx.BaseTransport | None,
+    wait: Callable[[float], None] | None = None,
+    max_wait: float | None = None,
+    budget: AttemptBudget | None = None,
 ) -> Reply:
     url, host_header, extensions = _pinned(target.endpoint_url)
 
     rate = min(rate_per_minute or target.max_request_rate, target.max_request_rate)
-    wait = pacing.reserve(db, target.id, rate)
-    if wait > 0:
-        time.sleep(wait)
+    seconds = pacing.reserve(db, target.id, rate, max_wait)
+    if seconds > 0:
+        (wait or time.sleep)(seconds)
+    if budget is not None:
+        budget.take()
 
     headers = _headers(target, host_header)
     body = _request_body(target, message, session_id or str(uuid.uuid4()))
