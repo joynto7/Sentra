@@ -66,9 +66,9 @@ def test_the_gateway_forwards_the_request_and_the_answer(tmp_path, upstream, mon
     assert sent.method == "POST" and sent.url.path == "/chat"
     assert json.loads(sent.content) == {"message": "Hello"}
     # one request passed through, and the gateway measured what it added
-    requests, latency, markers = main.link._take_window()
-    assert (requests, markers) == (1, [])
-    assert latency is not None and latency >= 0
+    window = main.link._take_window()
+    assert (window.requests, window.markers) == (1, [])
+    assert window.added_latency_ms is not None and window.added_latency_ms >= 0
 
 
 def test_sentras_test_request_is_reported_back(tmp_path, upstream, monkeypatch):
@@ -79,8 +79,8 @@ def test_sentras_test_request_is_reported_back(tmp_path, upstream, monkeypatch):
 
     TestClient(main.app).post("/chat", json={}, headers={"X-Sentra-Check": "7f3a9c"})
 
-    requests, _, markers = main.link._take_window()
-    assert (requests, markers) == (1, ["7f3a9c"])
+    window = main.link._take_window()
+    assert (window.requests, window.markers) == (1, ["7f3a9c"])
 
 
 def test_an_application_that_cannot_be_reached_answers_502(tmp_path, upstream, monkeypatch):
@@ -91,7 +91,8 @@ def test_an_application_that_cannot_be_reached_answers_502(tmp_path, upstream, m
 
     assert answer.status_code == 502
     assert "could not be reached" in answer.json()["error"]
-    assert main.link._take_window()[0] == 1  # it still counts as a request that passed through
+    # it still counts as a request that passed through
+    assert main.link._take_window().requests == 1
 
 
 def test_health_says_what_the_gateway_knows(tmp_path, monkeypatch):
