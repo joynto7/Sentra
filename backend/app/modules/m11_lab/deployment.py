@@ -254,7 +254,15 @@ def _read_state(db: Session, target: Target, row: LabDeployment) -> None:
     retires the earlier ones of (UC-11.2, quality requirement 4), and its known vulnerabilities."""
     state = connector_lab.lab_state(target)
     canaries.sync_lab(db, target, state.get("slots", []))
-    row.known_vulnerabilities = state.get("known_vulnerabilities", [])
+    # The application's own list replaces the application's entries; what an analyst documented
+    # after a benchmark (UC-11.5, 2a1) stays, because the application doesn't know about it.
+    had = list(row.known_vulnerabilities or [])
+    mine = [item for item in had if item.get("source") == "analyst"]
+    reported = state.get("known_vulnerabilities", [])
+    # The first read is version 1; a later one that changes the application's part is the next
+    if had and reported != [item for item in had if item.get("source") != "analyst"]:
+        row.known_version = (row.known_version or 1) + 1
+    row.known_vulnerabilities = reported + mine
     row.last_error = None
     db.commit()
 
