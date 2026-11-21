@@ -35,6 +35,8 @@ EVENTS = [
     Event("remediation_ready", "Remediation proposal ready for review"),
     # UC-8.3 step 6: the proposal somebody sent for approval was approved or rejected
     Event("remediation_decided", "Remediation approved or rejected", tab="approvals"),
+    # UC-8.4 steps 5-6 and 4a1: the target's Shield Policy version is active, or it is not
+    Event("shield_policy", "Sentra Shield policy deployed or failed"),
     # UC-9.6, 3a1: an API key is about to expire, so it can be replaced in time
     Event("api_key_expiring", "API key about to expire"),
     Event(
