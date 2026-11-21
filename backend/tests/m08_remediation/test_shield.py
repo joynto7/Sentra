@@ -326,7 +326,7 @@ def test_only_a_gateway_in_the_traffic_path_can_carry_a_fix(team, monkeypatch):
     assert fixes.active_gateway(team.db, team.agent.id) is not None
     assert fixes.enforcement(team.db, team.agent.id, FixKind.GUARDRAIL) == ("gateway", None)
     prompt = fixes.enforcement(team.db, team.agent.id, FixKind.SYSTEM_PROMPT)
-    assert prompt[0] == "application" and "system prompt belongs" in prompt[1]
+    assert prompt[0] == "application" and "in front of the endpoint" in prompt[1]
 
 
 def test_a_gateway_that_stops_reporting_is_seen_as_silent(team, monkeypatch):
