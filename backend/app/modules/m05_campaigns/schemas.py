@@ -259,6 +259,8 @@ class AttemptOut(BaseModel):
     status: str
     retry_of_id: uuid.UUID | None
     repeat_of_id: uuid.UUID | None  # FR-6.4: the attempt this one repeats
+    # FR-5.5: the adaptive agent wrote this attempt, and this is why (UC-5.5 step 5)
+    refinement_reason: str | None
     input: str
     sent_at: datetime | None
     finished_at: datetime | None
@@ -270,6 +272,35 @@ class AttemptOut(BaseModel):
     error_kind: str | None
     error_message: str | None
     hook_errors: list[dict] | None
+
+
+class RefinementOut(BaseModel):
+    """One request to the adaptive testing agent and what came of it (FR-5.5, UC-5.5)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    state: str  # sent, discarded, refused or stopped
+    reason: str
+    test_code: str
+    after_attempt_id: uuid.UUID | None
+    attempt_id: uuid.UUID | None
+    instructions_version: str | None
+    model: str | None
+    cost_usd: Decimal
+    created_at: datetime
+
+
+class AgentOut(BaseModel):
+    """What the agent did in one run: the counts for Screens 36 and 37, and the trail itself."""
+
+    enabled: bool
+    sent: int
+    discarded: int
+    refused: int
+    stopped_reason: str | None  # UC-5.5, 2a1: why it stopped refining, if it did
+    refinements_left: int  # of the share of the budget kept for refinements
+    cost_usd: Decimal
+    items: list[RefinementOut]
 
 
 class AttemptPage(BaseModel):
