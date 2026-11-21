@@ -153,10 +153,14 @@ def match(db: Session, run: BenchmarkRun, repetition: BenchmarkRepetition) -> li
     result = []
     for finding in findings:
         slots = _slots_of(db, finding.id)
+        # Of the documented weaknesses of this category that are still free, the one whose canary
+        # slot this finding actually proved comes first; otherwise the order of the list decides.
+        candidates = sorted(
+            (item for item in known if item.id not in taken and item.category == finding.category),
+            key=lambda item: 0 if item.slot and item.slot in slots else 1,
+        )
         chosen = None
-        for item in known:
-            if item.id in taken or item.category != finding.category:
-                continue
+        for item in candidates:
             if item.slot and slots and item.slot not in slots:
                 continue
             if item.component and item.component.lower() != finding.component_name.lower():
@@ -193,7 +197,7 @@ def unmatched(db: Session, run: BenchmarkRun) -> list[Matched]:
 # ---------------------------------------------------------------- the blind sample (step 3)
 
 
-def _sample_ids(db: Session, run: BenchmarkRun) -> list[uuid.UUID]:
+def sample_ids(db: Session, run: BenchmarkRun) -> list[uuid.UUID]:
     """The attempts an analyst labels: the same ones every time, because the sample is drawn with
     the run's own seed. Only attempts that were really sent can be judged."""
     runs = [r.campaign_run_id for r in run.repetition_rows if r.campaign_run_id is not None]
@@ -238,7 +242,7 @@ class ToLabel:
 def sample(db: Session, run: BenchmarkRun, place: int | None = None) -> ToLabel | None:
     """UC-11.5 step 3: the next attempt to label, or the one at `place`. None when the sample is
     fully labelled."""
-    ids = _sample_ids(db, run)
+    ids = sample_ids(db, run)
     if not ids:
         return None
     labels = {
@@ -291,7 +295,7 @@ def label_attempt(
     deployment.may_use(db, membership)
     if verdict not in set(AttemptLabel):
         raise FieldValidationError("verdict", "Say whether the attempt succeeded.")
-    if attempt_id not in set(_sample_ids(db, run)):
+    if attempt_id not in set(sample_ids(db, run)):
         raise ConflictError(NOT_IN_SAMPLE, code="not_in_sample")
     row = db.scalar(
         select(BenchmarkLabel).where(
@@ -427,6 +431,7 @@ class Measure:
     target_name: str
     repetition: int
     status: str
+    reason: str | None  # why it is incomplete (4a1), as the results page says it
     documented: int  # weaknesses the lab target's list names
     discovered: int  # of them, the ones a finding matched
     findings: int
@@ -535,7 +540,7 @@ class Agreement:
 def agreement(db: Session, run: BenchmarkRun) -> list[Agreement]:
     """UC-11.5 step 5: the LLM judge on its own and the combined verdict of UC-6.1, each against
     the labels that were made without seeing them."""
-    ids = set(_sample_ids(db, run))
+    ids = set(sample_ids(db, run))
     labels = {
         label.attempt_id: label.verdict
         for label in db.scalars(
@@ -631,6 +636,7 @@ class Evaluation:
     code: str
     name: str
     status: str
+    ended_at: datetime | None
     ready: bool  # every repetition has ended (the precondition of UC-11.5)
     judge_every_attempt: bool
     documented: list[Documented]
@@ -703,6 +709,7 @@ def _measure(
         target_name=names.get(repetition.target_id, ""),
         repetition=repetition.repetition,
         status=repetition.status,
+        reason=repetition.reason,
         documented=documented[repetition.target_id].count,
         discovered=len({row.known_id for row in rows if row.known_id}),
         findings=len(rows),
@@ -756,7 +763,7 @@ def evaluation(db: Session, run: BenchmarkRun, *, with_baseline: bool = True) ->
     seen: dict[uuid.UUID, Matched] = {}
     for row in open_findings:
         seen.setdefault(row.finding_id, row)
-    ids = _sample_ids(db, run)
+    ids = sample_ids(db, run)
     labelled = 0
     if ids:
         labelled = (
@@ -789,6 +796,7 @@ def evaluation(db: Session, run: BenchmarkRun, *, with_baseline: bool = True) ->
         code=run.code,
         name=run.name,
         status=run.status,
+        ended_at=run.ended_at,
         ready=ready,
         judge_every_attempt=run.judge_every_attempt,
         documented=list(documented.values()),

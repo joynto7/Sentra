@@ -148,6 +148,7 @@ class MeasureOut(BaseModel):
     target_name: str
     repetition: int
     status: str
+    reason: str | None
     documented: int
     discovered: int
     findings: int
@@ -219,6 +220,7 @@ class EvaluationOut(BaseModel):
     code: str
     name: str
     status: str
+    ended_at: datetime | None
     ready: bool
     judge_every_attempt: bool
     documented: list[DocumentedOut]
