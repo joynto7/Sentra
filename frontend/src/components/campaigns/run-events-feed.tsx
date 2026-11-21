@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Bug, CircleAlert, CircleCheck, CircleX, Info, Send } from "lucide-react"
+import { Bot, Bug, CircleAlert, CircleCheck, CircleX, Info, Send } from "lucide-react"
 
 import { SeverityBadge, type Severity } from "@/components/sentra/severity-badge"
 import type { EventKind, LiveEvent } from "@/components/campaigns/use-run-events"
@@ -13,15 +13,35 @@ const FILTERS = [
   { id: "all", label: "All" },
   { id: "findings", label: "Findings" },
   { id: "attempts", label: "Attempts" },
+  { id: "refinements", label: "Refinements" },
   { id: "warnings", label: "Warnings" },
 ] as const
 type Filter = (typeof FILTERS)[number]["id"]
 
-const IN_FILTER: Record<Filter, EventKind[]> = {
-  all: ["status", "plan", "attempt", "detection", "warning", "finding", "finding_severity", "ended"],
+/** A refinement is shown as a row of its own, beside the attempt it followed. */
+type RowKind = EventKind | "refinement"
+
+const IN_FILTER: Record<Filter, RowKind[]> = {
+  all: ["status", "plan", "attempt", "detection", "refinement", "warning", "finding", "finding_severity", "ended"],
   findings: ["finding", "finding_severity"],
   attempts: ["attempt", "detection"],
+  refinements: ["refinement"],
   warnings: ["warning"],
+}
+
+/** What the adaptive testing agent did with an attempt, as the engine publishes it with the attempt. */
+type AgentOutput = { refined?: boolean; attempt_no?: number; reason?: string; discarded?: number; stopped?: string }
+
+function agentOf(event: LiveEvent): AgentOutput | null {
+  if (event.kind !== "attempt") return null
+  const results = (event.data.results ?? {}) as Record<string, unknown>
+  const found = results.agent
+  return found && typeof found === "object" ? (found as AgentOutput) : null
+}
+
+/** How many events carry something the agent did: the monitor reads the agent's trail again when it changes. */
+export function agentEventCount(events: LiveEvent[]): number {
+  return events.reduce((count, event) => count + (agentOf(event) ? 1 : 0), 0)
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -40,7 +60,10 @@ function verdictText(detection: Record<string, unknown> | undefined): string {
   if (!detection) return ""
   const methods = (detection.methods ?? {}) as Record<string, string>
   const found = Object.entries(methods)
-    .map(([method, outcome]) => `${METHOD_LABEL[method] ?? method} ${outcome === "met" ? "✓" : outcome === "not_met" ? "✗" : "…"}`)
+    .map(
+      ([method, outcome]) =>
+        `${METHOD_LABEL[method] ?? method} ${outcome === "met" ? "✓" : outcome === "not_met" ? "✗" : "…"}`,
+    )
     .join(", ")
   const verdict =
     detection.verdict === "met"
@@ -73,6 +96,46 @@ function Row({
   )
 }
 
+/** The agent's part in an attempt: a refinement added, proposals it had to discard, or its stop. */
+function RefinementRow({ output, at }: { output: AgentOutput; at: string }) {
+  const discarded = output.discarded ?? 0
+  const discardedText =
+    discarded > 0
+      ? ` · ${discarded} ${discarded === 1 ? "proposal" : "proposals"} discarded as outside the approved scope`
+      : ""
+  const icon = <Bot className="size-3.5" aria-hidden="true" />
+
+  if (output.stopped) {
+    return (
+      <Row icon={icon} time={at}>
+        <span className="font-medium text-warning">Adaptive agent stopped</span>
+        <span className="text-text-secondary"> · {output.stopped}</span>
+        <span className="text-muted-foreground"> · the run goes on with its planned tests</span>
+      </Row>
+    )
+  }
+  if (output.refined) {
+    return (
+      <Row icon={icon} time={at}>
+        <span className="font-medium">Adaptive refinement</span>
+        <span className="text-muted-foreground"> · attempt #{String(output.attempt_no)} added</span>
+        {output.reason && <span className="text-text-secondary"> · reason “{output.reason}”</span>}
+        <span className="text-muted-foreground">
+          {" "}
+          · <CircleCheck className="inline size-3.5 text-success" aria-hidden="true" /> within scope
+          {discardedText}
+        </span>
+      </Row>
+    )
+  }
+  return (
+    <Row icon={icon} time={at}>
+      <span className="font-medium">Adaptive agent</span>
+      <span className="text-text-secondary"> · nothing could be added after this attempt{discardedText}</span>
+    </Row>
+  )
+}
+
 /** One live event, in the words of UC-5.6 step 3. */
 function EventRow({ event }: { event: LiveEvent }) {
   const data = event.data
@@ -86,14 +149,15 @@ function EventRow({ event }: { event: LiveEvent }) {
       <Row icon={<Send className="size-3.5" aria-hidden="true" />} time={at}>
         <span className="font-medium">Attempt #{String(data.attempt_no)}</span>
         <span className="text-muted-foreground"> · {String(data.test_code)}</span>
+        {typeof data.refinement_reason === "string" && data.refinement_reason && (
+          <span className="text-muted-foreground"> · written by the adaptive agent</span>
+        )}
         {failed ? (
           <span className="text-destructive"> · {String(data.error ?? "No reply")}</span>
         ) : (
           <span className="text-text-secondary"> · {verdictText(detection as Record<string, unknown>)}</span>
         )}
-        {event.kind === "detection" && (
-          <span className="text-muted-foreground"> (the LLM judge answered)</span>
-        )}
+        {event.kind === "detection" && <span className="text-muted-foreground"> (the LLM judge answered)</span>}
       </Row>
     )
   }
@@ -177,7 +241,18 @@ export function RunEventsFeed({
   ended: boolean
 }) {
   const [filter, setFilter] = useState<Filter>("all")
-  const shown = events.filter((event) => IN_FILTER[filter].includes(event.kind))
+  const rows = events.flatMap((event) => {
+    const output = agentOf(event)
+    const own = {
+      key: `${event.id}-${event.kind}`,
+      kind: event.kind as RowKind,
+      event,
+      output: null as AgentOutput | null,
+    }
+    // Newest first: what the agent did comes after the attempt it followed.
+    return output ? [{ ...own, key: `${own.key}-agent`, kind: "refinement" as RowKind, output }, own] : [own]
+  })
+  const shown = rows.filter((row) => IN_FILTER[filter].includes(row.kind))
 
   return (
     <section aria-labelledby="events-heading" className="rounded-[10px] border bg-card">
@@ -226,9 +301,13 @@ export function RunEventsFeed({
         </p>
       ) : (
         <ul className="max-h-[32rem] divide-y overflow-y-auto" aria-live="polite" aria-relevant="additions">
-          {shown.map((event) => (
-            <EventRow key={`${event.id}-${event.kind}`} event={event} />
-          ))}
+          {shown.map((row) =>
+            row.output ? (
+              <RefinementRow key={row.key} output={row.output} at={clock(row.event.at)} />
+            ) : (
+              <EventRow key={row.key} event={row.event} />
+            ),
+          )}
         </ul>
       )}
     </section>
