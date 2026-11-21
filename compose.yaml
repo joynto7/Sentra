@@ -123,6 +123,31 @@ services:
     depends_on:
       - prometheus
 
+  shield:
+    # A Sentra Shield gateway (FR-8.3) in front of the lab chatbot, to try UC-8.1 locally:
+    #   1. On Screen 47, connect a gateway for that target and copy its credential once.
+    #   2. Point the target's endpoint at the gateway: http://shield:8443/v1/chat/completions.
+    #      The Target Connector only sends to a private address when the host is a lab host, so
+    #      add "shield" to LAB_HOSTS in your .env for this (a gateway in front of a lab target
+    #      is still the lab).
+    #   3. SENTRA_GATEWAY_TOKEN=sgw_... docker compose --profile lab --profile shield up -d
+    # No host port: the gateway is reached from the worker inside the stack, so the laptop keeps
+    # no way into the isolated lab network (FR-11.2).
+    profiles: ["shield"]
+    build: ./shield
+    environment:
+      SENTRA_URL: http://api:8000
+      SENTRA_GATEWAY_TOKEN: "${SENTRA_GATEWAY_TOKEN:-}"
+      SHIELD_UPSTREAM_URL: http://lab-rag-chatbot:8080
+      SHIELD_POSITION: in_front
+      SHIELD_HEARTBEAT_SECONDS: "30"
+    volumes:
+      # The last policy it was given, so a restart during an outage still enforces it (UC-8.1)
+      - shield-policy:/var/lib/sentra-shield
+    networks: [default, lab]
+    depends_on:
+      - api
+
   web:
     profiles: ["web"]
     build:
@@ -147,3 +172,4 @@ networks:
 volumes:
   db-data:
   objects:
+  shield-policy:

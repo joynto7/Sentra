@@ -119,12 +119,19 @@ def send(
 
 
 def check_connection(
-    db: Session, target: Target, *, transport: httpx.BaseTransport | None = None
+    db: Session,
+    target: Target,
+    *,
+    transport: httpx.BaseTransport | None = None,
+    marker: str | None = None,
 ) -> Reply:
     """UC-2.2: one harmless request, also before the target is verified, because it only proves
     that the endpoint, the format and the credentials work. Every other protection applies: the
-    address check, the pinned address, the rate, no redirects, the size limit."""
-    return _post(db, target, CONNECTION_TEST_MESSAGE, None, None, transport)
+    address check, the pinned address, the rate, no redirects, the size limit.
+
+    `marker` adds the header X-Sentra-Check with a one-time value. A Sentra Shield gateway in the
+    traffic path reports that value back, which is how UC-8.1 step 5 knows it is really there."""
+    return _post(db, target, CONNECTION_TEST_MESSAGE, None, None, transport, marker=marker)
 
 
 def fetch_well_known(target: Target, *, transport: httpx.BaseTransport | None = None) -> str | None:
@@ -169,6 +176,7 @@ def _post(
     wait: Callable[[float], None] | None = None,
     max_wait: float | None = None,
     budget: AttemptBudget | None = None,
+    marker: str | None = None,
 ) -> Reply:
     url, host_header, extensions = _pinned(target.endpoint_url)
 
@@ -179,7 +187,7 @@ def _post(
     if budget is not None:
         budget.take()
 
-    headers = _headers(target, host_header)
+    headers = _headers(target, host_header, marker)
     body = _request_body(target, message, session_id or str(uuid.uuid4()))
     timeout = get_settings().connector_timeout_seconds
     start = time.monotonic()
@@ -248,12 +256,14 @@ def _pinned(url: str) -> tuple[str, str | None, dict]:
     return pinned, host_header, {"sni_hostname": host}
 
 
-def _headers(target: Target, host_header: str | None) -> dict[str, str]:
+def _headers(target: Target, host_header: str | None, marker: str | None = None) -> dict[str, str]:
     headers = {
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+    if marker:  # UC-8.1 step 5: a Sentra Shield gateway in the path reports this value back
+        headers["X-Sentra-Check"] = marker
     for credential in target.credentials:
         value = credential.decrypt()  # only here, at the moment of the request (FR-2.2)
         if credential.credential_type == CredentialType.BEARER_TOKEN:
