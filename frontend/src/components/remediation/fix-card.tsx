@@ -1,7 +1,11 @@
 import { EnforcementChip } from "@/components/remediation/badges"
 import { DETAIL_KEY, DETAIL_TITLE, type Fix } from "@/lib/remediation"
 
-/** The fix itself, by kind: a prompt is text, the other four are a list of rules or steps. */
+/**
+ * The fix itself, by kind: a prompt is text, a guardrail and a code change are lines, and a tool
+ * or retrieval fix is rows of the thing it is about and the rule for it — the shape FR-8.3 builds
+ * a policy rule from, so it is shown as such and never flattened into one line.
+ */
 function Body({ fix }: { fix: Fix }) {
   const value = fix.details[DETAIL_KEY[fix.kind]]
   if (typeof value === "string" && value.trim()) {
@@ -11,7 +15,19 @@ function Body({ fix }: { fix: Fix }) {
       </p>
     )
   }
-  const lines = Array.isArray(value) ? value.filter((one) => typeof one === "string") : []
+  const list = Array.isArray(value) ? value : []
+  const lines = list
+    .map((one) =>
+      typeof one === "string"
+        ? one
+        : one && typeof one === "object"
+          ? Object.entries(one as Record<string, unknown>)
+              .map(([, text]) => String(text))
+              .filter(Boolean)
+              .join(" — ")
+          : "",
+    )
+    .filter(Boolean)
   if (lines.length === 0) return null
   return (
     <ul className="mt-1 space-y-1 rounded-[7px] border bg-muted/40 p-3 font-mono text-[13px]">
@@ -20,7 +36,7 @@ function Body({ fix }: { fix: Fix }) {
           <span aria-hidden="true" className="text-muted-foreground">
             ·
           </span>
-          {line as string}
+          {line}
         </li>
       ))}
     </ul>
