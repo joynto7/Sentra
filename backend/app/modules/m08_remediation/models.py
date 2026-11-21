@@ -215,6 +215,7 @@ class PolicyState(StrEnum):
     PENDING = "pending"  # offered to the gateway, which has not confirmed it yet (step 3)
     ACTIVE = "active"  # the gateway confirmed it (step 4)
     SUPERSEDED = "superseded"  # a later version took over; kept, so FR-8.6 can roll back to it
+    ROLLED_BACK = "rolled_back"  # UC-8.8: a rollback took this version out of the traffic
     FAILED = "failed"  # 4a1: the gateway never confirmed it, and the version before stays active
 
 
@@ -275,6 +276,10 @@ class ShieldPolicy(UUIDPrimaryKey, OrganizationScoped, Base):
     offers: Mapped[int] = mapped_column(default=0)  # how often the gateway was told about it (4a)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_reason: Mapped[str | None] = mapped_column(String(300))
+    # UC-8.8: why somebody rolled back to this version or switched the policy off, in their own
+    # words, and the version this one took out of the traffic.
+    reason: Mapped[str | None] = mapped_column(String(300))
+    rolled_back_from: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, server_default=func.now()
     )
