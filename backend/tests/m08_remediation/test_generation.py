@@ -43,7 +43,10 @@ def test_a_confirmed_finding_becomes_a_draft_proposal_with_its_fixes(team, confi
     # 6a: no gateway protects the target yet, so every fix is a change in the application.
     assert {f["enforcement"] for f in version["fixes"]} == {"application"}
     assert "No Sentra Shield gateway" in version["fixes"][1]["enforcement_note"]
-    assert "belongs to the application" in version["fixes"][0]["enforcement_note"]
+    # FR-8.3: where a fix takes effect depends on where a gateway sits, so the hardened prompt
+    # waits for one between the application and its model instead of being the application's by
+    # its kind alone.
+    assert "No Sentra Shield gateway" in version["fixes"][0]["enforcement_note"]
     assert len(sent) == 1
 
 
