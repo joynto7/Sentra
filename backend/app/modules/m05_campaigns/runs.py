@@ -8,8 +8,10 @@ The API never sends anything to a target: a launch queues the run's start job an
 import asyncio
 import re
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import time
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -25,11 +27,13 @@ from app.modules.m04_tests.models import TestDefinition
 from app.modules.m05_campaigns import lifecycle, limits, service
 from app.modules.m05_campaigns.models import (
     ENDED,
+    AgentRefinement,
     ApprovalStatus,
     Attempt,
     Campaign,
     CampaignRun,
     PauseKind,
+    RefinementState,
     RunStatus,
     RunTrigger,
     RunType,
@@ -482,3 +486,53 @@ async def events(run_id: uuid.UUID, after: str | None, ended: bool) -> AsyncIter
             if ended:
                 return
             yield ": waiting\n\n"
+
+
+def agent_trail(db: Session, run: CampaignRun) -> dict:
+    """What the adaptive testing agent did in this run (FR-5.5, UC-5.5 step 5): the counts
+    Screens 36 and 37 show, and every request with its reason, newest first."""
+    from app.workers.agent import agent as adaptive
+
+    rows = list(
+        db.scalars(
+            select(AgentRefinement)
+            .where(AgentRefinement.campaign_run_id == run.id)
+            .order_by(AgentRefinement.created_at.desc(), AgentRefinement.id)
+        )
+    )
+    counted = Counter(row.state for row in rows)
+    stopped = next((row for row in rows if row.state == RefinementState.STOPPED), None)
+    return {
+        "enabled": adaptive.enabled(run),
+        "sent": counted.get(RefinementState.SENT, 0),
+        "discarded": counted.get(RefinementState.DISCARDED, 0),
+        "refused": counted.get(RefinementState.REFUSED, 0),
+        "stopped_reason": stopped.reason if stopped else None,
+        "refinements_left": adaptive._budget_left(db, run) if adaptive.enabled(run) else 0,
+        "cost_usd": sum((row.cost_usd for row in rows), Decimal(0)),
+        "items": rows,
+    }
+
+
+def stop_agent(
+    db: Session, membership: Membership, code: str, number: int, reason: str
+) -> CampaignRun:
+    """FR-5.5, a manual stop: the adaptive testing agent makes no more refinements in this run,
+    and the run goes on with its planned tests (UC-5.5, 2a1). It stops nothing else — the run's
+    own stop is `stop()`. The attempts the agent already added stay in the plan and are sent."""
+    from app.workers.agent import agent as adaptive
+
+    _, run = run_row(db, membership.organization_id, code, number, lock=True)
+    if run.status in ENDED:
+        raise ConflictError(ENDED_ALREADY, code="run_ended")
+    if not adaptive.enabled(run):
+        raise ConflictError("The adaptive testing agent is off for this run.", code="agent_off")
+    who = db.get_one(User, membership.user_id)
+    said = reason.strip()
+    text = adaptive.BY_HAND.format(who=who.name) + (f" {said}" if said else "")
+    if adaptive.stop(db, run, text, actor=who) is None:
+        raise ConflictError(
+            "The adaptive testing agent has already stopped in this run.", code="agent_stopped"
+        )
+    db.commit()
+    return run
