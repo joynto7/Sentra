@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.core.audit import AuditLogEntry
 from app.core.errors import NotFoundError
 from app.modules.m01_users.models import Membership, Role, User
-from app.modules.m08_remediation import policies, retest
+from app.modules.m08_remediation import policies, retest, schedules
 from app.modules.m08_remediation.models import (
     PolicyState,
     Remediation,
@@ -416,6 +416,21 @@ def test_a_deployment_can_wait_for_a_maintenance_window(team, confirmed, model, 
     started = policies.due(team.db, at=window + timedelta(minutes=1))
 
     assert [one.version for one in started] == [1]
+    assert policies.waiting(team.db, team.agent.id) is not None
+    assert actions(team).count("shield_policy.deploying") == 1
+
+
+def test_the_clock_offers_a_version_when_its_window_comes(team, confirmed, model, monkeypatch):
+    """1a through Sentra's clock: Module 8's schedules.py runs `due()` every minute (FR-5.3). The
+    window is two minutes away, so the gateway stays within its silence threshold (UC-10.9)."""
+    ready(team, confirmed, model, monkeypatch)
+    window = datetime.now(UTC) + timedelta(minutes=2)
+    assert deploy(team, confirmed, terms=TERMS, at=window).status_code == 201
+
+    assert schedules.due(team.db, window - timedelta(minutes=1)) is False
+    assert policies.waiting(team.db, team.agent.id) is None
+
+    assert schedules.due(team.db, window + timedelta(seconds=30)) is True
     assert policies.waiting(team.db, team.agent.id) is not None
     assert actions(team).count("shield_policy.deploying") == 1
 
