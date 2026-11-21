@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FindingRef(BaseModel):
@@ -169,6 +169,11 @@ class GatewayOut(BaseModel):
     gateway_version: str | None
     added_latency_ms: int | None  # what it adds to a request, as it measures itself (NFR-1.5)
     requests_seen: int
+    requests_blocked: int  # what its policy held back (FR-8.3)
+    requests_changed: int  # what a masking rule of its policy took something out of
+    # A restricted knowledge source its policy watches, and how often it has seen one
+    retrieval_sightings: dict[str, int]
+    policy_version: int  # the version it says it is enforcing
     in_traffic_path: bool  # the test request of step 5 passed through it
     connected_at: datetime | None
     last_contact_at: datetime | None
@@ -208,8 +213,22 @@ class GatewayConnectIn(BaseModel):
 
 class GatewayHeartbeatIn(BaseModel):
     requests: int = Field(default=0, ge=0)
+    blocked: int = Field(default=0, ge=0)  # what its policy held back in the window (FR-8.3)
+    changed: int = Field(default=0, ge=0)  # what a masking rule took something out of
     added_latency_ms: int | None = Field(default=None, ge=0)
     markers: list[str] = Field(default_factory=list, max_length=50)
+    # The restricted sources its retrieval rules saw, and how often (FR-8.3)
+    sightings: dict[str, int] = Field(default_factory=dict)
+    # The policy version it is enforcing. A gateway that reports the version it was offered has
+    # activated it, which confirms the deployment even if its own confirmation was lost (UC-8.4).
+    policy_version: int = Field(default=0, ge=0)
+
+    @field_validator("sightings")
+    @classmethod
+    def _the_ones_it_watches(cls, value: dict[str, int]) -> dict[str, int]:
+        """A gateway reports the sources of its own policy, which holds at most 50 rules, so
+        anything beyond that is not something this gateway could have been told to watch."""
+        return {str(source)[:120]: max(0, int(count)) for source, count in list(value.items())[:50]}
 
 
 class GatewayStateOut(BaseModel):
@@ -221,3 +240,82 @@ class GatewayStateOut(BaseModel):
 class GatewayPolicyOut(BaseModel):
     version: int
     document: dict
+
+
+# ---------------------------------------------------------------- Shield Policy versions (UC-8.4)
+
+
+class PolicyRuleOut(BaseModel):
+    """One rule of a version, as a person reads it. The rule itself is in the document the
+    gateway downloads; this is what the pages show."""
+
+    id: str
+    kind: str
+    label: str
+    title: str  # the title of the fix a person approved
+    says: str  # what the gateway does with it, in one line
+    note: str | None = None  # the sentence of the approved fix behind it
+    finding: str | None = None
+    fix: int | None = None
+
+
+class PolicyVersionOut(BaseModel):
+    version: int
+    state: str  # scheduled, pending, active, superseded or failed
+    state_label: str
+    source: str  # remediation, rollback or disabled
+    rule_count: int
+    carried_over: int  # rules kept from the version before it
+    rules: list[PolicyRuleOut]
+    trigger_finding: str | None
+    trigger_version: int | None
+    based_on_version: int | None
+    approved_by: str | None
+    deployed_by: str | None
+    deploy_at: datetime | None  # 1a: the maintenance window it waits for
+    offered_at: datetime | None
+    confirmed_at: datetime | None
+    failure_reason: str | None
+    created_at: datetime
+
+
+class PolicyList(BaseModel):
+    """What Screens 48 and 49 read: the target's policy, its history, and what could go in next."""
+
+    target_id: uuid.UUID
+    target_name: str
+    gateway: GatewayOut | None
+    active: PolicyVersionOut | None
+    waiting: PolicyVersionOut | None  # offered to the gateway, not confirmed yet
+    versions: list[PolicyVersionOut]  # newest first
+    deployable: list[dict]  # the approved remediations that are not in the policy yet
+
+
+class GuardrailTermsIn(BaseModel):
+    """The terms a guardrail matches, which a person writes (UC-8.4 step 1). Sentra never writes
+    them: the approved fix says in words what should be filtered, and this is the exact list."""
+
+    fix: int  # the position of the fix in the approved remediation version
+    applies_to: str = "output"
+    action: str = "block"
+    terms: list[str] = Field(default_factory=list, max_length=20)
+    message: str | None = Field(default=None, max_length=300)
+
+
+class DeployIn(BaseModel):
+    finding_code: str = Field(max_length=20)
+    version: int | None = None  # the remediation version; the newest approved one by default
+    guardrails: list[GuardrailTermsIn] = Field(default_factory=list, max_length=20)
+    at: datetime | None = None  # 1a: deploy it in a maintenance window instead of now
+
+
+class DeployOut(BaseModel):
+    policy: PolicyVersionOut
+    open_in_application: list[dict]  # 6a: the fixes that stay the developer's work
+
+
+class GatewayConfirmIn(BaseModel):
+    """Step 4: the gateway says which version it has activated, and how many rules it holds."""
+
+    version: int = Field(ge=0)
+    rules: int | None = Field(default=None, ge=0)
