@@ -8,14 +8,15 @@ requirement 4): this is the only door into the Lab zone.
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
+from app.core import audit
 from app.core.database import get_db
 from app.modules.m01_users.deps import current_membership, current_user
 from app.modules.m01_users.models import Membership, User
 from app.modules.m02_targets.models import Target
-from app.modules.m11_lab import benchmark, deployment, metrics
+from app.modules.m11_lab import benchmark, deployment, export, metrics
 from app.modules.m11_lab.models import BenchmarkRun
 from app.modules.m11_lab.schemas import (
     AgreementOut,
@@ -26,6 +27,8 @@ from app.modules.m11_lab.schemas import (
     DocumentedOut,
     EstimateOut,
     EvaluationOut,
+    ExportIn,
+    ExportSummary,
     FigureOut,
     KnownVulnerability,
     LabCardOut,
@@ -361,3 +364,62 @@ def label_attempt(
     run = benchmark.row_of(db, membership.organization_id, code)
     found = metrics.label_attempt(db, membership, user, run, attempt_id, data.verdict, data.note)
     return ToLabelOut(**found.__dict__) if found else None
+
+
+# ---------------------------------------------------------------- the export (FR-11.5)
+
+
+@router.get("/benchmarks/{code}/export")
+def export_summary(
+    code: str,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> ExportSummary:
+    """What the export dialog of Screen 69 shows before anything is created: how many rows each
+    level of detail would write, and how many labels go with them."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    return ExportSummary(**export.summary(db, run))
+
+
+@router.post("/benchmarks/{code}/export")
+def export_benchmark(
+    code: str,
+    data: ExportIn,
+    membership: Membership = Depends(current_membership),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """UC-11.6: the results at the chosen level of detail, with the configuration, the versions
+    and the analyst's labels around them, as CSV or JSON. The answer carries the SHA-256 of
+    exactly these bytes, and the export is recorded in the audit log (step 6, FR-10.2)."""
+    run = benchmark.row_of(db, membership.organization_id, code)
+    deployment.may_use(db, membership)
+    made = export.build(db, run, fmt=data.format, level=data.level)
+    audit.record(
+        db,
+        organization_id=membership.organization_id,
+        actor=user,
+        action="benchmark.exported",
+        summary=(
+            f"Exported the results of {run.code} as {data.format.upper()}, "
+            f"{export.LEVEL_LABELS[data.level].lower()}"
+        ),
+        item=audit.Item("benchmark_run", run.id, run.code),
+        details={
+            "format": data.format,
+            "level": data.level,
+            "rows": made.rows,
+            "checksum": made.checksum,
+            "without_content": made.without_content,
+        },
+    )
+    db.commit()
+    return Response(
+        content=made.content,
+        media_type=made.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{made.filename}"',
+            "X-Checksum-Sha256": made.checksum,
+            "X-Export-Rows": str(made.rows),
+        },
+    )

@@ -256,3 +256,19 @@ class ToLabelOut(BaseModel):
 class LabelIn(BaseModel):
     verdict: str = Field(max_length=20)
     note: str | None = Field(default=None, max_length=2000)
+
+
+class ExportIn(BaseModel):
+    """UC-11.6 steps 1-2: the format and how much detail (FR-11.5)."""
+
+    format: str = Field(pattern="^(csv|json)$")
+    level: str = Field(pattern="^(strategy|repetition|attempt)$")
+
+
+class ExportSummary(BaseModel):
+    """How many rows each level would write, so the dialog can say it before anything is made."""
+
+    strategy: int
+    repetition: int
+    attempt: int
+    labels: int
