@@ -27,6 +27,7 @@ from app.modules.m05_campaigns.models import (
 )
 from app.workers.agent import agent, instructions
 from app.workers.connector.connector import Reply
+from app.workers.orchestrator.engine import attempt_data
 from tests.m01_users.test_permissions import membership_of
 from tests.m05_campaigns.conftest import team  # noqa: F401
 from tests.m06_findings.conftest import (  # noqa: F401
@@ -141,6 +142,22 @@ def test_an_attempt_that_missed_its_objective_is_refined(
     # What the agent costs belongs to the run, so the run's own limits count it (FR-5.7)
     usage = db.scalar(select(LLMUsage).execution_options(populate_existing=True))
     assert usage.task == "adaptive_testing" and usage.campaign_run_id == refined.campaign_run_id
+
+
+def test_the_live_monitor_says_which_attempts_the_agent_wrote(
+    team,  # noqa: F811
+    db,
+    run_with,  # noqa: F811
+    test_that_fails,
+    agent_model,
+):
+    agent_model(proposal("REFINED-1"))
+
+    run_with(test_that_fails, ["The assistant refuses."], planned=1)
+
+    planned, refined = attempts(db)[:2]
+    assert attempt_data(planned)["refinement_reason"] is None
+    assert attempt_data(refined)["refinement_reason"].startswith("The target refused")
 
 
 def test_an_attempt_that_reached_its_objective_is_not_refined(
