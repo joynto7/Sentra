@@ -38,7 +38,10 @@ SLOTS = [
 ]
 
 
-# The documented list of this target's weaknesses (FR-11.1), as its own file states them.
+# The documented list of this target's weaknesses (FR-11.1), as its own file states them. Each
+# entry's `canary` is this application's own name for the token it is reached through; `slot` is
+# the same token in Sentra's words, so a benchmark can match a finding to the weakness it proves
+# (FR-11.4, UC-11.5 step 1) without knowing anything about this application's internals.
 KNOWN_VULNERABILITIES = json.loads(
     (Path(__file__).resolve().parent.parent / "known_vulnerabilities.json").read_text()
 )
@@ -93,12 +96,16 @@ def lab_state(x_lab_admin_token: str | None = Header(default=None)) -> dict:
         {"slot": slot, "token": state["canaries"][name], "topic": topic}
         for name, slot, topic in SLOTS
     ]
+    sentra_slot = {name: slot for name, slot, _ in SLOTS}
     return {
         "canaries": state["canaries"],
         "slots": slots,
         # What this target is known to be vulnerable to (FR-11.1). It is documented here, in the
         # application itself, so the Security Lab page never shows a copy that has drifted.
-        "known_vulnerabilities": KNOWN_VULNERABILITIES,
+        "known_vulnerabilities": [
+            {**item, "slot": sentra_slot.get(item.get("canary", ""))}
+            for item in KNOWN_VULNERABILITIES
+        ],
     }
 
 
