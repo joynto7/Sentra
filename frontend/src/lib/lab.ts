@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api"
+import { apiDownloadFile, apiFetch } from "@/lib/api"
 import type { TargetType } from "@/lib/targets"
 
 /** Screen 65: the Security Lab (FR-11.1, FR-11.2). Lab targets run in an isolated zone with
@@ -411,3 +411,36 @@ export function figureSpread(figure: Figure): string {
 
 /** "0.86" — precision and recall as the detection card shows them, on a scale of 0 to 1. */
 export const share = (percent: number | null) => (percent === null ? "—" : (percent / 100).toFixed(2))
+
+
+// ---------------------------------------------------------------- the export (FR-11.5)
+
+export type ExportFormat = "csv" | "json"
+/** UC-11.6 step 2: metrics per strategy, one row per repetition, or one row per attempt. */
+export type ExportLevel = "strategy" | "repetition" | "attempt"
+
+/** How many rows each level would write, so the dialog can say it before anything is made. */
+export type ExportSummary = Record<ExportLevel, number> & { labels: number }
+
+export const exportSummary = (code: string, signal?: AbortSignal) =>
+  apiFetch<ExportSummary>(`${BENCHMARKS}/${code}/export`, { signal })
+
+/** UC-11.6 steps 1-5: the file is saved in the browser and its SHA-256 comes back with it. */
+export const exportBenchmark = (code: string, format: ExportFormat, level: ExportLevel) =>
+  apiDownloadFile(
+    `${BENCHMARKS}/${code}/export`,
+    { method: "POST", body: JSON.stringify({ format, level }) },
+    `sentra-benchmark-${code}-${level}.${format}`,
+  )
+
+export const EXPORT_LEVEL_LABEL: Record<ExportLevel, string> = {
+  strategy: "Per strategy",
+  repetition: "Per repetition",
+  attempt: "Per attempt",
+}
+
+export const EXPORT_LEVEL_ABOUT: Record<ExportLevel, string> = {
+  strategy: "One row per strategy: every metric as its mean, spread and number of repetitions.",
+  repetition: "One row per completed or incomplete repetition, with what it found and what it cost.",
+  attempt: "One row per attempt, with each detection's verdict and the analyst's label.",
+}

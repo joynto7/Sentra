@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { CircleSlash, Info, Table2, TriangleAlert } from "lucide-react"
+import { CircleSlash, Download, Info, Table2, TriangleAlert } from "lucide-react"
 
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
+import { BenchmarkExportDialog } from "@/components/lab/benchmark-export-dialog"
 import { EmptyState } from "@/components/layout/empty-state"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +21,7 @@ import {
   figureValue,
   share,
 } from "@/lib/lab"
+import { useCan } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 
 const WHEN = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
@@ -162,6 +164,8 @@ export function BenchmarkResults({ code }: { code: string }) {
   const [data, setData] = useState<Evaluation | null>(null)
   const [error, setError] = useState(false)
   const [asTable, setAsTable] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const canExport = useCan("use_security_lab") !== false
   usePageCrumbs([{ label: code, href: `/lab/benchmarks/${code}` }, { label: "Results" }])
 
   useEffect(() => {
@@ -184,6 +188,13 @@ export function BenchmarkResults({ code }: { code: string }) {
         ? `${completed[0]}`
         : `${Math.min(...completed)}–${Math.max(...completed)}`
   const labels = data?.agreement[0]?.labelled ?? 0
+  const summary = data
+    ? `${data.documented.length} lab target${data.documented.length === 1 ? "" : "s"} · ` +
+      `${strategies.length} strategies · ${perStrategy} completed repetitions per strategy` +
+      (data.ended_at
+        ? ` · ${data.status === "completed" ? "completed" : "ended"} ${WHEN.format(new Date(data.ended_at))}`
+        : " · still going")
+    : ""
   const shown = ORDER.filter((key) =>
     strategies.some((strategy) => (figureOf(strategy, key)?.values.length ?? 0) > 0),
   )
@@ -206,15 +217,17 @@ export function BenchmarkResults({ code }: { code: string }) {
 
       {data && (
         <>
-          <div className="mb-4">
-            <h1 className="text-2xl font-semibold tracking-tight">{data.code} — Results</h1>
-            <p className="tabular mt-1 text-sm text-muted-foreground">
-              {data.documented.length} lab target{data.documented.length === 1 ? "" : "s"} ·{" "}
-              {strategies.length} strategies · {perStrategy} completed repetitions per strategy
-              {data.ended_at
-                ? ` · ${data.status === "completed" ? "completed" : "ended"} ${WHEN.format(new Date(data.ended_at))}`
-                : " · still going"}
-            </p>
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold tracking-tight">{data.code} — Results</h1>
+              <p className="tabular mt-1 text-sm text-muted-foreground">{summary}</p>
+            </div>
+            {canExport && (
+              <Button onClick={() => setExporting(true)}>
+                <Download aria-hidden="true" />
+                Export
+              </Button>
+            )}
           </div>
 
           <p className="mb-4 flex items-start gap-2 text-sm text-muted-foreground">
@@ -511,6 +524,13 @@ export function BenchmarkResults({ code }: { code: string }) {
               </section>
             </>
           )}
+
+          <BenchmarkExportDialog
+            code={data.code}
+            summary={summary}
+            open={exporting}
+            onOpenChange={setExporting}
+          />
 
           <p className="mt-6 flex flex-wrap gap-4 text-xs text-muted-foreground">
             <Link
