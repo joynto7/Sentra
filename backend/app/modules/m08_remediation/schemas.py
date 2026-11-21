@@ -174,6 +174,8 @@ class GatewayOut(BaseModel):
     # A restricted knowledge source its policy watches, and how often it has seen one
     retrieval_sightings: dict[str, int]
     policy_version: int  # the version it says it is enforcing
+    active_policy_version: int | None  # what Sentra says is active for this target (Screen 47)
+    active_policy_since: datetime | None
     in_traffic_path: bool  # the test request of step 5 passed through it
     connected_at: datetime | None
     last_contact_at: datetime | None
@@ -276,6 +278,14 @@ class PolicyVersionOut(BaseModel):
     offered_at: datetime | None
     confirmed_at: datetime | None
     failure_reason: str | None
+    # UC-8.8: why this version was rolled back to or the policy switched off, and the version it
+    # took out of the traffic; `rolled_back_reason` is the sentence written about **this** version
+    # when a later rollback removed it.
+    reason: str | None
+    rolled_back_from: int | None
+    rolled_back_reason: str | None
+    rule_counts: list[dict]  # Screen 49's card: the five kinds and how many of each
+    remediations: list[dict]  # the remediations it carries, as "included remediations"
     created_at: datetime
 
 
@@ -312,6 +322,31 @@ class DeployIn(BaseModel):
 class DeployOut(BaseModel):
     policy: PolicyVersionOut
     open_in_application: list[dict]  # 6a: the fixes that stay the developer's work
+
+
+class RollbackConsequences(BaseModel):
+    """What the rollback dialog of Screen 49 states before anything happens (UC-8.8 step 2)."""
+
+    from_version: int
+    to_version: int | None  # None switches the policy off (2a)
+    disables: bool
+    rules_now: int
+    rules_after: int
+    rules_removed: int
+    remediations_stopping: list[dict]  # the fixes that stop being enforced
+    findings_reopening: list[str]  # step 5: what only the removed version had proved fixed
+    gateway_reachable: bool  # 4a: a gateway that isn't reporting applies it when it comes back
+    window_seconds: int
+
+
+class RollbackIn(BaseModel):
+    to_version: int = Field(default=0, ge=0)  # 0 switches the policy off (UC-8.8, 2a)
+    reason: str = Field(max_length=300)
+
+
+class RollbackOut(BaseModel):
+    policy: PolicyVersionOut
+    consequences: RollbackConsequences
 
 
 class GatewayConfirmIn(BaseModel):
