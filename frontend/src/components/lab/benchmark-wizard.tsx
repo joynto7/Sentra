@@ -70,10 +70,7 @@ function Section({
 export function BenchmarkWizard() {
   const router = useRouter()
   const canUse = useCan("use_security_lab")
-  usePageCrumbs([
-    { label: "Security Lab", href: "/lab" },
-    { label: "New benchmark run" },
-  ])
+  usePageCrumbs([{ label: "New benchmark run" }])
 
   const [cards, setCards] = useState<LabCard[] | null>(null)
   const [suites, setSuites] = useState<SuiteItem[] | null>(null)
