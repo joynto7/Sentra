@@ -311,6 +311,35 @@ def test_a_model_that_changed_pauses_the_run(analyst, lab_target, db, monkeypatc
     assert analyst.post(f"{URL}/{code}/resume").status_code == 409
 
 
+def test_the_analyst_pauses_and_resumes_the_experiment(analyst, lab_target, db):  # noqa: F811
+    code = save(analyst, lab_target, repetitions=1).json()["code"]
+    run = db.scalar(select(BenchmarkRun))
+    analyst.post(f"{URL}/{code}/start")
+    # As if repetitions were left: the engine stops advancing while it is paused.
+    run.status = BenchmarkStatus.RUNNING
+    db.add(
+        BenchmarkRepetition(
+            benchmark_run_id=run.id,
+            target_id=uuid.UUID(lab_target),
+            strategy_key="A",
+            repetition=9,
+            order_no=99,
+            status=RepetitionStatus.PLANNED,
+        )
+    )
+    db.commit()
+
+    paused = analyst.post(f"{URL}/{code}/pause")
+
+    assert paused.status_code == 200
+    assert paused.json()["status"] == BenchmarkStatus.PAUSED
+    assert "Paused by" in paused.json()["status_message"]
+    benchmark.advance(db, run.id)  # nothing happens while it is paused
+    assert detail(analyst, code)["runs_done"] == 2
+    assert analyst.post(f"{URL}/{code}/resume").status_code == 200
+    assert detail(analyst, code)["status"] == BenchmarkStatus.COMPLETED
+
+
 def test_stopping_it_keeps_what_finished(analyst, lab_target, db, zone):  # noqa: F811
     code = save(analyst, lab_target, repetitions=1).json()["code"]
     zone.reachable = False
