@@ -650,7 +650,7 @@ class Evaluation:
     baseline: Baseline | None
 
 
-def _names(db: Session, run: BenchmarkRun) -> dict[uuid.UUID, str]:
+def target_names(db: Session, run: BenchmarkRun) -> dict[uuid.UUID, str]:
     """The lab targets' names as they were when the run started (FR-4.5), else as they are now."""
     fixed = {
         uuid.UUID(str(item["id"])): item["name"]
@@ -726,7 +726,7 @@ def _measure(
 def evaluation(db: Session, run: BenchmarkRun, *, with_baseline: bool = True) -> Evaluation:
     """UC-11.5: everything Screen 69 shows. It is calculated when it is read, so documenting a
     weakness (2a1) or labelling one more attempt changes the figures at once."""
-    names = _names(db, run)
+    names = target_names(db, run)
     matched = {row.id: match(db, run, row) for row in run.repetition_rows}
     documented: dict[uuid.UUID, Documented] = {}
     for repetition in run.repetition_rows:
