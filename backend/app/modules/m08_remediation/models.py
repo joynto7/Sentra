@@ -185,6 +185,14 @@ class ShieldGateway(UUIDPrimaryKey, OrganizationScoped, Base):
     # What it adds to a request, as the gateway measures it (NFR-1.5, median of its window)
     added_latency_ms: Mapped[int | None]
     requests_seen: Mapped[int] = mapped_column(default=0)
+    requests_blocked: Mapped[int] = mapped_column(default=0)  # what its policy held back (FR-8.3)
+    requests_changed: Mapped[int] = mapped_column(default=0)  # what a masking rule changed
+    # The restricted knowledge sources its retrieval rules have seen: {"HR handbook": 12}. The
+    # gateway reports what it saw in its window and Sentra adds it up (FR-8.3).
+    retrieval_sightings: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # The policy version the gateway says it is enforcing. A gateway that reports the version it
+    # was offered has activated it, which is step 4's confirmation even if its own call was lost.
+    reported_policy_version: Mapped[int] = mapped_column(default=0)
     # Step 5: the marker of the harmless test request, and when the gateway reported it
     check_marker: Mapped[str | None] = mapped_column(String(32))
     check_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -198,6 +206,78 @@ class ShieldGateway(UUIDPrimaryKey, OrganizationScoped, Base):
         DateTime(timezone=True), default=_now, server_default=func.now()
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PolicyState(StrEnum):
+    """The life of one Shield Policy version (UC-8.4)."""
+
+    SCHEDULED = "scheduled"  # 1a: it waits for the time that was chosen
+    PENDING = "pending"  # offered to the gateway, which has not confirmed it yet (step 3)
+    ACTIVE = "active"  # the gateway confirmed it (step 4)
+    SUPERSEDED = "superseded"  # a later version took over; kept, so FR-8.6 can roll back to it
+    FAILED = "failed"  # 4a1: the gateway never confirmed it, and the version before stays active
+
+
+class PolicySource(StrEnum):
+    """Why a version exists. FR-8.6 writes the other two in UC-8.8."""
+
+    REMEDIATION = "remediation"  # the fixes of an approved remediation (UC-8.3 step 6)
+    ROLLBACK = "rollback"  # the document of an earlier version, deployed again (FR-8.6)
+    DISABLED = "disabled"  # the policy switched off: a version with no rules (FR-8.6)
+
+
+class RuleKind(StrEnum):
+    """What a rule of a policy does. Each one comes from one approved fix, and a gateway can only
+    carry the kinds its position lets it see (FR-8.3)."""
+
+    TEXT_GUARDRAIL = "text_guardrail"  # terms a person gave, blocked or masked in or out
+    TOOL_APPROVAL = "tool_approval"  # a named tool call is held back until a person approves it
+    RETRIEVAL_REPORT = "retrieval_report"  # a restricted knowledge source is reported where seen
+    SYSTEM_PROMPT = "system_prompt"  # the approved sentences are added to the system prompt
+
+
+class ShieldPolicy(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One version of the Shield Policy of one target (FR-8.3, UC-8.4).
+
+    Every deployment writes a new version and no version is ever changed, so any of them can be
+    rolled back to (quality requirement 1, FR-8.6). The document is what the gateway downloads:
+    `{"rules": [...]}`, each rule built from one fix of a remediation a person approved.
+    """
+
+    __tablename__ = "shield_policies"
+    __table_args__ = (UniqueConstraint("target_id", "version"),)
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int]
+    state: Mapped[str] = mapped_column(String(12), default=PolicyState.PENDING)
+    source: Mapped[str] = mapped_column(String(12), default=PolicySource.REMEDIATION)
+    document: Mapped[dict] = mapped_column(JSONB, default=dict)
+    rule_count: Mapped[int] = mapped_column(default=0)
+    carried_over: Mapped[int] = mapped_column(default=0)  # rules kept from the version before
+    # Where its rules come from: [{"finding", "version", "fixes": [position, …]}]
+    sources: Mapped[list] = mapped_column(JSONB, default=list)
+    based_on_version: Mapped[int | None]  # the version it was built on top of
+    # The finding whose approved remediation this version was deployed for. A rollback (FR-8.6)
+    # has none: it deploys the document of an earlier version again.
+    trigger_finding: Mapped[str | None] = mapped_column(String(20))
+    trigger_version: Mapped[int | None]
+    # UC-8.4 step 5: the deployment is recorded with the approver of the remediation behind it
+    approved_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    deployed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    deploy_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 1a
+    offered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    offers: Mapped[int] = mapped_column(default=0)  # how often the gateway was told about it (4a)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_reason: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
 
 
 class RemediationComment(UUIDPrimaryKey, OrganizationScoped, Base):
