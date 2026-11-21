@@ -1,11 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { CircleAlert, Pause, Play, Square } from "lucide-react"
 import { toast } from "sonner"
 
-import { RunEventsFeed } from "@/components/campaigns/run-events-feed"
+import { AgentCard } from "@/components/campaigns/agent-card"
+import { RunEventsFeed, agentEventCount } from "@/components/campaigns/run-events-feed"
+import { RunResults } from "@/components/campaigns/run-results"
 import { useRunEvents } from "@/components/campaigns/use-run-events"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
@@ -26,6 +28,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
 import {
+  type AgentTrail,
   ATTEMPT_STATUS_LABEL,
   type AttemptStatus,
   END_REASON_LABEL,
@@ -37,15 +40,9 @@ import {
   resumeRun,
   stopRun,
 } from "@/lib/campaigns"
-import {
-  FINDING_STATUS_LABEL,
-  IN_RUN_LABEL,
-  type FindingItem,
-  type InRunCounts,
-  listFindings,
-} from "@/lib/findings"
+import { FINDING_STATUS_LABEL, IN_RUN_LABEL, type FindingItem, type InRunCounts, listFindings } from "@/lib/findings"
 import { useCan } from "@/lib/permissions"
-import type { SeverityCounts } from "@/lib/risk"
+import { BAND_LABEL, type ScoreHistoryItem, type SeverityCounts, getTargetRisk } from "@/lib/risk"
 import { formatDateTime } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
@@ -57,6 +54,23 @@ function duration(ms: number): string {
   const minutes = Math.max(0, Math.round(ms / 60000))
   if (minutes < 60) return `${minutes} min`
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
+
+/**
+ * The target's score before the run and after it (UC-7.2): the last score from before the run
+ * started, and the last one calculated while it ran or just after. Null when the run changed none.
+ */
+function scoreEffect(history: ScoreHistoryItem[], run: RunDetail) {
+  if (!run.started_at || !run.ended_at) return null
+  const started = Date.parse(run.started_at)
+  const settled = Date.parse(run.ended_at) + 5 * 60 * 1000
+  const newest = [...history].sort((a, b) => Date.parse(b.calculated_at) - Date.parse(a.calculated_at))
+  const after = newest.find((item) => {
+    const at = Date.parse(item.calculated_at)
+    return at >= started && at <= settled
+  })
+  if (!after) return null
+  return { before: newest.find((item) => Date.parse(item.calculated_at) < started) ?? null, after }
 }
 
 function Card({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
@@ -116,10 +130,17 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
   // Of this run's findings: how many it found, saw again with the same root cause (FR-6.6) or
   // reopened as a regression (Screen 37's KPI row).
   const [inRun, setInRun] = useState<InRunCounts | null>(null)
+  const [findingsTotal, setFindingsTotal] = useState(0)
+  // What the adaptive testing agent did in this run; the agent's card reads it and shares it with
+  // the run summary's tab.
+  const [agent, setAgent] = useState<AgentTrail | null>(null)
+  // The target's score around this run, for the summary (undefined: still loading, null: none).
+  const [score, setScore] = useState<ReturnType<typeof scoreEffect> | undefined>(undefined)
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState<"pause" | "resume" | "stop" | null>(null)
   const [confirmStop, setConfirmStop] = useState(false)
   const [reason, setReason] = useState("")
+  const stopButton = useRef<HTMLButtonElement>(null)
 
   usePageCrumbs([{ label: code, href: `/campaigns/${code}` }, { label: run?.code ?? `Run ${number}` }])
 
@@ -134,17 +155,15 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
       })
   }, [code, number])
 
-  const loadFindings = useCallback(
-    (runId: string) => {
-      listFindings(new URLSearchParams({ run_id: runId, page_size: "25" }))
-        .then((page) => {
-          setFindings(page.items)
-          setInRun(page.in_run_counts)
-        })
-        .catch(() => undefined)
-    },
-    [],
-  )
+  const loadFindings = useCallback((runId: string) => {
+    listFindings(new URLSearchParams({ run_id: runId, page_size: "100" }))
+      .then((page) => {
+        setFindings(page.items)
+        setFindingsTotal(page.total)
+        setInRun(page.in_run_counts)
+      })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(loadRun, [loadRun])
 
@@ -154,6 +173,21 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
   }, [runId, loadFindings])
 
   const ended = run !== null && !ACTIVE.includes(run.status)
+
+  const targetId = run?.target.id
+  const endedAt = run?.ended_at
+  useEffect(() => {
+    if (!ended || !targetId || !run) return
+    const controller = new AbortController()
+    getTargetRisk(targetId, controller.signal)
+      .then((risk) => setScore(scoreEffect(risk.history, run)))
+      .catch(() => {
+        if (!controller.signal.aborted) setScore(null)
+      })
+    return () => controller.abort()
+    // The score is read once when the run has ended, not on every change of the run's numbers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ended, targetId, endedAt])
 
   const onStatus = useCallback(() => {
     loadRun()
@@ -256,19 +290,29 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
 
         <div className="flex flex-wrap items-center gap-2">
           {canPause && run.status === "running" && (
-            <Button variant="outline" className="h-9 gap-1.5" disabled={busy !== null} onClick={() => void control("pause")}>
+            <Button
+              variant="outline"
+              className="h-9 gap-1.5"
+              disabled={busy !== null}
+              onClick={() => void control("pause")}
+            >
               <Pause aria-hidden="true" />
               Pause
             </Button>
           )}
           {canPause && run.status === "paused" && (
-            <Button className="h-9 gap-1.5 hover:bg-primary-hover" disabled={busy !== null} onClick={() => void control("resume")}>
+            <Button
+              className="h-9 gap-1.5 hover:bg-primary-hover"
+              disabled={busy !== null}
+              onClick={() => void control("resume")}
+            >
               <Play aria-hidden="true" />
               Resume
             </Button>
           )}
           {canStop && ACTIVE.includes(run.status) && (
             <Button
+              ref={stopButton}
               variant="outline"
               className="h-9 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/5"
               disabled={busy !== null}
@@ -332,28 +376,52 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
         />
         <Kpi
           label={ended ? "Findings" : "Findings so far"}
-          value={formatCount(findings.length)}
+          value={formatCount(findingsTotal)}
           note={<SeverityCountsStrip counts={severities} />}
         />
         {ended ? (
           <Kpi
             label="New · seen again · reopened"
             value={inRun ? `${inRun.new} · ${inRun.seen_again} · ${inRun.reopened}` : "–"}
-            note="New weaknesses, the same root cause again (FR-6.6), and fixed ones that came back"
+            note="New weaknesses, the same root cause again, and fixed ones that came back"
           />
         ) : (
           <Kpi label="Request rate" value={`${run.request_rate}/min`} note="Never faster than the target's safe rate" />
         )}
         <Kpi label="LLM cost" value={`$${run.cost_usd.toFixed(2)}`} note="What this run has used so far" />
-        <Kpi
-          label="Time window"
-          value={windowLeft === null ? "Any time" : windowLeft > 0 ? `${duration(windowLeft)} left` : "Closed"}
-          note={windowLeft === null ? "The campaign set no window" : "The run pauses when it closes"}
-        />
+        {ended ? (
+          <Kpi
+            label="Risk score"
+            value={
+              score === undefined
+                ? "…"
+                : score === null
+                  ? "–"
+                  : score.before
+                    ? `${score.before.score} → ${score.after.score}`
+                    : String(score.after.score)
+            }
+            note={
+              score
+                ? `${BAND_LABEL[score.after.band]}${score.before ? "" : " · the target's first score"}`
+                : score === null
+                  ? "This run left the target's score as it was"
+                  : "Reading the score"
+            }
+          />
+        ) : (
+          <Kpi
+            label="Time window"
+            value={windowLeft === null ? "Any time" : windowLeft > 0 ? `${duration(windowLeft)} left` : "Closed"}
+            note={windowLeft === null ? "The campaign set no window" : "The run pauses when it closes"}
+          />
+        )}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-5">
+          {ended && <RunResults run={run} findings={findings} findingsTotal={findingsTotal} agent={agent} />}
+
           <RunEventsFeed events={events} connected={connected} reconnected={reconnected} ended={ended} />
 
           {run.summary && (
@@ -393,37 +461,51 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
         </div>
 
         <div className="min-w-0 space-y-5">
-          <Card title={`Findings in this run (${findings.length})`}>
-            {findings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nothing found yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {findings.map((finding) => (
-                  <li key={finding.code} className="rounded-[7px] border p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Link href={`/findings/${finding.code}`} className="font-mono text-xs text-link hover:underline">
-                        {finding.code}
-                      </Link>
-                      <SeverityBadge severity={finding.severity} />
-                      {finding.in_run && (
-                        <span className="rounded border px-1.5 text-[11px] text-muted-foreground">
-                          {IN_RUN_LABEL[finding.in_run]}
-                        </span>
-                      )}
-                      <span className="text-xs text-muted-foreground">{finding.category}</span>
-                    </div>
-                    <p className="mt-1 text-sm">{finding.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {finding.repetitions ? `${finding.repetitions.label} reproduced it` : "Not measured yet"}
-                      {finding.owner ? ` · ${finding.owner.name}` : ""}
-                      {" · "}
-                      {FINDING_STATUS_LABEL[finding.status]}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <AgentCard
+            code={code}
+            number={number}
+            active={!ended}
+            canStop={canStop === true}
+            refreshKey={agentEventCount(events) + (ended ? 1 : 0)}
+            onTrail={setAgent}
+          />
+
+          {!ended && (
+            <Card title={`Findings in this run (${findingsTotal})`}>
+              {findings.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nothing found yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {findings.map((finding) => (
+                    <li key={finding.code} className="rounded-[7px] border p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/findings/${finding.code}`}
+                          className="font-mono text-xs text-link hover:underline"
+                        >
+                          {finding.code}
+                        </Link>
+                        <SeverityBadge severity={finding.severity} />
+                        {finding.in_run && (
+                          <span className="rounded border px-1.5 text-[11px] text-muted-foreground">
+                            {IN_RUN_LABEL[finding.in_run]}
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground">{finding.category}</span>
+                      </div>
+                      <p className="mt-1 text-sm">{finding.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {finding.repetitions ? `${finding.repetitions.label} reproduced it` : "Not measured yet"}
+                        {finding.owner ? ` · ${finding.owner.name}` : ""}
+                        {" · "}
+                        {FINDING_STATUS_LABEL[finding.status]}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          )}
 
           <Card title="Tests in this run">
             <ul className="space-y-2">
@@ -443,36 +525,45 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
             </ul>
           </Card>
 
-          <Card title="Versions used">
-            <p className="text-sm text-text-secondary">
-              The run keeps the versions it started with, so a later change to a suite or a test doesn&apos;t change
-              it (FR-4.5).
-            </p>
-            <dl className="space-y-1 text-sm">
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">Test suites</dt>
-                <dd className="tabular">{Array.isArray(run.versions.suites) ? run.versions.suites.length : 0}</dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">Tests</dt>
-                <dd className="tabular">{Array.isArray(run.versions.tests) ? run.versions.tests.length : 0}</dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">Launched by</dt>
-                <dd>{run.launched_by ?? "a former member"}</dd>
-              </div>
-            </dl>
-          </Card>
+          {!ended && (
+            <Card title="Versions used">
+              <p className="text-sm text-text-secondary">
+                The run keeps the versions it started with, so a later change to a suite or a test doesn&apos;t change
+                it.
+              </p>
+              <dl className="space-y-1 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Test suites</dt>
+                  <dd className="tabular">{Array.isArray(run.versions.suites) ? run.versions.suites.length : 0}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Tests</dt>
+                  <dd className="tabular">{Array.isArray(run.versions.tests) ? run.versions.tests.length : 0}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Launched by</dt>
+                  <dd>{run.launched_by ?? "a former member"}</dd>
+                </div>
+              </dl>
+            </Card>
+          )}
         </div>
       </div>
 
       <Dialog open={confirmStop} onOpenChange={setConfirmStop}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent
+          className="sm:max-w-[480px]"
+          onCloseAutoFocus={(event) => {
+            // Back to the button that opened it, so a keyboard user keeps their place.
+            event.preventDefault()
+            stopButton.current?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Stop {run.code}?</DialogTitle>
             <DialogDescription>
-              All further attempts stop within five seconds. Attempts already sent are still evaluated, and findings
-              are kept.
+              All further attempts stop within five seconds. Attempts already sent are still evaluated, and findings are
+              kept.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
