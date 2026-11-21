@@ -22,7 +22,7 @@ const TABS: Tab[] = [
   { id: "threat-model", label: "Threat model", comesWith: "the threat models (M3)" },
   { id: "campaigns", label: "Campaigns", comesWith: "the campaign runs (M5)" },
   { id: "findings", label: "Findings", comesWith: "the findings pages (M6)" },
-  { id: "shield", label: "Sentra Shield", comesWith: "Sentra Shield (M8)" },
+  { id: "shield", label: "Sentra Shield", path: "/shield" },
   { id: "history", label: "History", path: "/history" },
 ]
 
