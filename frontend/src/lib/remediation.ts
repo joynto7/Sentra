@@ -4,11 +4,7 @@ import type { FindingStatus } from "@/lib/findings"
 
 /** The five kinds of fix FR-8.1 names. */
 export type FixKind =
-  | "system_prompt"
-  | "guardrail"
-  | "tool_policy"
-  | "retrieval_isolation"
-  | "code_change"
+  "system_prompt" | "guardrail" | "tool_policy" | "retrieval_isolation" | "code_change"
 
 /** Where a fix takes effect (UC-8.2 step 6): a Sentra Shield gateway, or the application itself. */
 export type Enforcement = "gateway" | "application"
@@ -16,13 +12,7 @@ export type Enforcement = "gateway" | "application"
 /** The lifecycle of a proposal (report, Figure 2.7). FR-8.1 writes drafts; the rest comes with
  * FR-8.2 to FR-8.5. */
 export type RemediationStatus =
-  | "draft"
-  | "awaiting_approval"
-  | "rejected"
-  | "approved"
-  | "applying"
-  | "effective"
-  | "ineffective"
+  "draft" | "awaiting_approval" | "rejected" | "approved" | "applying" | "effective" | "ineffective"
 
 export const STATUS_LABEL: Record<RemediationStatus, string> = {
   draft: "Draft",
@@ -79,11 +69,18 @@ export type Fix = {
 export type VersionSummary = {
   version: number
   status: RemediationStatus
-  origin: "generated" | "revised"
+  /** How the version came about: Sentra wrote it, Sentra revised it, or a person adapted it. */
+  origin: "generated" | "revised" | "edited"
   based_on_version: number | null
   ai_generated: boolean
   created_at: string
   requested_by: string | null
+  /** Who adapted this version (UC-8.3 step 2); they may not approve it (4a). */
+  edited_by: string | null
+  decided_by: string | null
+  decided_at: string | null
+  /** Why it was rejected (UC-8.3, 5a1). */
+  decision_reason: string | null
   fix_count: number
   /** The kinds of fix it recommends and where each takes effect, for the list of Screen 45. */
   fixes_in_short: { kind: FixKind; kind_label: string; enforcement: Enforcement }[]
@@ -112,6 +109,25 @@ export type RemediationJob = {
   message: string | null
 }
 
+/** One message of the review thread (UC-8.3), with the version it was written on. */
+export type RemediationComment = {
+  id: string
+  version: number
+  author: string | null
+  text: string
+  created_at: string
+}
+
+/** What the person reading Screen 46 may do with the newest version, and what approval starts. */
+export type Review = {
+  can_edit: boolean
+  can_submit: boolean
+  can_approve: boolean
+  cannot_approve: string | null
+  approvers: string[]
+  on_approval: string[]
+}
+
 export type RemediationPage = {
   finding: FindingRef
   blocker: string | null
@@ -119,6 +135,16 @@ export type RemediationPage = {
   job: RemediationJob | null
   versions: VersionSummary[]
   current: RemediationVersion | null
+  review: Review
+  comments: RemediationComment[]
+}
+
+/** A fix the person keeps, with what they changed about it (UC-8.3 step 2). */
+export type FixEdit = {
+  position: number
+  title: string
+  description: string
+  details: Record<string, unknown>
 }
 
 export type RemediationRow = {
@@ -155,3 +181,39 @@ export const requestRemediation = (code: string) =>
 
 export const getRemediationJob = (code: string, id: string, signal?: AbortSignal) =>
   apiFetch<RemediationJob>(`${base}/${encodeURIComponent(code)}/jobs/${id}`, { signal })
+
+/** UC-8.3 steps 2-3: the person's version of the proposal, which asks for approval at once. */
+export const adaptRemediation = (
+  code: string,
+  version: number,
+  data: { root_cause: string; summary: string; fixes: FixEdit[] },
+) =>
+  apiFetch<VersionSummary>(`${base}/${encodeURIComponent(code)}/versions?version=${version}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+
+/** Step 3 for a draft that needs no change. */
+export const submitRemediation = (code: string, version: number) =>
+  apiFetch<VersionSummary>(`${base}/${encodeURIComponent(code)}/versions/${version}/submit`, {
+    method: "POST",
+  })
+
+/** Steps 5-6: only a person approves, and never the person who adapted the version (4a). */
+export const approveRemediation = (code: string, version: number) =>
+  apiFetch<VersionSummary>(`${base}/${encodeURIComponent(code)}/versions/${version}/approve`, {
+    method: "POST",
+  })
+
+/** 5a1: the version is kept with the reason it was rejected for. */
+export const rejectRemediation = (code: string, version: number, reason: string) =>
+  apiFetch<VersionSummary>(`${base}/${encodeURIComponent(code)}/versions/${version}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  })
+
+export const commentOnRemediation = (code: string, version: number, text: string) =>
+  apiFetch<RemediationComment>(`${base}/${encodeURIComponent(code)}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ version, text }),
+  })
