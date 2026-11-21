@@ -254,12 +254,22 @@ def heartbeat(
     requests: int,
     added_latency_ms: int | None,
     markers: list[str],
+    blocked: int = 0,
+    changed: int = 0,
+    sightings: dict[str, int] | None = None,
+    policy_version: int = 0,
 ) -> ShieldGateway:
-    """What the gateway saw since its last heartbeat: how many requests passed through it, what
-    it added to them (NFR-1.5), and the markers of Sentra's own test requests (step 5)."""
+    """What the gateway saw since its last heartbeat: how many requests passed through it, how
+    many its policy held back, what it added to them (NFR-1.5), the markers of Sentra's own test
+    requests (step 5), and the policy version it is enforcing (UC-8.4 step 4)."""
     now = _now()
     gateway.last_contact_at = now
     gateway.requests_seen += max(0, requests)
+    gateway.requests_blocked += max(0, blocked)
+    gateway.requests_changed += max(0, changed)
+    gateway.reported_policy_version = max(0, policy_version)
+    if sightings:
+        gateway.retrieval_sightings = _sightings(gateway.retrieval_sightings, sightings)
     if added_latency_ms is not None:
         gateway.added_latency_ms = max(0, int(added_latency_ms))
     if gateway.check_marker and gateway.check_marker in markers:
@@ -268,6 +278,15 @@ def heartbeat(
     db.commit()
     db.refresh(gateway)
     return gateway
+
+
+def _sightings(before: dict | None, window: dict[str, int]) -> dict[str, int]:
+    """What the gateway has seen in all, the most-seen sources first. A policy holds at most 50
+    rules, so 50 sources is everything it could ever have been told to watch."""
+    seen = dict(before or {})
+    for source, count in window.items():
+        seen[source] = seen.get(source, 0) + max(0, int(count))
+    return dict(sorted(seen.items(), key=lambda one: (-one[1], one[0]))[:50])
 
 
 def _position_label(position: str) -> str:
