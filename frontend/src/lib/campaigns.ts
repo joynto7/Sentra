@@ -96,11 +96,7 @@ export type ThreatModelBrief = {
 
 /** What the LLM judge of this run may cost (FR-10.4), measured from the organization's own judged
  * attempts. `low_usd` is null while there is nothing to measure. */
-export type CostEstimate = {
-  judged_attempts: number
-  low_usd: string | null
-  high_usd: string | null
-}
+export type CostEstimate = { judged_attempts: number; low_usd: string | null; high_usd: string | null }
 
 /** UC-10.6 step 1 in the builder: what the organization has used of its month (FR-10.4). */
 export type MonthlyUsage = {
@@ -161,8 +157,11 @@ const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
 export const listCampaigns = (params?: URLSearchParams) =>
   apiFetch<CampaignItem[]>(`/v1/campaigns${params?.size ? `?${params}` : ""}`)
 export const getCampaign = (code: string) => apiFetch<CampaignDetail>(`/v1/campaigns/${encodeURIComponent(code)}`)
-export const estimateCampaign = (input: { target_id: string | null; suites: string[]; attempt_budget: number | null }) =>
-  apiFetch<Estimate>("/v1/campaigns/estimate", post(input))
+export const estimateCampaign = (input: {
+  target_id: string | null
+  suites: string[]
+  attempt_budget: number | null
+}) => apiFetch<Estimate>("/v1/campaigns/estimate", post(input))
 export const createCampaign = (input: CampaignInput) => apiFetch<CampaignDetail>("/v1/campaigns", post(input))
 
 export type RunStatus = "queued" | "running" | "paused" | "completed" | "stopped" | "cancelled"
@@ -253,6 +252,8 @@ export type AttemptItem = {
   template: string
   variant: number
   status: AttemptStatus
+  /** The adaptive testing agent wrote this attempt, and this is why (null: it was planned) */
+  refinement_reason: string | null
   input: string
   sent_at: string | null
   finished_at: string | null
@@ -315,6 +316,47 @@ export const resumeRun = (code: string, number: number) =>
 export const stopRun = (code: string, number: number, reason: string) =>
   apiFetch<RunDetail>(`${CAMPAIGN(code)}/runs/${number}/stop`, post({ reason }))
 
+/** One request to the adaptive testing agent and what came of it. */
+export type RefinementState = "sent" | "discarded" | "refused" | "stopped"
+
+export const REFINEMENT_STATE_LABEL: Record<RefinementState, string> = {
+  sent: "Added to the run",
+  discarded: "Discarded: outside the approved scope",
+  refused: "Nothing usable",
+  stopped: "The agent stopped",
+}
+
+export type RefinementItem = {
+  state: RefinementState
+  reason: string
+  test_code: string
+  after_attempt_id: string | null
+  attempt_id: string | null
+  instructions_version: string | null
+  model: string | null
+  cost_usd: string
+  created_at: string
+}
+
+/** What the adaptive testing agent did in one run, for the monitor and the run summary. */
+export type AgentTrail = {
+  enabled: boolean
+  sent: number
+  discarded: number
+  refused: number
+  stopped_reason: string | null
+  refinements_left: number
+  cost_usd: string
+  items: RefinementItem[]
+}
+
+export const getRunAgent = (code: string, number: number, signal?: AbortSignal) =>
+  apiFetch<AgentTrail>(`${CAMPAIGN(code)}/runs/${number}/agent`, { signal })
+
+/** Stops the agent only; the run goes on with its planned tests. */
+export const stopRunAgent = (code: string, number: number, reason: string) =>
+  apiFetch<AgentTrail>(`${CAMPAIGN(code)}/runs/${number}/agent/stop`, post({ reason }))
+
 export const listAttempts = (code: string, number: number, params: URLSearchParams, signal?: AbortSignal) =>
   apiFetch<{ items: AttemptItem[]; total: number; page: number; page_size: number }>(
     `${CAMPAIGN(code)}/runs/${number}/attempts?${params}`,
@@ -331,7 +373,6 @@ export const formatCount = (value: number) => value.toLocaleString("en-US")
 export function windowText(start: string | null, end: string | null, timeZone: string): string {
   return start && end ? `${start.slice(0, 5)}–${end.slice(0, 5)} (${timeZone})` : "Any time"
 }
-
 
 /** The campaign's schedule (FR-5.3): read it, replace it, pause it, start it again or remove it. */
 export const getSchedule = (code: string, signal?: AbortSignal) =>
