@@ -23,13 +23,11 @@ DETAIL_KEYS = {
     FixKind.RETRIEVAL_ISOLATION: "sources",
     FixKind.CODE_CHANGE: "steps",
 }
-# A Sentra Shield gateway stands between the application and its model, so it can filter input
-# and output, hold a tool call back and keep retrieval sources apart (FR-8.3). A system prompt and
-# a code change are part of the application itself, whatever gateway is in front of it.
-GATEWAY_KINDS = (FixKind.GUARDRAIL, FixKind.TOOL_POLICY, FixKind.RETRIEVAL_ISOLATION)
+# What a gateway can carry depends on where it sits (FR-8.3): one in front of the endpoint sees
+# the text of the requests and the answers, while one between the application and its model also
+# sees the prompt, the retrieved context and the tool calls. `policies.CARRIES` is that table, and
+# a code change is the application's work whatever gateway stands in front of it.
 INSIDE_APPLICATION = {
-    FixKind.SYSTEM_PROMPT: "The system prompt belongs to the application, so a gateway can't "
-    "change it.",
     FixKind.CODE_CHANGE: "A code change is made in the application.",
 }
 NO_GATEWAY = (
@@ -47,10 +45,16 @@ def active_gateway(db: Session, target_id: uuid.UUID):
 
 def enforcement(db: Session, target_id: uuid.UUID, kind: FixKind) -> tuple[str, str | None]:
     """Step 6: where a fix takes effect, and 6a: why it has to be made in the application."""
-    if kind not in GATEWAY_KINDS:
+    from app.modules.m08_remediation import policies
+
+    if kind == FixKind.CODE_CHANGE:
         return Enforcement.APPLICATION, INSIDE_APPLICATION[kind]
-    if active_gateway(db, target_id) is None:
+    gateway = active_gateway(db, target_id)
+    if gateway is None:
         return Enforcement.APPLICATION, NO_GATEWAY
+    rule = policies.RULE_OF_FIX.get(kind)
+    if rule is None or rule not in policies.CARRIES[gateway.position]:
+        return Enforcement.APPLICATION, policies.IN_FRONT_ONLY_SEES_TEXT
     return Enforcement.GATEWAY, None
 
 
