@@ -220,6 +220,17 @@ def start_benchmark(
     return _detail(db, benchmark.start(db, membership, user, code))
 
 
+@router.post("/benchmarks/{code}/pause")
+def pause_benchmark(
+    code: str,
+    membership: Membership = Depends(current_membership),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> BenchmarkDetail:
+    """UC-11.4: no further repetition starts; the one that is going finishes."""
+    return _detail(db, benchmark.pause(db, membership, user, code))
+
+
 @router.post("/benchmarks/{code}/resume")
 def resume_benchmark(
     code: str,

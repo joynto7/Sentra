@@ -82,6 +82,7 @@ MODELS_CHANGED = (
 )
 FINISHED = "Every repetition has ended."
 STOPPED_BY = "Stopped by {name}. The repetitions that finished are kept."
+PAUSED_BY = "Paused by {name}."
 
 
 @dataclass
@@ -661,6 +662,32 @@ def _tell(db: Session, run: BenchmarkRun, subject: str, text: str) -> None:
         subject=subject,
         link=f"/lab/benchmarks/{run.code}",
     )
+
+
+def pause(db: Session, membership: Membership, user: User, code: str) -> BenchmarkRun:
+    """The analyst pauses the experiment (UC-11.4, failed end condition: paused with a recorded
+    reason). The repetition that is going finishes — stopping it would waste it and leave a
+    half-measured one — and no further repetition starts until the analyst resumes."""
+    deployment.may_use(db, membership)
+    run = row_of(db, membership.organization_id, code)
+    if run.status != BenchmarkStatus.RUNNING:
+        raise ConflictError("This benchmark run isn't running.", code="not_running")
+    going = _in_progress(db, run)
+    run.status = BenchmarkStatus.PAUSED
+    run.status_message = PAUSED_BY.format(name=user.name) + (
+        " The repetition that is going finishes first." if going else ""
+    )
+    audit.record(
+        db,
+        organization_id=run.organization_id,
+        actor=user,
+        action="benchmark.paused",
+        summary=f"Paused the benchmark run {run.code}",
+        item=audit.Item("benchmark_run", run.id, run.code),
+        details={"completed": _done(db, run)},
+    )
+    db.commit()
+    return run
 
 
 def resume(db: Session, membership: Membership, user: User, code: str) -> BenchmarkRun:
