@@ -94,7 +94,7 @@ export function BenchmarkProgress({ code }: { code: string }) {
   const [error, setError] = useState(false)
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
-  usePageCrumbs([{ label: "Security Lab", href: "/lab" }, { label: code }])
+  usePageCrumbs([{ label: code }])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -189,6 +189,16 @@ export function BenchmarkProgress({ code }: { code: string }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {(data.status === "completed" || data.status === "stopped") && (
+                <>
+                  <Button asChild variant="outline">
+                    <Link href={`/lab/benchmarks/${data.code}/labelling`}>Labelling</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link href={`/lab/benchmarks/${data.code}/results`}>Results</Link>
+                  </Button>
+                </>
+              )}
               {data.status === "draft" && (
                 <Button onClick={() => void act("start")} disabled={busy}>
                   {busy ? "Starting…" : "Start"}
