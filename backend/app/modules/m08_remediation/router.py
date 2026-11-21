@@ -5,17 +5,44 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.modules.m01_users.deps import current_membership
-from app.modules.m01_users.models import Membership
-from app.modules.m01_users.permissions import Action, require
+from app.modules.m01_users.models import Membership, User
+from app.modules.m01_users.permissions import Action, allowed, require
 from app.modules.m06_findings.service import finding_row
-from app.modules.m08_remediation import generation, service
-from app.modules.m08_remediation.schemas import JobOut, RemediationList, RemediationPage
+from app.modules.m08_remediation import generation, review, service
+from app.modules.m08_remediation.models import Remediation
+from app.modules.m08_remediation.schemas import (
+    CommentIn,
+    CommentOut,
+    EditIn,
+    JobOut,
+    RejectIn,
+    RemediationList,
+    RemediationPage,
+    VersionSummary,
+)
 
 router = APIRouter(prefix="/remediations", tags=["M8 Remediation"])
 
 # Every member may read the organization's proposals; asking for one is the work of the
 # application's developer or a security analyst (UC-8.2 primary actors).
 can_request = require(Action.REQUEST_REMEDIATIONS)
+# UC-8.3 step 4: a Security Analyst or a Security Manager decides.
+can_approve = require(Action.APPROVE_REMEDIATIONS)
+
+
+def _reader(membership: Membership) -> service.Reader:
+    return service.Reader(
+        user_id=membership.user_id,
+        can_request=allowed(membership.role, Action.REQUEST_REMEDIATIONS),
+        can_approve=allowed(membership.role, Action.APPROVE_REMEDIATIONS),
+    )
+
+
+def _version_out(db: Session, remediation: Remediation) -> VersionSummary:
+    names = service.names_of(
+        db, [remediation.requested_by_id, remediation.edited_by_id, remediation.decided_by_id]
+    )
+    return service.summary(remediation, names)
 
 
 @router.get("")
@@ -34,7 +61,9 @@ def get_remediation(
     db: Session = Depends(get_db),
 ) -> RemediationPage:
     """Screen 46: one version of a finding's proposal (the newest by default) with its fixes."""
-    return service.page(db, membership.organization_id, finding_code, version)
+    return service.page(
+        db, membership.organization_id, finding_code, version, reader=_reader(membership)
+    )
 
 
 @router.post("/{finding_code}/generate", status_code=status.HTTP_202_ACCEPTED)
@@ -60,3 +89,89 @@ def get_job(
     """The state of one generation, which the page follows until the draft is there."""
     finding = finding_row(db, membership.organization_id, finding_code)
     return service.get_job(db, finding.id, job_id)
+
+
+# ---------------------------------------------------------------- review and approval (UC-8.3)
+
+
+@router.post("/{finding_code}/versions", status_code=status.HTTP_201_CREATED)
+def adapt(
+    finding_code: str,
+    data: EditIn,
+    version: int = Query(ge=1),
+    membership: Membership = Depends(can_request),
+    db: Session = Depends(get_db),
+) -> VersionSummary:
+    """UC-8.3 steps 2-3: the developer's version of the proposal, which asks for approval."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    made = review.edit(
+        db,
+        finding,
+        user,
+        version=version,
+        fixes=[one.model_dump() for one in data.fixes],
+        root_cause=data.root_cause,
+        summary=data.summary,
+    )
+    return _version_out(db, made)
+
+
+@router.post("/{finding_code}/versions/{version}/submit")
+def submit(
+    finding_code: str,
+    version: int,
+    membership: Membership = Depends(can_request),
+    db: Session = Depends(get_db),
+) -> VersionSummary:
+    """Step 3 for a draft that needs no change: it goes to the approvers as it is."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    return _version_out(db, review.submit(db, finding, user, version))
+
+
+@router.post("/{finding_code}/versions/{version}/approve")
+def approve(
+    finding_code: str,
+    version: int,
+    membership: Membership = Depends(can_approve),
+    db: Session = Depends(get_db),
+) -> VersionSummary:
+    """Steps 5-6: only a person approves a proposal (NFR-9.3), and never one they adapted (4a)."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    return _version_out(db, review.approve(db, finding, user, version))
+
+
+@router.post("/{finding_code}/versions/{version}/reject")
+def reject(
+    finding_code: str,
+    version: int,
+    data: RejectIn,
+    membership: Membership = Depends(can_approve),
+    db: Session = Depends(get_db),
+) -> VersionSummary:
+    """5a1: the rejected version is kept with the reason it was rejected for."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    return _version_out(db, review.reject(db, finding, user, version, data.reason))
+
+
+@router.post("/{finding_code}/comments", status_code=status.HTTP_201_CREATED)
+def add_comment(
+    finding_code: str,
+    data: CommentIn,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> CommentOut:
+    """The review thread of Screen 46. Every member who reads a proposal can answer in it."""
+    finding = finding_row(db, membership.organization_id, finding_code)
+    user = db.get_one(User, membership.user_id)
+    made = review.comment(db, finding, user, data.version, data.text)
+    return CommentOut(
+        id=made.id,
+        version=made.version,
+        author=user.name,
+        text=made.text,
+        created_at=made.created_at,
+    )
