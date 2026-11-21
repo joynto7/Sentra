@@ -36,8 +36,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        # The web app reads the name of a downloaded export, e.g. of the audit log (UC-10.3).
-        expose_headers=["Content-Disposition"],
+        # The web app reads the name of a downloaded export, e.g. of the audit log (UC-10.3),
+        # and the checksum a benchmark export is verified with (UC-11.6 step 5).
+        expose_headers=["Content-Disposition", "X-Checksum-Sha256", "X-Export-Rows"],
     )
     # Where each request came from, for the audit log (FR-10.2).
     app.add_middleware(SourceAddressMiddleware)
