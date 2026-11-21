@@ -37,12 +37,12 @@ NO_GATEWAY = (
 )
 
 
-def active_gateway(db: Session, target_id: uuid.UUID) -> None:
-    """The target's active Sentra Shield gateway, if it has one. Gateways are connected in UC-8.1
-    and deployed to in UC-8.4, both of which come with FR-8.3 in Sprint 4, so for now no target
-    has one and every fix is a change inside the application (UC-8.2, 6a). This is the single
-    function FR-8.3 replaces."""
-    return None
+def active_gateway(db: Session, target_id: uuid.UUID):
+    """The target's Sentra Shield gateway when it can carry a fix: connected and in the traffic
+    path (UC-8.1 step 6). Without one, every fix is a change inside the application (UC-8.2, 6a)."""
+    from app.modules.m08_remediation import gateways
+
+    return gateways.active(db, target_id)
 
 
 def enforcement(db: Session, target_id: uuid.UUID, kind: FixKind) -> tuple[str, str | None]:
