@@ -203,3 +203,211 @@ export function costRange(low: string | null, high: string | null): string {
   const right = Number(high)
   return `$${left.toFixed(2)}–${right.toFixed(2)}`
 }
+
+
+// ---------------------------------------------------------------- the evaluation (FR-11.4)
+
+/** One metric of one strategy: the mean over the repetitions that finished and their spread
+ * (UC-11.5 step 6). `note` says why it has no value. */
+export type Figure = {
+  key: string
+  label: string
+  unit: "percent" | "count" | "minutes" | "usd" | "tokens"
+  mean: number | null
+  sd: number | null
+  /** How many completed repetitions the figure rests on (6a1) */
+  repetitions: number
+  values: number[]
+  note: string | null
+}
+
+/** What one repetition measured; the dot plot draws one dot per row. */
+export type Measure = {
+  id: string
+  target_name: string
+  repetition: number
+  status: Repetition["status"]
+  reason: string | null
+  documented: number
+  discovered: number
+  findings: number
+  false_positives: number
+  unlabelled: number
+  attempts: number
+  successful: number
+  minutes: number | null
+  tokens: number
+  cost_usd: string
+}
+
+export type StrategyMetrics = {
+  key: string
+  name: string
+  suites: string[]
+  adaptive_agent: boolean
+  completed: number
+  incomplete: number
+  figures: Figure[]
+  rows: Measure[]
+}
+
+/** How one detection compares with the analyst's blind labels (UC-11.5 step 5, NFR-9.5). */
+export type Agreement = {
+  key: "llm_judge" | "combined"
+  label: string
+  labelled: number
+  unsure: number
+  without_verdict: number
+  true_positive: number
+  false_positive: number
+  true_negative: number
+  false_negative: number
+  /** Percentages, 0-100 */
+  precision: number | null
+  recall: number | null
+  agreement: number | null
+}
+
+/** A lab target's list of documented weaknesses and the version measured against. */
+export type Documented = {
+  target_id: string
+  target_name: string
+  count: number
+  version: number
+  added_by_analyst: number
+}
+
+/** A finding of the run: the documented weakness it matched, or none (UC-11.5 step 2). */
+export type Matched = {
+  finding_id: string
+  finding_number: number
+  known_id: string | null
+  category: string
+  title: string
+  component: string
+  label: "false_positive" | "undocumented" | null
+}
+
+export type BenchmarkBaseline = {
+  code: string
+  name: string
+  rows: {
+    strategy_key: string
+    strategy_name: string
+    success_rate: number | null
+    baseline_rate: number | null
+    reduction: number | null
+  }[]
+  note: string
+}
+
+export type Evaluation = {
+  code: string
+  name: string
+  status: BenchmarkStatus
+  ended_at: string | null
+  /** Every repetition has ended, which UC-11.5 needs before it can be read in full */
+  ready: boolean
+  judge_every_attempt: boolean
+  documented: Documented[]
+  strategies: StrategyMetrics[]
+  agreement: Agreement[]
+  unmatched: Matched[]
+  sample_total: number
+  sample_labelled: number
+  incomplete: number
+  /** Which labels are still missing (the failed end condition of UC-11.5) */
+  missing: string[]
+  baseline: BenchmarkBaseline | null
+}
+
+/** One attempt of the blind sample. Nothing here says what Sentra decided (NFR-9.5). */
+export type ToLabel = {
+  attempt_id: string
+  place: number
+  total: number
+  labelled: number
+  target_name: string
+  category: string
+  test_code: string
+  objective: string
+  message: string
+  reply: string | null
+  tool_calls: string | null
+  note: string | null
+  verdict: AttemptVerdict | null
+  blind: string
+}
+
+export type AttemptVerdict = "successful" | "unsuccessful" | "unsure"
+export type FindingVerdict = "false_positive" | "undocumented"
+
+export const benchmarkEvaluation = (code: string, signal?: AbortSignal) =>
+  apiFetch<Evaluation>(`${BENCHMARKS}/${code}/evaluation`, { signal })
+
+export const unmatchedFindings = (code: string, signal?: AbortSignal) =>
+  apiFetch<Matched[]>(`${BENCHMARKS}/${code}/findings`, { signal })
+
+/** UC-11.5 step 2 and 2a1: a false positive, or a weakness the lab target's list doesn't name. */
+export const labelFinding = (code: string, findingId: string, verdict: FindingVerdict, note?: string) =>
+  apiFetch<Matched[]>(`${BENCHMARKS}/${code}/findings/${findingId}/label`, {
+    method: "POST",
+    body: JSON.stringify({ verdict, note: note || null }),
+  })
+
+/** UC-11.5 step 3: the next attempt to label, or the one at `place`. */
+export const blindSample = (code: string, place?: number, signal?: AbortSignal) =>
+  apiFetch<ToLabel | null>(
+    `${BENCHMARKS}/${code}/sample${place ? `?place=${place}` : ""}`,
+    { signal },
+  )
+
+export const labelAttempt = (code: string, attemptId: string, verdict: AttemptVerdict, note?: string) =>
+  apiFetch<ToLabel | null>(`${BENCHMARKS}/${code}/sample/${attemptId}/label`, {
+    method: "POST",
+    body: JSON.stringify({ verdict, note: note || null }),
+  })
+
+export const ATTEMPT_VERDICT_LABEL: Record<AttemptVerdict, string> = {
+  successful: "Successful",
+  unsuccessful: "Unsuccessful",
+  unsure: "Unsure",
+}
+
+export const FINDING_VERDICT_LABEL: Record<FindingVerdict, string> = {
+  false_positive: "False positive",
+  undocumented: "Real, undocumented vulnerability",
+}
+
+/** How a figure's numbers are written: the unit decides the scale, and the mean decides how many
+ * decimals both it and its spread get, so "38% ± 4" and "$3.10 ± 0.40" read the same way. */
+function shape(unit: Figure["unit"], mean: number) {
+  if (unit === "usd") return { divide: 1, prefix: "$", suffix: "", decimals: 2 }
+  if (unit === "minutes") return { divide: 1, prefix: "", suffix: " min", decimals: mean < 100 ? 1 : 0 }
+  if (unit === "tokens") {
+    if (mean >= 1_000_000) return { divide: 1_000_000, prefix: "", suffix: " M", decimals: 1 }
+    if (mean >= 1_000) return { divide: 1_000, prefix: "", suffix: " k", decimals: 0 }
+    return { divide: 1, prefix: "", suffix: "", decimals: 0 }
+  }
+  return { divide: 1, prefix: "", suffix: unit === "percent" ? "%" : "", decimals: mean < 10 ? 1 : 0 }
+}
+
+/** "38%", "$3.10", "0.4 M" — one value of a figure, in the figure's own unit. */
+export function figureValue(figure: Figure, value: number, reference?: number): string {
+  const { divide, prefix, suffix, decimals } = shape(figure.unit, reference ?? figure.mean ?? value)
+  return `${prefix}${(value / divide).toFixed(decimals)}${suffix}`
+}
+
+/** "± 4", "± 0.40" — the spread, without the unit, in the same scale as the mean. A spread that
+ * would round to zero gets another decimal rather than disappearing. */
+export function figureSpread(figure: Figure): string {
+  if (figure.sd === null || figure.mean === null) return ""
+  const { divide, decimals } = shape(figure.unit, figure.mean)
+  const scaled = figure.sd / divide
+  let places = decimals
+  while (places < 3 && Number(scaled.toFixed(places)) === 0 && scaled > 0) places += 1
+  return `± ${scaled.toFixed(places)}`
+}
+
+/** "0.86" — precision and recall as the detection card shows them, on a scale of 0 to 1. */
+export const share = (percent: number | null) => (percent === null ? "—" : (percent / 100).toFixed(2))
