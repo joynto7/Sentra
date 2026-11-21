@@ -20,8 +20,9 @@ from app.modules.m08_remediation.schemas import (
     RemediationPage,
     VersionSummary,
 )
+from app.modules.m08_remediation.shield_routes import router as shield_router
 
-router = APIRouter(prefix="/remediations", tags=["M8 Remediation"])
+remediations = APIRouter(prefix="/remediations", tags=["M8 Remediation"])
 
 # Every member may read the organization's proposals; asking for one is the work of the
 # application's developer or a security analyst (UC-8.2 primary actors).
@@ -45,7 +46,7 @@ def _version_out(db: Session, remediation: Remediation) -> VersionSummary:
     return service.summary(remediation, names)
 
 
-@router.get("")
+@remediations.get("")
 def list_remediations(
     membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
 ) -> RemediationList:
@@ -53,7 +54,7 @@ def list_remediations(
     return service.overview(db, membership.organization_id)
 
 
-@router.get("/{finding_code}")
+@remediations.get("/{finding_code}")
 def get_remediation(
     finding_code: str,
     version: int | None = Query(default=None, ge=1),
@@ -66,7 +67,7 @@ def get_remediation(
     )
 
 
-@router.post("/{finding_code}/generate", status_code=status.HTTP_202_ACCEPTED)
+@remediations.post("/{finding_code}/generate", status_code=status.HTTP_202_ACCEPTED)
 def generate(
     finding_code: str,
     membership: Membership = Depends(can_request),
@@ -79,7 +80,7 @@ def generate(
     return service.get_job(db, finding.id, job.id)
 
 
-@router.get("/{finding_code}/jobs/{job_id}")
+@remediations.get("/{finding_code}/jobs/{job_id}")
 def get_job(
     finding_code: str,
     job_id: uuid.UUID,
@@ -94,7 +95,7 @@ def get_job(
 # ---------------------------------------------------------------- review and approval (UC-8.3)
 
 
-@router.post("/{finding_code}/versions", status_code=status.HTTP_201_CREATED)
+@remediations.post("/{finding_code}/versions", status_code=status.HTTP_201_CREATED)
 def adapt(
     finding_code: str,
     data: EditIn,
@@ -117,7 +118,7 @@ def adapt(
     return _version_out(db, made)
 
 
-@router.post("/{finding_code}/versions/{version}/submit")
+@remediations.post("/{finding_code}/versions/{version}/submit")
 def submit(
     finding_code: str,
     version: int,
@@ -130,7 +131,7 @@ def submit(
     return _version_out(db, review.submit(db, finding, user, version))
 
 
-@router.post("/{finding_code}/versions/{version}/approve")
+@remediations.post("/{finding_code}/versions/{version}/approve")
 def approve(
     finding_code: str,
     version: int,
@@ -143,7 +144,7 @@ def approve(
     return _version_out(db, review.approve(db, finding, user, version))
 
 
-@router.post("/{finding_code}/versions/{version}/reject")
+@remediations.post("/{finding_code}/versions/{version}/reject")
 def reject(
     finding_code: str,
     version: int,
@@ -157,7 +158,7 @@ def reject(
     return _version_out(db, review.reject(db, finding, user, version, data.reason))
 
 
-@router.post("/{finding_code}/comments", status_code=status.HTTP_201_CREATED)
+@remediations.post("/{finding_code}/comments", status_code=status.HTTP_201_CREATED)
 def add_comment(
     finding_code: str,
     data: CommentIn,
@@ -175,3 +176,9 @@ def add_comment(
         text=made.text,
         created_at=made.created_at,
     )
+
+
+# The module's router: the proposals above and the Sentra Shield gateways of FR-8.3.
+router = APIRouter()
+router.include_router(remediations)
+router.include_router(shield_router)

@@ -149,3 +149,75 @@ class RemediationList(BaseModel):
     rows: list[RemediationRow]
     drafts: int  # proposals that await a person
     without_proposal: int  # confirmed findings with no proposal yet
+
+
+# ---------------------------------------------------------------- Sentra Shield (FR-8.3)
+
+
+class GatewayOut(BaseModel):
+    """One gateway as Screen 47 lists it. The credential itself is never in an answer."""
+
+    id: uuid.UUID
+    target_id: uuid.UUID
+    target_name: str
+    target_environment: str
+    position: str  # in_front or before_model (UC-8.1 step 1)
+    position_label: str
+    status: str  # pending, not_in_path, active, not_reporting or revoked
+    status_label: str
+    credential_prefix: str  # sgw_ and six characters, so one gateway can be told from another
+    gateway_version: str | None
+    added_latency_ms: int | None  # what it adds to a request, as it measures itself (NFR-1.5)
+    requests_seen: int
+    in_traffic_path: bool  # the test request of step 5 passed through it
+    connected_at: datetime | None
+    last_contact_at: datetime | None
+    created_at: datetime
+
+
+class GatewayList(BaseModel):
+    rows: list[GatewayOut]
+    targets_without_gateway: list[dict]  # "No gateway · Connect" on Screen 47
+    heartbeat_seconds: int
+
+
+class GatewaySecretOut(BaseModel):
+    """The answer of UC-8.1 step 2: the credential is here once and nowhere else."""
+
+    gateway: GatewayOut
+    credential: str
+
+
+class GatewayCheckOut(BaseModel):
+    gateway: GatewayOut
+    seen: bool  # the gateway reported the test request (step 5)
+    waiting: bool  # it has not reported yet, and the window has not passed
+    message: str | None
+
+
+class GatewayRegisterIn(BaseModel):
+    position: str
+
+
+class GatewayConnectIn(BaseModel):
+    """What the gateway says about itself when it connects (step 4)."""
+
+    version: str = Field(max_length=20)
+    position: str = ""
+
+
+class GatewayHeartbeatIn(BaseModel):
+    requests: int = Field(default=0, ge=0)
+    added_latency_ms: int | None = Field(default=None, ge=0)
+    markers: list[str] = Field(default_factory=list, max_length=50)
+
+
+class GatewayStateOut(BaseModel):
+    gateway_id: uuid.UUID
+    policy_version: int
+    heartbeat_seconds: int
+
+
+class GatewayPolicyOut(BaseModel):
+    version: int
+    document: dict
