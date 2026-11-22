@@ -27,7 +27,7 @@ from app.modules.m08_remediation.models import (
 )
 from app.modules.m09_reporting.models import Notification
 from tests.m01_users.test_organizations import create, log_in, new_user
-from tests.m08_remediation.conftest import API, proposal
+from tests.m08_remediation.conftest import API, proposal, retest_engine
 from tests.m08_remediation.test_review import draft
 from tests.m08_remediation.test_shield import (
     ANALYST,
@@ -66,9 +66,15 @@ def approve(team, finding, model) -> None:
 
 def ready(team, finding, model, monkeypatch, position="before_model") -> str:
     """An approved proposal and a gateway in the traffic path with nothing deployed yet: the
-    developer connected the gateway after the approval, so UC-8.4 starts on Screen 48."""
+    developer connected the gateway after the approval, so UC-8.4 starts on Screen 48.
+
+    A confirmed deployment starts the retest of the finding (step 6, FR-8.4), so the engine is
+    put in place for it here; `tests/m08_remediation/test_retest.py` is where it is measured.
+    """
     approve(team, finding, model)
-    return in_the_path(team, monkeypatch, position)
+    credential = in_the_path(team, monkeypatch, position)
+    retest_engine(monkeypatch)
+    return credential
 
 
 def deploy(team, finding, *, terms=None, fix=2, at=None, target=None):
@@ -473,8 +479,11 @@ def test_the_gateway_is_offered_the_version_downloads_it_and_confirms_it(
     assert confirmed_now.status_code == 200
     policy = policy_of(team)
     assert policy.state == PolicyState.ACTIVE and policy.confirmed_at is not None
-    entry = team.db.scalars(select(AuditLogEntry).order_by(AuditLogEntry.seq)).all()[-1]
-    assert entry.action == "shield_policy.deployed"
+    entry = team.db.scalars(
+        select(AuditLogEntry)
+        .where(AuditLogEntry.action == "shield_policy.deployed")
+        .order_by(AuditLogEntry.seq)
+    ).one()  # the retest of FR-8.4 writes its own entries after this one
     assert "approved by Sofia" in entry.summary
     assert entry.actor_type == "gateway"
     assert notes(team)[-1].text == (
