@@ -50,12 +50,18 @@ import {
 import { PERIODS } from "@/lib/risk"
 import { cn } from "@/lib/utils"
 
-/** What the dashboard hands over when the dialog is opened from it (UC-9.1, 1a1). */
+/** What a page hands over when the dialog is opened from it (UC-9.1, 1a1): the risk dashboard
+ * hands over its filters, and the comparison of Screen 51 the target it was measured on
+ * (UC-8.7, 5c1). */
 export type DashboardScope = {
   target_id: string | null
   period_days: number
   category: string | null
   label: string
+  /** What the scope came from, for the sentence that offers to change it. */
+  from?: string
+  /** The kind of report the page asks for; without one the dialog starts at executive. */
+  type?: ReportType
 }
 
 const TYPES: ReportType[] = ["executive", "technical"]
@@ -130,7 +136,7 @@ function ReportForm({
   const editing = Boolean(schedule)
   const hasMembers = Boolean(members?.length)
   const presetTarget = preset?.target_id ?? null
-  const [type, setType] = useState<ReportType>(schedule?.type ?? "executive")
+  const [type, setType] = useState<ReportType>(schedule?.type ?? preset?.type ?? "executive")
   const [scope, setScope] = useState<ReportScope>(schedule?.scope ?? "organization")
   const [format, setFormat] = useState<ReportFormat>(schedule?.format ?? "pdf")
   const [period, setPeriod] = useState(
@@ -357,7 +363,7 @@ function ReportForm({
               <h3 className="mb-2 text-sm font-medium">Scope</h3>
               {preset && usePreset ? (
                 <p className="flex flex-wrap items-center gap-2 rounded-[8px] border bg-muted/40 p-3 text-[13px]">
-                  Using the dashboard filters: {preset.label}
+                  Using {preset.from ?? "the dashboard filters"}: {preset.label}
                   <Button
                     type="button"
                     variant="link"
