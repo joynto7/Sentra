@@ -34,7 +34,7 @@ from app.core.tenancy import scoped_select
 from app.modules.m01_users.models import User
 from app.modules.m02_targets.models import Target
 from app.modules.m06_findings.models import Finding, FindingStatus
-from app.modules.m08_remediation import gateways, retest
+from app.modules.m08_remediation import changes, gateways, retest
 from app.modules.m08_remediation.models import (
     FixKind,
     PolicySource,
@@ -73,8 +73,14 @@ NEEDS_TERMS = (
     "Give the terms this guardrail matches when you deploy the policy: Sentra never writes them "
     "for you."
 )
+# The three things a person or a retest can see of a policy at work, exactly as the gateway writes
+# them (shield/app/enforce.py: BLOCKED_MESSAGE, MASK, HELD_BACK). A retest reads the last two out
+# of an answer to tell a request the policy changed from one it left alone (FR-8.5); the gateway
+# never says more than this about what it did, and these three strings have to stay in step with
+# it, which a test of both sides checks.
 GUARDRAIL_MESSAGE = "This request can't be handled."
 MASK = "[removed]"
+HELD_BACK = "A Sentra Shield policy holds this tool call back until a person approves it."
 APPLIES_TO = ("input", "output")
 ACTIONS = ("block", "mask")
 MAX_RULES = 50  # a rule policy adds at most 50 ms of median latency (NFR-1.5)
@@ -406,6 +412,20 @@ def deploy(
     if found:
         # 2a1: nothing is deployed and the developer is told what is wrong with it.
         raise FieldValidationError("rules", " ".join(found))
+    # The fixes this version carries are the gateway's work now, and the ones it could not take
+    # are the developer's (UC-8.5 step 1, FR-8.4).
+    changes.reconcile(
+        db,
+        finding,
+        remediation,
+        carried={
+            int((rule.get("from") or {}).get("fix") or 0)
+            for rule in document["rules"]
+            if str((rule.get("from") or {}).get("finding")) == finding.code
+            and int((rule.get("from") or {}).get("version") or 0) == remediation.version
+        },
+        left=left,
+    )
 
     later = at is not None and at > _now()
     policy = ShieldPolicy(
