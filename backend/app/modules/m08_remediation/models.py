@@ -324,3 +324,189 @@ class RemediationJob(UUIDPrimaryKey, OrganizationScoped, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int | None]  # the version it made
     message: Mapped[str | None] = mapped_column(Text)  # why it failed, or used no LLM
+
+
+class ChangeStatus(StrEnum):
+    """An application change of an approved proposal (UC-8.5)."""
+
+    OPEN = "open"  # the developer still has to make it in the application
+    IMPLEMENTED = "implemented"  # they say it is done; only the retest proves it (FR-8.5)
+
+
+class ApplicationChange(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One fix of an approved proposal that no gateway can carry, as a task on its finding
+    (UC-8.5 step 1, FR-8.4).
+
+    It is opened when the version is approved, one per fix with `enforcement = application`, and
+    stays visible on the finding until the developer marks it as implemented (quality
+    requirement 1). What they write about it is kept with their name and the time (quality
+    requirement 4), and it counts for nothing until the retest confirms it (quality
+    requirement 5).
+    """
+
+    __tablename__ = "application_changes"
+    __table_args__ = (UniqueConstraint("fix_id"),)
+
+    finding_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE"), index=True
+    )
+    remediation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("remediations.id", ondelete="CASCADE"), index=True
+    )
+    fix_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("remediation_fixes.id", ondelete="CASCADE")
+    )
+    position: Mapped[int]  # the fix's position in the proposal
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(15), default=ChangeStatus.OPEN)
+    # Step 3: what the developer changed, and where the change can be seen
+    note: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(2048))
+    implemented_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    implemented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+
+
+class RetestStatus(StrEnum):
+    """How far the retest of UC-8.6 has come."""
+
+    TESTING = "testing"  # its run is repeating the attempts that found the weakness (steps 2-3)
+    CHECKING = "checking"  # the benign requests of step 1 are being sent
+    COMPLETED = "completed"  # step 4 to 6: the comparison is there
+    FAILED = "failed"  # failed end condition: it can be started again
+    CANCELLED = "cancelled"  # a rollback took the fixes out of the traffic again (UC-8.8)
+
+
+class RetestVerdict(StrEnum):
+    """What the repeated attempts showed (UC-8.6 step 5 and 5a)."""
+
+    CLOSED = "closed"  # every repeated attempt was evaluated and none succeeded
+    STILL_OPEN = "still_open"  # 5a: at least one succeeded
+    # The measurement is incomplete — the run ended early, or a reply could not be evaluated — so
+    # nothing is closed on it (quality requirement 5)
+    INCONCLUSIVE = "inconclusive"
+
+
+class Retest(UUIDPrimaryKey, OrganizationScoped, Base):
+    """The verification of one remediation version (FR-8.4, FR-8.5; UC-8.6, UC-8.7).
+
+    The report's ER diagram 5 has a remediation *retested in* the campaign runs of type retest
+    that verify it: this is that relationship, with everything the comparison of UC-8.7 needs.
+    The figures before the fix and the target's risk score before it are stored when the retest
+    starts, so that the comparison a person reads never moves under them; the figures after it are
+    the run's own attempts, and the benign checks are the rows of `retest_benign_checks`.
+    """
+
+    __tablename__ = "retests"
+    __table_args__ = (UniqueConstraint("finding_id", "number"),)
+
+    finding_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE"), index=True
+    )
+    remediation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("remediations.id", ondelete="CASCADE"), index=True
+    )
+    number: Mapped[int]  # the first, second … retest of this finding
+    campaign_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(12), default=RetestStatus.TESTING)
+    verdict: Mapped[str | None] = mapped_column(String(15))
+    # What was verified (UC-8.7 step 4): the policy version that carries the gateway fixes, and
+    # how many changes inside the application the developer had marked.
+    policy_version: Mapped[int | None]
+    changes_marked: Mapped[int] = mapped_column(default=0)
+    test_code: Mapped[str] = mapped_column(String(40))
+    repetitions: Mapped[int]  # as in the reproducibility measurement (UC-8.6 step 3)
+    # The attempts it repeats: the evidence of the finding, by id, as the run replays them
+    replayed: Mapped[list] = mapped_column(JSONB, default=list)
+    # Before the fix, frozen when the retest starts: the evaluated attempts of this weakness in
+    # the campaign runs up to that moment, and how many of them succeeded
+    before_attempts: Mapped[int] = mapped_column(default=0)
+    before_successes: Mapped[int] = mapped_column(default=0)
+    after_attempts: Mapped[int] = mapped_column(default=0)
+    after_successes: Mapped[int] = mapped_column(default=0)
+    # Attempts of the run that could not be evaluated, e.g. the LLM judge never answered
+    after_unevaluated: Mapped[int] = mapped_column(default=0)
+    risk_before: Mapped[int | None]
+    risk_band_before: Mapped[str | None] = mapped_column(String(15))
+    risk_after: Mapped[int | None]
+    risk_band_after: Mapped[str | None] = mapped_column(String(15))
+    benign_total: Mapped[int] = mapped_column(default=0)
+    benign_blocked: Mapped[int] = mapped_column(default=0)
+    benign_changed: Mapped[int] = mapped_column(default=0)
+    benign_failed: Mapped[int] = mapped_column(default=0)  # no answer at all, for another reason
+    # 1a1: the target has no Benign Request Set of its own, so a generic one was sent and the
+    # comparison is less reliable
+    benign_generic: Mapped[bool] = mapped_column(default=False)
+    # What the comparison says in plain language (NFR-4.2), written when the retest completes
+    conclusion: Mapped[str | None] = mapped_column(Text)
+    # Whose action was the last fix in effect; None when a gateway confirmed a policy version
+    started_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    message: Mapped[str | None] = mapped_column(Text)  # why it failed or was cancelled
+    # A comparison the rollback of UC-8.8 has made out of date: what it proved is not in the
+    # traffic any more
+    out_of_date: Mapped[bool] = mapped_column(default=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BenignOutcome(StrEnum):
+    """What became of one benign request in a retest (UC-8.6 step 4)."""
+
+    ANSWERED = "answered"  # the fix left it alone
+    BLOCKED = "blocked"  # the policy refused it with the message of the approved fix
+    CHANGED = "changed"  # a rule of the policy masked something or held a tool call back
+    FAILED = "failed"  # it got no answer, for a reason that is not the policy's
+
+
+class BenignReview(StrEnum):
+    """What a person says about a request the fix affected (Screen 51)."""
+
+    PENDING = "pending"
+    FINE = "fine"  # "Looks fine": the answer still does its job
+    NEEDS_REVISION = "needs_revision"  # 5a1: the remediation should be revised
+
+
+class RetestBenignCheck(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One example of normal use, sent during a retest and judged by what came back (FR-8.4,
+    FR-8.5).
+
+    The examples come from the target's Benign Request Set (Screen 22) or, without one, from the
+    generic set (UC-8.6, 1a1). What the policy did with a request is read from the answer itself:
+    the gateway's refusal carries the message of the approved fix, and a masked answer carries the
+    mask. The reply is stored masked, like an attempt's (NFR-8.2), so that the examples of
+    UC-8.7 step 3 can be shown.
+    """
+
+    __tablename__ = "retest_benign_checks"
+    __table_args__ = (UniqueConstraint("retest_id", "position"),)
+
+    retest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("retests.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int]
+    text: Mapped[str] = mapped_column(Text)  # the request as it was sent
+    outcome: Mapped[str] = mapped_column(String(10))
+    # What the policy did, in the words of its own rule kinds, or why there was no answer
+    what_happened: Mapped[str | None] = mapped_column(String(300))
+    reply: Mapped[str | None] = mapped_column(Text)  # masked, at most 4 KB
+    reply_length: Mapped[int | None]
+    status_code: Mapped[int | None]
+    duration_ms: Mapped[int | None]
+    review: Mapped[str] = mapped_column(String(15), default=BenignReview.PENDING)
+    reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
