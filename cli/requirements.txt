@@ -1,0 +1,2 @@
+# The tool itself needs nothing: it speaks HTTP through the standard library, so a pipeline can
+# run it with any Python 3.12 image.
