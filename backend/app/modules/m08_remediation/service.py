@@ -2,27 +2,42 @@
 
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.core.tenancy import scoped_select
 from app.modules.m01_users.models import User
 from app.modules.m02_targets.models import Target
 from app.modules.m06_findings.models import Finding, FindingStatus, component_label
 from app.modules.m06_findings.service import SEVERITY_RANK, finding_row
+from app.modules.m08_remediation import changes as change_rules
+from app.modules.m08_remediation import comparison, review
 from app.modules.m08_remediation import fixes as fix_rules
-from app.modules.m08_remediation import review
+from app.modules.m08_remediation import retest as retests
 from app.modules.m08_remediation.generation import blocker
 from app.modules.m08_remediation.models import (
+    ApplicationChange,
+    BenignOutcome,
+    BenignReview,
+    ChangeStatus,
     FixKind,
     JobStatus,
     Remediation,
+    RemediationFix,
     RemediationJob,
     RemediationStatus,
+    Retest,
+    RetestBenignCheck,
+    RetestStatus,
+    RetestVerdict,
 )
 from app.modules.m08_remediation.schemas import (
+    BenignCheckOut,
+    ChangeList,
+    ChangeOut,
     CommentOut,
     FindingRef,
     FixOut,
@@ -31,6 +46,8 @@ from app.modules.m08_remediation.schemas import (
     RemediationList,
     RemediationPage,
     RemediationRow,
+    RetestOut,
+    RetestSummary,
     ReviewOut,
     VersionOut,
     VersionSummary,
@@ -204,6 +221,25 @@ def page(
         + [job.requested_by_id if job else None],
     )
     problem = blocker(finding)
+    shown = current or (versions[0] if versions else None)
+    change_rows = change_rules.of_version(db, shown.id) if shown else []
+    change_names = _names(
+        db,
+        [one.implemented_by_id for one in change_rows] + [shown.decided_by_id if shown else None],
+    )
+    waiting = None
+    if shown is not None and shown.status in (
+        RemediationStatus.APPROVED,
+        RemediationStatus.APPLYING,
+    ):
+        waiting = retests.all_in_effect(db, finding, shown)[1]
+    elif shown is not None and shown.status in (
+        RemediationStatus.EFFECTIVE,
+        RemediationStatus.INEFFECTIVE,
+    ):
+        waiting = retests.IN_EFFECT  # a retest has judged them, so they were all in effect
+    found = retests.of_finding(db, finding.id)
+    by_version = {r.id: r.version for r in versions}
     return RemediationPage(
         finding=finding_ref(finding, target_name),
         blocker=problem[1] if problem else None,
@@ -222,6 +258,9 @@ def page(
             )
             for one in thread
         ],
+        changes=[change_out(db, one, change_names) for one in change_rows],
+        retests=[retest_summary(one, by_version.get(one.remediation_id, 0)) for one in found],
+        in_effect=waiting,
     )
 
 
@@ -278,9 +317,10 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
         ).all()
     )
     if not findings:
-        return RemediationList(rows=[], drafts=0, without_proposal=0)
+        return RemediationList(rows=[], drafts=0, without_proposal=0, open_changes=0, retesting=0)
     ids = [f.id for f in findings]
     newest: dict[uuid.UUID, Remediation] = {}
+    version_of: dict[uuid.UUID, int] = {}
     for remediation in db.scalars(
         select(Remediation)
         .where(Remediation.finding_id.in_(ids))
@@ -288,6 +328,7 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
         .options(selectinload(Remediation.fixes))
     ).all():
         newest.setdefault(remediation.finding_id, remediation)
+        version_of[remediation.id] = remediation.version
     jobs = _shown_job(db, ids)
     targets = dict(
         db.execute(
@@ -298,10 +339,28 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
         db,
         [r.requested_by_id for r in newest.values()] + [j.requested_by_id for j in jobs.values()],
     )
+    newest_retest: dict[uuid.UUID, Retest] = {}
+    for one in db.scalars(
+        select(Retest)
+        .where(Retest.finding_id.in_(ids))
+        .order_by(Retest.finding_id, Retest.number.desc())
+    ).all():
+        newest_retest.setdefault(one.finding_id, one)
+    open_changes = dict(
+        db.execute(
+            select(ApplicationChange.remediation_id, func.count())
+            .where(
+                ApplicationChange.remediation_id.in_({r.id for r in newest.values()}),
+                ApplicationChange.status == ChangeStatus.OPEN,
+            )
+            .group_by(ApplicationChange.remediation_id)
+        ).all()
+    )
     rows = []
     for finding in findings:
         problem = blocker(finding)
         latest = newest.get(finding.id)
+        retest = newest_retest.get(finding.id)
         rows.append(
             RemediationRow(
                 finding=finding_ref(finding, targets.get(finding.target_id, "")),
@@ -309,6 +368,12 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
                 job=job_out(jobs[finding.id], names) if finding.id in jobs else None,
                 blocker=problem[1] if problem else None,
                 blocker_code=problem[0] if problem else None,
+                open_changes=open_changes.get(latest.id, 0) if latest else 0,
+                retest=(
+                    retest_summary(retest, version_of.get(retest.remediation_id, 0))
+                    if retest
+                    else None
+                ),
             )
         )
     return RemediationList(
@@ -317,4 +382,173 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
             row.latest is not None and row.latest.status == RemediationStatus.DRAFT for row in rows
         ),
         without_proposal=sum(row.latest is None and row.blocker is None for row in rows),
+        open_changes=sum(row.open_changes for row in rows),
+        retesting=sum(row.retest is not None and row.retest.running for row in rows),
     )
+
+
+# ------------------------------------------------- the application changes and the retests (M8)
+
+
+def _fix_of(db: Session, change: ApplicationChange) -> RemediationFix | None:
+    return db.get(RemediationFix, change.fix_id)
+
+
+def progress_of(db: Session, remediation: Remediation, finding: Finding) -> str:
+    """Screen 50's progress note: how much of the proposal is in effect, and what is still
+    waiting (UC-8.5 step 1, 2b1)."""
+    ready, missing = retests.all_in_effect(db, finding, remediation)
+    version = retests.verified_policy_version(db, finding, remediation)
+    in_effect = retests.carried_positions(db, finding, remediation) | {
+        one.position
+        for one in change_rules.of_version(db, remediation.id)
+        if one.status == ChangeStatus.IMPLEMENTED
+    }
+    said = f"{len(in_effect)} of {len(remediation.fixes)} fixes in effect"
+    if version is not None:
+        said += f" (Shield Policy v{version} active)"
+    return said + (" · the retest can start" if ready else f" · {missing}")
+
+
+def change_out(db: Session, change: ApplicationChange, names: dict) -> ChangeOut:
+    finding = db.get_one(Finding, change.finding_id)
+    remediation = db.get_one(Remediation, change.remediation_id)
+    fix = _fix_of(db, change)
+    target_name = db.scalar(select(Target.name).where(Target.id == finding.target_id)) or ""
+    return ChangeOut(
+        id=change.id,
+        finding=finding_ref(finding, target_name),
+        version=remediation.version,
+        position=change.position,
+        title=change.title,
+        description=fix.description if fix else "",
+        status=change.status,
+        note=change.note,
+        link=change.link,
+        implemented_by=names.get(change.implemented_by_id),
+        implemented_at=change.implemented_at,
+        approved_by=names.get(remediation.decided_by_id),
+        approved_at=remediation.decided_at,
+        progress=progress_of(db, remediation, finding),
+    )
+
+
+def changes_page(db: Session, organization_id: uuid.UUID) -> ChangeList:
+    """Screen 50: every change of the organization that a developer still has to make."""
+    rows = change_rules.task_list(db, organization_id)
+    names = _names(db, [one.implemented_by_id for one in rows] + _deciders(db, rows))
+    return ChangeList(rows=[change_out(db, one, names) for one in rows], open_changes=len(rows))
+
+
+def _deciders(db: Session, rows: list[ApplicationChange]) -> list:
+    if not rows:
+        return []
+    return list(
+        db.scalars(
+            select(Remediation.decided_by_id).where(
+                Remediation.id.in_({one.remediation_id for one in rows})
+            )
+        )
+    )
+
+
+def retest_summary(retest: Retest, version: int) -> RetestSummary:
+    verdict = RetestVerdict(retest.verdict) if retest.verdict else None
+    return RetestSummary(
+        id=retest.id,
+        number=retest.number,
+        version=version,
+        status=retest.status,
+        status_label=comparison.STATUS_LABELS[RetestStatus(retest.status)],
+        verdict=retest.verdict,
+        verdict_label=comparison.VERDICT_LABELS[verdict] if verdict else None,
+        running=retest.status in retests.RUNNING,
+        out_of_date=retest.out_of_date,
+        started_at=retest.started_at,
+        finished_at=retest.finished_at,
+    )
+
+
+def benign_out(check: RetestBenignCheck, names: dict) -> BenignCheckOut:
+    return BenignCheckOut(
+        id=check.id,
+        position=check.position,
+        text=check.text,
+        outcome=check.outcome,
+        outcome_label=comparison.OUTCOME_LABELS[BenignOutcome(check.outcome)],
+        what_happened=check.what_happened,
+        reply=check.reply,
+        status_code=check.status_code,
+        review=check.review,
+        review_label=comparison.REVIEW_LABELS[BenignReview(check.review)],
+        reviewed_by=names.get(check.reviewed_by_id),
+        reviewed_at=check.reviewed_at,
+    )
+
+
+def retest_page(
+    db: Session, organization_id: uuid.UUID, code: str, number: int | None = None
+) -> RetestOut:
+    """Screen 51: the before-and-after comparison of one retest of a finding, the newest by
+    default (UC-8.7)."""
+    from app.modules.m05_campaigns import lifecycle
+    from app.modules.m05_campaigns.models import CampaignRun
+
+    finding = finding_row(db, organization_id, code)
+    found = retests.of_finding(db, finding.id)
+    retest = (
+        next((one for one in found if one.number == number), None)
+        if number is not None
+        else (found[0] if found else None)
+    )
+    if retest is None:
+        raise NotFoundError("This finding has no retest.")
+    remediation = db.get_one(Remediation, retest.remediation_id)
+    run = db.get(CampaignRun, retest.campaign_run_id) if retest.campaign_run_id else None
+    checks = retests.benign_checks(db, retest.id)
+    names = _names(db, [one.reviewed_by_id for one in checks])
+    target_name = db.scalar(select(Target.name).where(Target.id == finding.target_id)) or ""
+    return RetestOut(
+        **retest_summary(retest, remediation.version).model_dump(),
+        finding=finding_ref(finding, target_name),
+        conclusion=retest.conclusion,
+        message=retest.message,
+        run_code=lifecycle.code(run, None) if run else None,
+        run_status=run.status if run else None,
+        test_code=retest.test_code,
+        repetitions=retest.repetitions,
+        attempts_repeated=len(retest.replayed or []),
+        policy_version=retest.policy_version,
+        changes_marked=retest.changes_marked,
+        figures=comparison.figures(retest),
+        benign_checks=[benign_out(one, names) for one in checks],
+        benign_generic=retest.benign_generic,
+    )
+
+
+def review_benign(
+    db: Session, finding: Finding, user: User, check_id: uuid.UUID, judgement: str
+) -> int:
+    """UC-8.7 step 3: a person says whether an answer the fix changed still does its job. The
+    judgement is kept with the example, so the next reader sees that somebody looked at it.
+    Returns the number of the retest it belongs to."""
+    if judgement not in (BenignReview.FINE, BenignReview.NEEDS_REVISION):
+        raise AppError(
+            'A judgement is either "fine" or "needs_revision".',
+            code="validation_error",
+            status_code=422,
+        )
+    check = db.scalar(
+        scoped_select(RetestBenignCheck, finding.organization_id).where(
+            RetestBenignCheck.id == check_id
+        )
+    )
+    if check is None:
+        raise NotFoundError("That request of normal use doesn't exist.")
+    retest = db.get_one(Retest, check.retest_id)
+    if retest.finding_id != finding.id:
+        raise NotFoundError("That request of normal use belongs to another finding.")
+    check.review = judgement
+    check.reviewed_by_id, check.reviewed_at = user.id, datetime.now(UTC)
+    db.commit()
+    return retest.number
