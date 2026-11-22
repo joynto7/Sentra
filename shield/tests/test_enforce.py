@@ -8,6 +8,7 @@ one. Nothing here talks to a real Sentra or a real application: both are stubs.
 import gzip
 import json
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -517,3 +518,23 @@ def test_the_largest_policy_stays_well_under_the_latency_it_may_add(tmp_path):
 
     assert engine.rule_count == 50
     assert worst < 50, f"the policy added {worst:.1f} ms to one request"
+
+
+# ---------------------------------------------------------------- what the backend has to know
+
+BACKEND = Path(__file__).resolve().parents[2] / "backend/app/modules/m08_remediation/policies.py"
+
+
+@pytest.mark.skipif(not BACKEND.exists(), reason="the backend isn't beside the gateway here")
+def test_the_backend_knows_the_three_strings_this_gateway_puts_into_the_traffic():
+    """These three are the only things a person — or a retest — can see of a policy at work: the
+    refusal of a blocked request, the mask of a guardrail, and the sentence that stands in for a
+    held-back tool call. The backend writes the policy and reads them back out of an answer to
+    tell a request the fix changed from one it left alone (FR-8.5), so its own copies in
+    `m08_remediation/policies.py` have to be exactly these.
+    """
+    written = BACKEND.read_text()
+
+    assert f'GUARDRAIL_MESSAGE = "{enforce.BLOCKED_MESSAGE}"' in written
+    assert f'MASK = "{enforce.MASK}"' in written
+    assert f'HELD_BACK = "{enforce.HELD_BACK}"' in written
