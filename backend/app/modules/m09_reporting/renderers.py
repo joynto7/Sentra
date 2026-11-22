@@ -194,6 +194,59 @@ def _executive_pdf(document: dict, styles: dict) -> list:
     return story
 
 
+def _verification(verified: dict | None, styles: dict) -> list:
+    """UC-8.7, 5c1: the before-and-after comparison of the finding's retest, as the evidence a
+    manager puts in front of management or an auditor. Every rate carries its counts (quality
+    requirement 2), and the conclusion is the sentence the retest wrote (NFR-4.2).
+    """
+    if not verified:
+        return []
+    what = [
+        ["Verdict", verified["verdict_label"] or "—"],
+        ["Attack success before", verified["attack_success_before"]],
+        ["Attack success after", verified["attack_success_after"]],
+        [
+            "Normal use affected",
+            verified["normal_use_affected"]
+            + (" · generic examples" if verified["normal_use_generic_set"] else ""),
+        ],
+    ]
+    if verified["risk_before"] is not None and verified["risk_after"] is not None:
+        what.append(["Risk score", f"{verified['risk_before']} → {verified['risk_after']}"])
+    what.append(
+        [
+            "What was verified",
+            (
+                f"Shield Policy v{verified['policy_version']}"
+                if verified["policy_version"]
+                else "application changes only"
+            )
+            + (
+                f" · {verified['changes_marked']} application "
+                + ("change" if verified["changes_marked"] == 1 else "changes")
+                if verified["changes_marked"]
+                else ""
+            )
+            + f" · {verified['test']}, {verified['repetitions']} repetitions",
+        ]
+    )
+    story = [
+        Spacer(1, 4),
+        Paragraph(f"Verification (retest {verified['retest']})", styles["small"]),
+        _table(what, [90, 360]),
+    ]
+    if verified["conclusion"]:
+        story += [Spacer(1, 3), Paragraph(verified["conclusion"], styles["small"])]
+    if verified["out_of_date"]:
+        story += [
+            Paragraph(
+                "A rollback has since taken what this retest proved out of the traffic.",
+                styles["small"],
+            )
+        ]
+    return story
+
+
 def _technical_pdf(document: dict, styles: dict) -> list:
     story = _header(document, styles)
     summary = document["summary"]
@@ -238,6 +291,7 @@ def _technical_pdf(document: dict, styles: dict) -> list:
                     styles["small"],
                 ),
             ]
+        story += _verification(one.get("verification"), styles)
         story += [Spacer(1, 6)]
     if document.get("findings") and any(
         one.get("needs_confirmation") for one in document["findings"]

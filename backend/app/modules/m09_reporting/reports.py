@@ -25,7 +25,7 @@ from app.modules.m05_campaigns.models import Campaign, CampaignRun
 from app.modules.m06_findings.models import OPEN, Finding, FindingStatus
 from app.modules.m06_findings.service import FindingFilters, list_findings
 from app.modules.m07_risk import service as risk_service
-from app.modules.m08_remediation.models import Remediation
+from app.modules.m08_remediation.models import Remediation, Retest, RetestStatus, RetestVerdict
 from app.modules.m09_reporting import notifications, renderers
 from app.modules.m09_reporting.models import (
     Report,
@@ -278,6 +278,48 @@ def _recommendations(db: Session, report: Report, counted: list[dict]) -> list[d
     return out
 
 
+def _verified(db: Session, finding_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+    """UC-8.7, 5c1: what the newest completed retest of each finding measured, so that a manager
+    has the before-and-after comparison as evidence for management or an audit (FR-9.1).
+
+    It is read from the retest and not measured again: the figures were frozen when the retest ran
+    (FR-8.5), and the conclusion is the sentence the people involved were given then.
+    """
+    from app.modules.m08_remediation import comparison
+
+    if not finding_ids:
+        return {}
+    found: dict[uuid.UUID, dict] = {}
+    for retest in db.scalars(
+        select(Retest)
+        .where(Retest.finding_id.in_(finding_ids), Retest.status == RetestStatus.COMPLETED)
+        .order_by(Retest.finding_id, Retest.number.desc())
+    ):
+        if retest.finding_id in found:
+            continue
+        figures = comparison.figures(retest)
+        verdict = RetestVerdict(retest.verdict) if retest.verdict else None
+        found[retest.finding_id] = {
+            "retest": retest.number,
+            "verdict": retest.verdict,
+            "verdict_label": comparison.VERDICT_LABELS[verdict] if verdict else None,
+            "finished_at": retest.finished_at.isoformat() if retest.finished_at else None,
+            "policy_version": retest.policy_version,
+            "changes_marked": retest.changes_marked,
+            "test": retest.test_code,
+            "repetitions": retest.repetitions,
+            "attack_success_before": figures["attack_success"]["before_words"],
+            "attack_success_after": figures["attack_success"]["after_words"],
+            "normal_use_affected": figures["normal_use"]["affected_words"],
+            "normal_use_generic_set": retest.benign_generic,
+            "risk_before": retest.risk_before,
+            "risk_after": retest.risk_after,
+            "conclusion": retest.conclusion,
+            "out_of_date": retest.out_of_date,
+        }
+    return found
+
+
 def _technical(db: Session, report: Report) -> dict:
     """Every finding with its detail, its evidence records and its remediation status."""
     findings = _findings_in(db, report)
@@ -290,6 +332,7 @@ def _technical(db: Session, report: Report) -> dict:
             )
         )
     }
+    verified = _verified(db, [f.id for f in rows.values()])
     proposals: dict[uuid.UUID, Remediation] = {}
     for proposal in db.scalars(
         select(Remediation)
@@ -338,6 +381,7 @@ def _technical(db: Session, report: Report) -> dict:
                     if proposal
                     else None
                 ),
+                "verification": verified.get(finding.id) if finding else None,
                 "needs_confirmation": one["status"] == FindingStatus.REQUIRES_CONFIRMATION,
             }
         )
