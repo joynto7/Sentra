@@ -235,8 +235,9 @@ class Finding(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
 
 
 class FindingEventKind(StrEnum):
-    """What the history of a finding records (FR-6.5; UC-6.6 step 5): every triage action, and the
-    two things Sentra itself does to a finding — recording it and reopening it as a regression.
+    """What the history of a finding records (FR-6.5; UC-6.6 step 5): every triage action, the
+    two things Sentra itself does to a finding — recording it and reopening it as a regression —
+    and a developer's confirmation that an application change of its remediation is made (UC-8.5).
     Which runs found the finding again is read from its evidence instead (UC-6.5 step 3)."""
 
     DETECTED = "detected"  # UC-6.2 step 2: the finding was recorded in a campaign run
@@ -248,6 +249,8 @@ class FindingEventKind(StrEnum):
     COMMENTED = "commented"  # step 4
     MERGED = "merged"  # 2b1: this finding was merged into another one, which closes it
     MERGED_IN = "merged_in"  # the other side: a duplicate was merged into this finding
+    # UC-8.5 step 4: the developer marked an application change of the remediation as implemented
+    CHANGE_IMPLEMENTED = "change_implemented"
 
 
 class FindingEvent(UUIDPrimaryKey, OrganizationScoped, Base):
