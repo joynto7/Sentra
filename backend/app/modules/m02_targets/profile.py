@@ -24,6 +24,7 @@ from app.modules.m02_targets.models import (
     CredentialType,
     ProfileStatus,
     Target,
+    TargetBenignRequest,
     TargetCanary,
     TargetProfile,
     TargetProfileRevision,
@@ -453,3 +454,65 @@ def set_planted(
     )
     db.commit()
     return canary
+
+
+# ---------------------------------------------------------------- the Benign Request Set (FR-8.4)
+
+MAX_BENIGN_REQUESTS = 50
+MAX_BENIGN_CHARS = 1000
+BENIGN_HELP = (
+    "A retest sends these examples of normal use beside the attempts that found the weakness, so "
+    "that a fix which blocks legitimate requests is noticed."
+)
+
+
+class BenignRequestsIn(BaseModel):
+    """The whole set, as Screen 22's "Edit examples" saves it: empty lines are dropped."""
+
+    requests: list[str] = Field(default_factory=list, max_length=MAX_BENIGN_REQUESTS)
+
+
+def benign_requests(db: Session, target_id: uuid.UUID) -> list[TargetBenignRequest]:
+    """The target's examples of normal use, in their order (UC-8.6 step 1)."""
+    return list(
+        db.scalars(
+            select(TargetBenignRequest)
+            .where(TargetBenignRequest.target_id == target_id)
+            .order_by(TargetBenignRequest.position)
+        )
+    )
+
+
+def save_benign_requests(
+    db: Session, target: Target, user: User, data: BenignRequestsIn
+) -> list[TargetBenignRequest]:
+    """The set is replaced as a whole, like a target's credentials: the examples are the owner's
+    own words, numbered in the order they were given (UC-2.5, Screen 22)."""
+    texts: list[str] = []
+    for one in data.requests:
+        said = " ".join(one.split())[:MAX_BENIGN_CHARS]
+        if said and said not in texts:
+            texts.append(said)
+    before = benign_requests(db, target.id)
+    for row in before:
+        db.delete(row)
+    db.flush()
+    kept = [
+        TargetBenignRequest(target_id=target.id, position=number, text=said, created_by_id=user.id)
+        for number, said in enumerate(texts, start=1)
+    ]
+    db.add_all(kept)
+    audit.record(
+        db,
+        organization_id=target.organization_id,
+        actor=user,
+        action="target.benign_requests_saved",
+        summary=(
+            f"Saved the Benign Request Set of {target.name}: {len(kept)} "
+            f"example{'' if len(kept) == 1 else 's'} of normal use"
+        ),
+        item=audit.Item("target", target.id, target.name),
+        details={"examples": len(kept), "examples_before": len(before)},
+    )
+    db.commit()
+    return benign_requests(db, target.id)
