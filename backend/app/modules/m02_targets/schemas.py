@@ -228,6 +228,14 @@ class CanaryOut(BaseModel):
     planted_at: datetime | None
 
 
+class BenignRequestOut(BaseModel):
+    """One example of normal use of the target (Screen 22, FR-8.4)."""
+
+    id: uuid.UUID
+    position: int
+    text: str
+
+
 class ProfileOut(BaseModel):
     status: str
     version: int
@@ -240,6 +248,9 @@ class ProfileOut(BaseModel):
     reviewed_at: datetime | None
     reviewed_by: str | None
     canaries: list[CanaryOut]
+    # The Benign Request Set a retest sends beside its attempts (FR-8.4, UC-8.6 step 1)
+    benign_requests: list[BenignRequestOut]
+    benign_requests_help: str
 
 
 class CanaryIn(BaseModel):

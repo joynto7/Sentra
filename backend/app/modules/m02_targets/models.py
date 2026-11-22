@@ -279,3 +279,28 @@ class TargetCanary(UUIDPrimaryKey, Base):
         DateTime(timezone=True), default=_now, server_default=func.now()
     )
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TargetBenignRequest(UUIDPrimaryKey, Base):
+    """One example of normal use of a target: the Benign Request Set of Screen 22 (FR-8.4).
+
+    A retest sends these beside the attempts that proved a finding, so that a fix which closes the
+    weakness but breaks ordinary requests is noticed (UC-8.6 step 1, quality requirement 1). The
+    owner of the target writes them; without a set of its own, a retest uses a generic one and says
+    that the comparison is less reliable (UC-8.6, 1a1). A lab target brings its own set (UC-11.1).
+    """
+
+    __tablename__ = "target_benign_requests"
+    __table_args__ = (UniqueConstraint("target_id", "position"),)
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int]  # 1, 2, 3 … the order the examples are shown and sent in
+    text: Mapped[str] = mapped_column(Text)  # the request itself, as a user would send it
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
