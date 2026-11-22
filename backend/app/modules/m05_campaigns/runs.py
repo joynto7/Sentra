@@ -9,7 +9,7 @@ import asyncio
 import re
 import uuid
 from collections import Counter
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import time
 from decimal import Decimal
 
@@ -150,6 +150,108 @@ def launch(
     # UC-10.6 step 5, with the run counted: the organization hears once a month that a limit is
     # coming close. It is after the commit, so the launch never waits for a notification.
     limits.watch(db, organization_id, in_force, limits.usage(db, organization_id))
+    lifecycle.publish_status(run)
+    if not lifecycle.dispatch(db, run):  # the Task Queue can't be reached
+        lifecycle.cancel_unqueued(db, run.id)
+        raise AppError(jobs.QUEUE_DOWN, code="queue_unavailable", status_code=503)
+    return run
+
+
+def start_retest(
+    db: Session,
+    *,
+    organization_id: uuid.UUID,
+    target: Target,
+    test: TestDefinition,
+    attempt_ids: list[uuid.UUID],
+    repetitions: int,
+    started_by: User | None = None,
+    label: str = "",
+    link: Callable[[CampaignRun], None] | None = None,
+) -> CampaignRun:
+    """A run without a campaign that sends the given attempts again, `repetitions` times each
+    (FR-8.4, UC-8.6 steps 1-2). Module 8 calls it when every fix of a remediation is in effect.
+
+    It is launched like a campaign run and runs through the same engine, so the ownership check
+    before the first attempt, the target's request rate, the monthly limits, pause and stop and
+    the safety limits of FR-5.7 all apply unchanged. The attempts themselves are planned by
+    planning.plan() from `settings["replay"]`. Raises ConflictError when the target is not
+    verified or a monthly limit is reached, and AppError when the job can't be queued.
+
+    `link` is called with the new run before anything is committed, so that the caller's own row
+    for it — Module 8's retest (FR-8.4) — is written in the same transaction and is there when
+    the first worker picks the run up (NFR-2.4).
+    """
+    if target.status != TargetStatus.VERIFIED:  # FR-5.7: only a verified target is tested
+        raise ConflictError(
+            f"{target.name} isn't verified, so it can't be retested. Verify its ownership first.",
+            code="target_not_verified",
+        )
+    reached = limits.reached(
+        limits.limits_for(db, organization_id), limits.usage(db, organization_id), launching=True
+    )
+    if reached is not None:
+        db.rollback()
+        lifecycle.notify_limit(db, organization_id, reached[1])
+        raise ConflictError(reached[1], code="usage_limit_reached")
+    if not attempt_ids:
+        raise ConflictError(
+            "There is no attempt to repeat, so nothing can be retested.", code="nothing_to_run"
+        )
+    times = max(1, repetitions)
+    planned = len(attempt_ids) * times
+    number = (
+        db.scalar(
+            select(func.max(CampaignRun.number)).where(
+                CampaignRun.target_id == target.id, CampaignRun.campaign_id.is_(None)
+            )
+        )
+        or 0
+    ) + 1
+    run = CampaignRun(
+        organization_id=organization_id,
+        campaign_id=None,
+        target_id=target.id,
+        number=number,
+        run_type=RunType.RETEST,
+        trigger=RunTrigger.REMEDIATION,
+        status=RunStatus.QUEUED,
+        status_message="Waiting for a worker.",
+        # Sentra starts a retest, not a person: the people who have to know hear about its result
+        # through the notification of UC-8.6 step 6, not through the end of a campaign run.
+        launched_by_id=None,
+        settings={
+            "repetitions": times,
+            "replay": {"attempt_ids": [str(one) for one in attempt_ids], "times": times},
+        },
+        versions={"tests": [{"id": str(test.id), "code": test.code, "version": test.version}]},
+        # The retries of an unreachable target (NFR-2.3) are attempts of their own, so the budget
+        # leaves room for the engine's last retry; nothing else may be sent.
+        attempt_budget=planned + len(get_settings().run_retry_delays),
+        request_rate=target.max_request_rate,
+    )
+    db.add(run)
+    db.flush()
+    if link is not None:
+        link(run)
+    lifecycle.record(
+        db,
+        run,
+        "campaign.run_launched",
+        f"Started retest run {lifecycle.code(run, None)} of {target.name}"
+        + (f" for {label}" if label else ""),
+        actor=started_by,
+        details={
+            "trigger": RunTrigger.REMEDIATION,
+            "target": target.name,
+            "attempt_budget": run.attempt_budget,
+            "request_rate": run.request_rate,
+            "attempts": planned,
+            "repetitions": times,
+            "test": test.code,
+        },
+    )
+    db.commit()
     lifecycle.publish_status(run)
     if not lifecycle.dispatch(db, run):  # the Task Queue can't be reached
         lifecycle.cancel_unqueued(db, run.id)
@@ -358,6 +460,8 @@ def _row(run: CampaignRun, campaign: Campaign | None, names: dict) -> dict:
         "id": run.id,
         "code": lifecycle.code(run, campaign),
         "number": run.number,
+        # A run of the organization is not always a campaign's (FR-8.4: a retest has none)
+        "run_type": run.run_type,
         "status": run.status,
         "end_reason": run.end_reason,
         "trigger": run.trigger,
