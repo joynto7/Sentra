@@ -299,7 +299,21 @@ def review_out(
     )
 
 
-def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
+def _can_approve(latest: Remediation | None, reader: Reader | None) -> bool:
+    """Screen 45's "Awaiting my approval" tab: the rule of UC-8.3 step 4 and 4a, asked of a row.
+    It is the reader's own question — the role alone doesn't answer it, because whoever last
+    edited a version may not approve it — so the server answers it and the tab counts it."""
+    if latest is None or reader is None or not reader.can_approve:
+        return False
+    return (
+        latest.status == RemediationStatus.AWAITING_APPROVAL
+        and latest.edited_by_id != reader.user_id
+    )
+
+
+def overview(
+    db: Session, organization_id: uuid.UUID, reader: Reader | None = None
+) -> RemediationList:
     """Screen 45: the findings that wait for a fix — every one an analyst has confirmed, and every
     finding that already has a proposal. The highest severity comes first."""
     rank = case(SEVERITY_RANK, value=Finding.severity, else_=len(SEVERITY_RANK))
@@ -317,7 +331,9 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
         ).all()
     )
     if not findings:
-        return RemediationList(rows=[], drafts=0, without_proposal=0, open_changes=0, retesting=0)
+        return RemediationList(
+            rows=[], drafts=0, without_proposal=0, awaiting_me=0, open_changes=0, retesting=0
+        )
     ids = [f.id for f in findings]
     newest: dict[uuid.UUID, Remediation] = {}
     version_of: dict[uuid.UUID, int] = {}
@@ -369,6 +385,7 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
                 blocker=problem[1] if problem else None,
                 blocker_code=problem[0] if problem else None,
                 open_changes=open_changes.get(latest.id, 0) if latest else 0,
+                can_approve=_can_approve(latest, reader),
                 retest=(
                     retest_summary(retest, version_of.get(retest.remediation_id, 0))
                     if retest
@@ -382,6 +399,7 @@ def overview(db: Session, organization_id: uuid.UUID) -> RemediationList:
             row.latest is not None and row.latest.status == RemediationStatus.DRAFT for row in rows
         ),
         without_proposal=sum(row.latest is None and row.blocker is None for row in rows),
+        awaiting_me=sum(row.can_approve for row in rows),
         open_changes=sum(row.open_changes for row in rows),
         retesting=sum(row.retest is not None and row.retest.running for row in rows),
     )
@@ -505,6 +523,7 @@ def retest_page(
         raise NotFoundError("This finding has no retest.")
     remediation = db.get_one(Remediation, retest.remediation_id)
     run = db.get(CampaignRun, retest.campaign_run_id) if retest.campaign_run_id else None
+    run_campaign = lifecycle.campaign_of(db, run) if run else None
     checks = retests.benign_checks(db, retest.id)
     names = _names(db, [one.reviewed_by_id for one in checks])
     target_name = db.scalar(select(Target.name).where(Target.id == finding.target_id)) or ""
@@ -513,7 +532,7 @@ def retest_page(
         finding=finding_ref(finding, target_name),
         conclusion=retest.conclusion,
         message=retest.message,
-        run_code=lifecycle.code(run, None) if run else None,
+        run_code=lifecycle.code(run, run_campaign) if run else None,
         run_status=run.status if run else None,
         test_code=retest.test_code,
         repetitions=retest.repetitions,

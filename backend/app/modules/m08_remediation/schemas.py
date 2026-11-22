@@ -178,7 +178,7 @@ class RetestOut(RetestSummary):
     finding: FindingRef
     conclusion: str | None  # what it means, in plain language (NFR-4.2)
     message: str | None  # why it couldn't run, or what a rollback did to it
-    run_code: str | None  # the retest run it was measured in
+    run_code: str | None  # the retest run it was measured in; it belongs to no campaign
     run_status: str | None
     test_code: str
     repetitions: int  # as in the reproducibility measurement (UC-8.6 step 3)
@@ -241,6 +241,7 @@ class RemediationRow(BaseModel):
     blocker_code: str | None
     open_changes: int  # of the newest version (UC-8.5)
     retest: RetestSummary | None  # the newest retest of the finding (UC-8.6)
+    can_approve: bool  # this reader may decide this version (UC-8.3 step 4, and 4a)
 
 
 class RemediationList(BaseModel):
@@ -249,6 +250,7 @@ class RemediationList(BaseModel):
     rows: list[RemediationRow]
     drafts: int  # proposals that await a person
     without_proposal: int  # confirmed findings with no proposal yet
+    awaiting_me: int  # its "Awaiting my approval (2)" tab, for this reader
     open_changes: int  # Screen 45's "Application changes (3 open)" tab (UC-8.5)
     retesting: int  # its "Retesting (1)" tab (UC-8.6)
 
