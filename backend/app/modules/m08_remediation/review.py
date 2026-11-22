@@ -311,10 +311,12 @@ def _decide(
     _tell_about_the_decision(db, finding, remediation, user, approved=approved)
     if approved:
         # Step 6: the fixes a gateway can carry become the target's next Shield Policy version
-        # (UC-8.4), and the others stay the developer's work (UC-8.5). A deployment that cannot
-        # start says so and leaves the approval as it is.
-        from app.modules.m08_remediation import policies
+        # (UC-8.4), and the others become the developer's open tasks (UC-8.5 step 1). A deployment
+        # that cannot start says so and leaves the approval as it is.
+        from app.modules.m08_remediation import changes, policies
 
+        changes.open_for(db, finding, remediation)
+        db.commit()
         policies.after_approval(db, finding, remediation, user)
     return remediation
 
