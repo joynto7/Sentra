@@ -214,3 +214,100 @@ class ReportSchedule(UUIDPrimaryKey, OrganizationScoped, Base):
     )
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GateStatus(StrEnum):
+    """Whether the pipeline may start this gate at all (UC-9.4)."""
+
+    ACTIVE = "active"
+    PAUSED = "paused"
+
+
+class GateVerdict(StrEnum):
+    """What one call of the gate decided (UC-9.5). `error` is a failure for the pipeline: the
+    gate never says "pass" without a completed run (quality requirement 2)."""
+
+    RUNNING = "running"
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+
+
+ENDED_VERDICTS = (GateVerdict.PASSED, GateVerdict.FAILED, GateVerdict.ERROR)
+
+
+class SecurityGate(UUIDPrimaryKey, OrganizationScoped, Base):
+    """An automatic check a release has to pass (FR-9.4, UC-9.4): a campaign of M5 that a pipeline
+    may start with an API key, the policy its findings are judged by, and the run its findings are
+    compared with."""
+
+    __tablename__ = "security_gates"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "number", name="uq_security_gates_number"),
+        Index("ix_security_gates_organization_status", "organization_id", "status"),
+    )
+
+    number: Mapped[int]  # within the organization: G-001
+    name: Mapped[str] = mapped_column(String(120))
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("targets.id", ondelete="CASCADE"))
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(10), default=GateStatus.ACTIVE)
+    # The policy of UC-9.4 step 2: the severities a new finding may not have, and whether a
+    # finding that was fixed and came back fails the release as well.
+    fail_on: Mapped[list] = mapped_column(JSONB, default=list)
+    fail_on_reopened: Mapped[bool] = mapped_column(default=True)
+    # The run its findings are compared with until a run passes (UC-9.4, success end condition).
+    baseline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL")
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def code(self) -> str:
+        return f"G-{self.number:03d}"
+
+
+class GateRun(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One call of the gate from a pipeline (UC-9.5): the campaign run it started, the build it
+    belongs to, and what the policy decided about its findings."""
+
+    __tablename__ = "gate_runs"
+    __table_args__ = (
+        UniqueConstraint("gate_id", "number", name="uq_gate_runs_number"),
+        Index("ix_gate_runs_campaign_run_id", "campaign_run_id"),
+    )
+
+    gate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("security_gates.id", ondelete="CASCADE"))
+    number: Mapped[int]  # within the gate: G-001 #4
+    campaign_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL")
+    )
+    verdict: Mapped[str] = mapped_column(String(10), default=GateVerdict.RUNNING)
+    # Step 6: what the pipeline was building, so a release has its security history
+    build_ref: Mapped[str | None] = mapped_column(String(200))
+    build_commit: Mapped[str | None] = mapped_column(String(80))
+    build_url: Mapped[str | None] = mapped_column(String(500))
+    # The run its findings were compared with (step 4), and what the comparison found
+    compared_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="SET NULL")
+    )
+    new_findings: Mapped[list] = mapped_column(JSONB, default=list)
+    breaking: Mapped[list] = mapped_column(JSONB, default=list)  # the ones the policy fails on
+    # Why it could not decide, or what the policy decided, in one sentence (NFR-4.2)
+    message: Mapped[str | None] = mapped_column(Text)
+    started_by_key_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("api_keys.id", ondelete="SET NULL")
+    )
+    started_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
