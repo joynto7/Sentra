@@ -185,3 +185,92 @@ class ScheduleUpdateIn(BaseModel):
     recipient_ids: list[uuid.UUID] | None = None
     frequency: str | None = None
     status: str | None = None
+
+
+# ---------------------------------------------------------------- the CI/CD gate (FR-9.4)
+
+
+class GateIn(BaseModel):
+    """UC-9.4 steps 1-2: the campaign the gate runs, and the policy it judges by."""
+
+    name: str = Field(min_length=1, max_length=120)
+    campaign_code: str
+    fail_on: list[str] = Field(default_factory=lambda: ["critical", "high"])
+    fail_on_reopened: bool = True
+
+
+class GateUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    fail_on: list[str] | None = None
+    fail_on_reopened: bool | None = None
+    status: str | None = None
+
+
+class GateRunIn(BaseModel):
+    """What the pipeline says about the build it is checking (UC-9.5 step 6)."""
+
+    build_ref: str | None = Field(default=None, max_length=200)
+    build_commit: str | None = Field(default=None, max_length=80)
+    build_url: str | None = Field(default=None, max_length=500)
+
+
+class GateFindingOut(BaseModel):
+    code: str
+    title: str
+    severity: str
+    test: str
+    component: str
+    why: str  # "new", or "reopened" for a finding that was fixed and came back
+
+
+class GateRunOut(BaseModel):
+    """One call of the gate, as the pipeline and Screen 55 read it."""
+
+    gate: str  # G-001
+    number: int
+    verdict: str
+    # What it decided, in one sentence the pipeline log can print (NFR-4.2)
+    message: str | None
+    run_code: str | None  # the campaign run it started
+    run_status: str | None
+    build_ref: str | None
+    build_commit: str | None
+    build_url: str | None
+    compared_with: str | None  # the last accepted run its findings were measured against
+    new_findings: list[GateFindingOut]
+    breaking: list[GateFindingOut]
+    started_by: str | None  # the key or the person that started it
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class GateOut(BaseModel):
+    """A gate with its policy and how its last runs went (UC-9.4 step 3)."""
+
+    code: str
+    name: str
+    status: str
+    target_id: uuid.UUID
+    target_name: str
+    campaign_code: str
+    campaign_name: str
+    fail_on: list[str]
+    fail_on_reopened: bool
+    policy_words: str
+    baseline_run_code: str | None
+    created_by: str | None
+    created_at: datetime
+    runs: list[GateRunOut]
+
+
+class GateCampaignRef(BaseModel):
+    code: str
+    name: str
+    target_id: uuid.UUID
+    target_name: str
+
+
+class GateList(BaseModel):
+    rows: list[GateOut]
+    # The campaigns a gate can still be made of (step 1): one gate per campaign
+    campaigns: list[GateCampaignRef]
