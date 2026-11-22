@@ -155,6 +155,8 @@ class RunTrigger(StrEnum):
     MANUAL = "manual"  # "Launch" (UC-5.3 step 1)
     SCHEDULE = "schedule"  # the campaign's schedule (UC-5.3, 1a; FR-5.3)
     API = "api"  # a CI/CD pipeline through the API (UC-5.3, 1a; FR-9.5)
+    # FR-8.4: the fixes of a remediation are in effect, so Sentra retests the finding (UC-8.6)
+    REMEDIATION = "remediation"
 
 
 class RunStatus(StrEnum):
