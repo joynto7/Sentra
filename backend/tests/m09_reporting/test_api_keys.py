@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.core.audit import AuditLogEntry
 from app.modules.m01_users.models import Role
-from app.modules.m09_reporting import api_keys
+from app.modules.m09_reporting import api_keys, schedules
 from app.modules.m09_reporting.models import ApiKey
 from tests.m01_users.test_organizations import PASSWORD, log_in
 from tests.m01_users.test_permissions import organization_with
@@ -220,3 +220,14 @@ def test_the_administrators_are_told_once_that_a_key_expires_soon(admin):
     unread = admin["client"].get("/api/v1/notifications").json()
     assert unread["items"][0]["event"] == "api_key_expiring"
     assert "expires in 3 days" in unread["items"][0]["text"]
+
+
+def test_the_clock_gives_the_warning_on_its_daily_round(admin):
+    """3a1 through Sentra's clock: Module 9's `daily()` runs once a day (FR-5.3)."""
+    make(admin["client"], expires_at=(datetime.now(UTC) + timedelta(days=3)).isoformat())
+
+    assert schedules.daily(admin["db"]) is True
+    assert schedules.daily(admin["db"]) is False  # once per key
+
+    unread = admin["client"].get("/api/v1/notifications").json()
+    assert [item["event"] for item in unread["items"]].count("api_key_expiring") == 1
