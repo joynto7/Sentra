@@ -76,6 +76,9 @@ class Row:
             key=lambda cell: WORST.index(cell["status"]),
             default=None,
         )
+        # The targets that can be tested for it: an unverified one is no gap (NOT_TESTABLE), so it
+        # isn't counted against the others either
+        applies = [cell for cell in self.cells if cell["status"] in (TESTED, STALE, GAP)]
         shown = {
             "code": self.code,
             "name": self.name,
@@ -84,6 +87,8 @@ class Row:
             "label": LABELS[worst["status"]] if worst else LABELS[OUT_OF_SCOPE],
             "reason": worst["reason"] if worst else OUT_OF_SCOPE_REASON,
             "worst_target": worst["target_name"] if worst else None,
+            "tested_targets": sum(1 for cell in applies if cell["status"] == TESTED),
+            "applicable_targets": len(applies),
             "open_total": sum(self.open_by_severity.values()),
             "open_by_severity": self.open_by_severity,
         }

@@ -12,6 +12,7 @@ from app.modules.m05_campaigns.models import Attempt, CampaignRun
 from app.modules.m07_risk import coverage
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
+from tests.m05_campaigns.test_campaigns import add_target
 from tests.m07_risk.conftest import (
     PERSONAL_TOKEN,
     REFUND_TOOL,
@@ -241,6 +242,27 @@ def test_the_dashboard_lists_the_open_findings_by_category(team, run_with):
     assert first["status"] == coverage.TESTED
     assert "cells" not in first
     assert len(shown["by_category"]) == 10
+
+
+def test_the_dashboard_counts_the_targets_a_category_was_tested_on(team, run_with):
+    """Screen 42's coverage column says "1 of 2 targets tested" instead of naming the one target
+    with a gap. Tested counts a target whose test still holds; the total is every target that
+    could be tested for the category, so a target whose ownership isn't verified is left out, as
+    it is no gap either."""
+    profile_for(team.db, team.agent, knowledge_sources=[{"name": "Knowledge sources"}])
+    knowledge_finding(team, run_with, category="LLM02")
+    add_target(team.db, team.org, name="Branch Locator Assistant")
+    add_target(team.db, team.org, name="Mortgage FAQ Bot", status="registered")
+    team.db.commit()
+
+    shown = team.client.get("/api/v1/risk/dashboard").json()
+    row = {one["code"]: one for one in shown["by_category"]}["LLM02"]
+    statuses = [cell["status"] for cell in rows_of(team.client)["LLM02"]["cells"]]
+
+    applies = (coverage.TESTED, coverage.STALE, coverage.GAP)
+    assert row["tested_targets"] == statuses.count(coverage.TESTED) == 1
+    assert row["applicable_targets"] == sum(status in applies for status in statuses) == 2
+    assert coverage.NOT_TESTABLE in statuses  # the unverified target, which isn't counted
 
 
 def test_another_organization_sees_no_coverage(team, run_with):

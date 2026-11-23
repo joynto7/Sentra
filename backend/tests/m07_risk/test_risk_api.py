@@ -1,6 +1,9 @@
 """Reading the risk (FR-7.1, FR-7.2; UC-7.3 View Risk Dashboard, UC-7.2; NFR-3.3, NFR-4.2). Dummy
 values only: the messages ATTEMPT-1 …, fake canary tokens and invented replies."""
 
+from sqlalchemy import select
+
+from app.modules.m05_campaigns.models import CampaignRun, RunStatus
 from app.modules.m07_risk.service import NO_RUN, UNVERIFIED
 from tests.m01_users.test_organizations import create as create_organization
 from tests.m01_users.test_organizations import log_in, new_user
@@ -46,6 +49,27 @@ def test_the_dashboard_shows_each_targets_score_and_its_open_findings(team, run_
     assert (finding["code"], finding["severity"]) == ("F-001", "critical")
     assert (finding["reproducibility"], finding["provisional"]) == ("1.000", True)
     assert finding["target"]["name"] == "Payments Operations Agent"
+
+
+def test_a_run_that_is_going_on_now_is_on_the_dashboard(team, run_with):
+    """ "Last campaign run" says when a run is going on now, with what opens its live monitor,
+    instead of only the date of the last run that ended."""
+    critical_run(team, run_with)
+    assert team.client.get(DASHBOARD).json()["targets"][0]["live_run"] is None
+    # Jobs run at once in the tests, so the run is set going again the way a worker would see it
+    run = team.db.scalar(select(CampaignRun).order_by(CampaignRun.number.desc()))
+    run.status = RunStatus.RUNNING
+    team.db.commit()
+
+    (row,) = team.client.get(DASHBOARD).json()["targets"]
+
+    assert row["live_run"] == {
+        "code": f"R-001-{run.number}",
+        "campaign": "C-001",
+        "number": run.number,
+        "status": "running",
+    }
+    assert row["last_run_at"] is not None  # the date of the last run that ended is still known
 
 
 def test_a_target_without_a_score_says_why_it_has_none(team, run_with):

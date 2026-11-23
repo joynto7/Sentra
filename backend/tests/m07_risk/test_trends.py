@@ -4,7 +4,8 @@ the messages ATTEMPT-1 …, invented replies and fake canary tokens.
 
 from datetime import UTC, datetime, timedelta
 
-from app.modules.m06_findings.models import FindingStatus
+from app.modules.m06_findings import triage
+from app.modules.m06_findings.models import FindingEventKind, FindingStatus
 from app.modules.m07_risk.models import RiskScore, ScoreTrigger
 from app.modules.m07_risk.trends import BUCKETS
 from tests.m07_risk.conftest import REFUND_TOOL, findings_of, profile_for, scores_of
@@ -39,6 +40,30 @@ def test_the_trend_counts_the_findings_that_came_and_the_ones_that_were_closed(t
 
     assert after["buckets"][-1]["closed"] == 1 and after["net_change"] == 1
     assert second.status in (FindingStatus.NEW, FindingStatus.REQUIRES_CONFIRMATION)
+
+
+def test_a_closed_finding_counts_when_it_was_closed(team, run_with):
+    """FR-6.5's history dates a closing. A finding last seen two months ago and marked a false
+    positive today counts among today's closed findings, in the bars and in the closed counts."""
+    profile_for(team.db, team.agent, tools=[REFUND_TOOL])
+    model_finding(team, run_with)
+    finding = findings_of(team.db)[0]
+    finding.last_seen_at = datetime.now(UTC) - timedelta(days=60)
+    finding.status = FindingStatus.FALSE_POSITIVE
+    triage.record(
+        team.db,
+        finding,
+        FindingEventKind.FALSE_POSITIVE,
+        text="The answer is the one the application should give.",
+        was=FindingStatus.NEW,
+        became=FindingStatus.FALSE_POSITIVE,
+    )
+    team.db.commit()
+
+    shown = dashboard(team.client, days=30)
+
+    assert shown["trends"]["buckets"][-1]["closed"] == 1
+    assert shown["by_status"]["false_positive"] == 1
 
 
 def test_the_parts_of_the_period_follow_the_chosen_period(team, run_with):
