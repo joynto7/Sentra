@@ -22,6 +22,10 @@ from app.modules.m02_targets.models import (
     TargetStatus,
 )
 from app.modules.m02_targets.schemas import CredentialIn, TargetIn, TargetPatch
+from app.modules.m07_risk import scoring
+from app.modules.m07_risk.models import RiskScore
+from app.modules.m08_remediation import gateways
+from app.modules.m08_remediation.models import GatewayStatus, ShieldGateway
 
 MAX_RATE = 600  # requests per minute: an upper limit for every target (FR-5.7)
 MAX_CREDENTIALS = 10
@@ -86,6 +90,59 @@ def get_target(db: Session, organization_id: uuid.UUID, target_id: uuid.UUID) ->
     return target
 
 
+# Screen 16's sortable columns (UX task 4.5): the name A to Z by default, so that every other list
+# of targets keeps its order; the targets page itself asks for the highest risk score first
+SORTS = ("name", "risk", "last_run")
+
+# Screen 16's Sentra Shield column: the state of the gateway in front of each target now, as the
+# Shield pages say it (FR-8.3, FR-10.6, M8). No gateway, or a revoked one, is "not connected".
+NOT_CONNECTED = "not_connected"
+SHIELD_STATES = (
+    GatewayStatus.ACTIVE,
+    GatewayStatus.NOT_REPORTING,
+    GatewayStatus.PENDING,
+    GatewayStatus.NOT_IN_PATH,
+    NOT_CONNECTED,
+)
+SHIELD_LABELS = {**gateways.STATUS_LABELS, NOT_CONNECTED: "Not connected"}
+
+
+def shield_states(
+    db: Session, organization_id: uuid.UUID, target_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """The Sentra Shield state of each target, read from Module 8's gateways."""
+    found = dict.fromkeys(target_ids, NOT_CONNECTED)
+    if not target_ids:
+        return found
+    for gateway in db.scalars(
+        scoped_select(ShieldGateway, organization_id).where(ShieldGateway.target_id.in_(target_ids))
+    ):
+        state = gateways.state_now(gateway)
+        found[gateway.target_id] = NOT_CONNECTED if state == GatewayStatus.REVOKED else state
+    return found
+
+
+def _ordered(
+    targets: list[Target], sort: str, direction: str, scores: dict[uuid.UUID, RiskScore]
+) -> list[Target]:
+    """The targets in the chosen order; ties keep the names' order. A target without a risk
+    score (or without a run) comes last either way: it has not been tested, which is neither the
+    highest nor the lowest risk."""
+    by_name = sorted(targets, key=lambda target: target.name.lower())
+    if sort == "name":
+        return by_name if direction == "asc" else by_name[::-1]
+
+    def value(target: Target):
+        score = scores.get(target.id)
+        if score is None:
+            return None
+        return score.score if sort == "risk" else score.last_run_at
+
+    known = [target for target in by_name if value(target) is not None]
+    known.sort(key=value, reverse=direction == "desc")
+    return known + [target for target in by_name if value(target) is None]
+
+
 def list_targets(
     db: Session,
     organization_id: uuid.UUID,
@@ -96,8 +153,15 @@ def list_targets(
     ownership: list[str],
     page: int,
     page_size: int,
-) -> tuple[list[Target], int, dict[str, int]]:
-    """The targets page (Screen 16): the Active or Archived tab, search and filters."""
+    *,
+    shield: list[str] | None = None,
+    sort: str = "name",
+    direction: str = "asc",
+) -> tuple[list[Target], int, dict[str, int], dict[uuid.UUID, str]]:
+    """The targets page (Screen 16): the Active or Archived tab, search, filters and the order.
+    An organization has tens of targets, not thousands, so the matching ones are ordered and cut
+    into pages here, with the risk scores of Module 7 and the gateways of Module 8 at hand. Also
+    gives the Sentra Shield state of the targets on the page."""
     archived = Target.status == TargetStatus.ARCHIVED
     counts = {
         "active": _count(db, scoped_select(Target, organization_id).where(~archived)),
@@ -117,14 +181,15 @@ def list_targets(
         query = query.where(Target.environment.in_(environments))
     if ownership:
         query = query.where(Target.status.in_(ownership))
-    total = _count(db, query)
-    items = db.scalars(
-        query.options(selectinload(Target.credentials))
-        .order_by(func.lower(Target.name))
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    return list(items), total, counts
+    matching = list(db.scalars(query.options(selectinload(Target.credentials))))
+    states = shield_states(db, organization_id, [target.id for target in matching])
+    if shield:
+        matching = [target for target in matching if states[target.id] in shield]
+    scores = scoring.current(db, organization_id) if sort != "name" else {}
+    ordered = _ordered(matching, sort, direction, scores)
+    start = (page - 1) * page_size
+    shown = ordered[start : start + page_size]
+    return shown, len(ordered), counts, {target.id: states[target.id] for target in shown}
 
 
 def owner_names(db: Session, targets: list[Target]) -> dict[uuid.UUID, str]:
