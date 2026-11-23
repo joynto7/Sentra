@@ -158,3 +158,61 @@ class DataSharingOut(BaseModel):
 class DataSharingIn(BaseModel):
     local_models_only: bool
     password: str = Field(min_length=1, max_length=256)  # UC-10.5 step 5 (NFR-3.5)
+
+
+# ---------------------------------------------------------------- data retention (FR-10.5)
+
+
+class RetentionKindOut(BaseModel):
+    """One of the three kinds of data on Screen 60: how long it is kept, what the platform
+    allows, and how much of it the organization stores now (UC-10.7 step 1)."""
+
+    days: int
+    minimum: int
+    maximum: int
+    items: int
+    bytes: int
+
+
+class RetentionRunOut(BaseModel):
+    """What the last clean-up did (UC-10.8 step 6)."""
+
+    started_at: datetime
+    finished_at: datetime | None
+    evidence_deleted: int
+    evidence_bytes: int
+    attempts_deleted: int
+    reports_deleted: int
+    postponed: int
+    failures: int
+
+
+class RetentionOut(BaseModel):
+    evidence: RetentionKindOut
+    campaign: RetentionKindOut
+    reports: RetentionKindOut
+    using_defaults: bool  # the organization has never set its own periods
+    changed_by: str | None
+    changed_at: datetime | None
+    clean_up_at: str  # when the daily clean-up runs, as Screen 60 writes it, e.g. "01:00 UTC"
+    last_run: RetentionRunOut | None
+    audit_log_days: int  # not covered by these periods (NFR-8.3)
+
+
+class RetentionIn(BaseModel):
+    evidence_days: int = Field(ge=1, le=36500)
+    campaign_days: int = Field(ge=1, le=36500)
+    report_days: int = Field(ge=1, le=36500)
+    password: str = Field(min_length=1, max_length=256)  # UC-10.7 step 5 (NFR-3.5)
+
+
+class RetentionPreviewOut(BaseModel):
+    """Step 4: what the next clean-up would delete with the periods the administrator typed, and
+    4a's open findings whose evidence is among it."""
+
+    evidence_items: int
+    evidence_bytes: int
+    attempts: int
+    reports: int
+    postponed: int
+    open_findings: list[str]
