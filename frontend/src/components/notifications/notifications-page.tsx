@@ -20,10 +20,11 @@ export function NotificationsPage() {
         <p className="text-sm text-muted-foreground" aria-live="polite">
           {unread === 1 ? "1 unread notification" : `${unread} unread notifications`}
         </p>
+        {/* The count beside it says why there is nothing to mark */}
         <Button
           variant="outline"
           className="h-9"
-          disabled={!unread}
+          hidden={!unread}
           onClick={async () => {
             await markAllRead().catch(() => undefined)
             load()
