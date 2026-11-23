@@ -31,12 +31,12 @@ import { formatDate } from "@/lib/test-library"
 import { type Environment, formatDateTime } from "@/lib/targets"
 
 /** "Create campaign" in the page header, for Security Analysts (FR-1.6). */
-export function CreateCampaignButton() {
+export function CreateCampaignButton({ targetId }: { targetId?: string }) {
   const canCreate = useCan("manage_campaigns")
   if (!canCreate) return null
   return (
     <Button asChild className="h-9 shrink-0 hover:bg-primary-hover">
-      <Link href="/campaigns/new">
+      <Link href={targetId ? `/campaigns/new?target=${targetId}` : "/campaigns/new"}>
         <Plus aria-hidden="true" />
         Create campaign
       </Link>
@@ -45,9 +45,9 @@ export function CreateCampaignButton() {
 }
 
 /** Screen 33, the campaigns of the organization: the entry to UC-5.1 to UC-5.7. */
-export function CampaignsList() {
+export function CampaignsList({ targetId }: { targetId?: string } = {}) {
   const canCreate = useCan("manage_campaigns")
-  const [campaigns, setCampaigns] = useState<CampaignItem[] | null>(null)
+  const [all, setCampaigns] = useState<CampaignItem[] | null>(null)
   const [runs, setRuns] = useState<RunOverviewItem[]>([])
   const [failed, setFailed] = useState(false)
   const [search, setSearch] = useState("")
@@ -58,12 +58,15 @@ export function CampaignsList() {
     listCampaigns()
       .then(setCampaigns)
       .catch(() => setFailed(true))
-    // The organization's runs, newest first: the last run of each campaign and the runs tab.
-    listOrganizationRuns(new URLSearchParams({ limit: "100" }), controller.signal)
+    // The organization's runs, or inside a target's tabs that target's runs, newest first: the
+    // last run of each campaign and the runs tab.
+    const asked = new URLSearchParams({ limit: "100" })
+    if (targetId) asked.set("target_id", targetId)
+    listOrganizationRuns(asked, controller.signal)
       .then(setRuns)
       .catch(() => setRuns([]))
     return () => controller.abort()
-  }, [])
+  }, [targetId])
 
   if (failed) {
     return (
@@ -72,7 +75,7 @@ export function CampaignsList() {
       </Alert>
     )
   }
-  if (!campaigns) {
+  if (!all) {
     return (
       <div className="space-y-2" role="status" aria-label="Loading campaigns">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -81,10 +84,11 @@ export function CampaignsList() {
       </div>
     )
   }
-  if (campaigns.length === 0) {
+  const inTarget = targetId ? all.filter((campaign) => campaign.target?.id === targetId) : all
+  if (inTarget.length === 0) {
     return (
       <EmptyState
-        title="No campaigns yet"
+        title={targetId ? "No campaign for this target yet" : "No campaigns yet"}
         description={
           canCreate
             ? "A campaign tests one verified target with the test suites you choose, within the limits you set."
@@ -93,7 +97,7 @@ export function CampaignsList() {
         action={
           canCreate ? (
             <Button asChild className="h-9 hover:bg-primary-hover">
-              <Link href="/campaigns/new">Create campaign</Link>
+              <Link href={targetId ? `/campaigns/new?target=${targetId}` : "/campaigns/new"}>Create campaign</Link>
             </Button>
           ) : undefined
         }
@@ -101,6 +105,7 @@ export function CampaignsList() {
     )
   }
 
+  const campaigns = inTarget
   const lastRun = new Map<string, RunOverviewItem>()
   for (const run of runs) {
     const code = run.campaign?.code
@@ -129,7 +134,7 @@ export function CampaignsList() {
             className="h-9 w-full rounded-[7px] border border-input bg-card pr-3 pl-8 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           />
         </label>
-        <FilterSelect label="Target" value={target} onChange={setTarget} options={targets.map(([value, label]) => ({ value, label }))} />
+        {!targetId && <FilterSelect label="Target" value={target} onChange={setTarget} options={targets.map(([value, label]) => ({ value, label }))} />}
         <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
           {shown.length} of {campaigns.length} campaigns
         </span>
