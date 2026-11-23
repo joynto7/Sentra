@@ -21,7 +21,7 @@ from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m02_targets.service import owner_names
 from app.modules.m04_tests.models import TestDefinition
 from app.modules.m04_tests.schema import Severity
-from app.modules.m05_campaigns.models import ENDED, CampaignRun
+from app.modules.m05_campaigns.models import ACTIVE, ENDED, Campaign, CampaignRun, RunStatus
 from app.modules.m06_findings.models import CLOSED, OPEN, Finding, FindingStatus
 from app.modules.m06_findings.service import SEVERITY_RANK, finding_row
 from app.modules.m07_risk import coverage, rating, scoring, trends
@@ -68,8 +68,8 @@ def _counts(
     category: str | None = None,
 ) -> dict[uuid.UUID, Counts]:
     """The findings of each target: the open ones by severity and by status, and the closed ones
-    of the period. Until FR-6.5 records when a status changed, a closed finding belongs to the
-    period in which it was last seen. A chosen category narrows every count (UC-7.3 step 4)."""
+    of the period, dated by when they were closed (trends.closing). A chosen category narrows
+    every count (UC-7.3 step 4)."""
     query = (
         select(Finding.target_id, Finding.severity, Finding.status, func.count())
         .where(Finding.organization_id == organization_id)
@@ -85,12 +85,15 @@ def _counts(
         if status in OPEN:
             counts.open_by_severity[severity] += count
             counts.by_status[status] += count
+    entered, closed_at = trends.closing(organization_id)
     closed = (
         select(Finding.target_id, Finding.status, func.count())
+        .select_from(Finding)
+        .outerjoin(entered, entered.c.finding_id == Finding.id)
         .where(
             Finding.organization_id == organization_id,
             Finding.status.in_(CLOSED),
-            Finding.last_seen_at >= cutoff,
+            closed_at >= cutoff,
         )
         .group_by(Finding.target_id, Finding.status)
     )
@@ -111,7 +114,13 @@ def _not_scored(target: Target, score: RiskScore | None) -> str:
     return UNVERIFIED if target.status != TargetStatus.VERIFIED else NO_RUN
 
 
-def _target_row(target: Target, score: RiskScore | None, counts: Counts, owner: str) -> dict:
+def _target_row(
+    target: Target,
+    score: RiskScore | None,
+    counts: Counts,
+    owner: str,
+    live: dict | None = None,
+) -> dict:
     return {
         "id": target.id,
         "name": target.name,
@@ -123,11 +132,45 @@ def _target_row(target: Target, score: RiskScore | None, counts: Counts, owner: 
         "band": score.band if score else None,
         "calculated_at": score.calculated_at if score else None,
         "last_run_at": score.last_run_at if score else None,
+        "live_run": live,
         "open_total": counts.open_total,
         "open_by_severity": counts.open_by_severity,
         "awaiting_confirmation": counts.awaiting_confirmation(),
         "not_scored_reason": _not_scored(target, score),
     }
+
+
+def _live_runs(
+    db: Session, organization_id: uuid.UUID, target_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, dict]:
+    """The campaign run of each target that is going on now — queued, running or paused — so
+    that "Last campaign run" says so instead of showing an older date. A target with more than
+    one gives the one that is running. A retest's run has no campaign and no live monitor of its
+    own, so only campaign runs count."""
+    if not target_ids:
+        return {}
+    rows = db.execute(
+        select(CampaignRun, Campaign.number)
+        .join(Campaign, Campaign.id == CampaignRun.campaign_id)
+        .where(
+            CampaignRun.organization_id == organization_id,
+            CampaignRun.target_id.in_(target_ids),
+            CampaignRun.status.in_(ACTIVE),
+        )
+    ).all()
+    first = {RunStatus.RUNNING: 0, RunStatus.PAUSED: 1, RunStatus.QUEUED: 2}
+    found: dict[uuid.UUID, dict] = {}
+    for run, campaign in sorted(rows, key=lambda row: first.get(row[0].status, 3)):
+        found.setdefault(
+            run.target_id,
+            {
+                "code": f"R-{campaign:03d}-{run.number}",
+                "campaign": f"C-{campaign:03d}",
+                "number": run.number,
+                "status": run.status,
+            },
+        )
+    return found
 
 
 def last_run_at(
@@ -170,6 +213,7 @@ def dashboard(
     counts = _counts(db, organization_id, target_id, cutoff, category)
     scores = scoring.current(db, organization_id)
     owners = owner_names(db, targets)
+    live = _live_runs(db, organization_id, [target.id for target in targets])
     empty = _zero()
     rows = [
         _target_row(
@@ -177,6 +221,7 @@ def dashboard(
             scores.get(target.id),
             counts.get(target.id, empty),
             owners.get(target.created_by_id, ""),
+            live.get(target.id),
         )
         for target in targets
     ]
