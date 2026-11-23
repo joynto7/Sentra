@@ -1,5 +1,6 @@
 import uuid
 from dataclasses import asdict
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -42,12 +43,16 @@ def list_test_definitions(
     atlas: str = "",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
+    sort: Literal["category", "id", "name", "severity"] = "category",
+    direction: Literal["asc", "desc"] = "asc",
     org: uuid.UUID | None = Depends(organization_id),
     db: Session = Depends(get_db),
 ) -> CatalogueOut:
-    """The catalogue: search, filter and page through the current test definitions."""
+    """The catalogue: search, filter, sort and page through the current test definitions."""
     filters = service.CatalogueFilters(search, category, severity, target_type, origin, atlas)
-    items, total, facets = service.list_catalogue(db, org, filters, page, page_size)
+    items, total, facets = service.list_catalogue(
+        db, org, filters, page, page_size, sort, direction
+    )
     return CatalogueOut(
         items=[TestDefinitionSummary.model_validate(item) for item in items],
         total=total,
