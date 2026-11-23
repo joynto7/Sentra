@@ -31,6 +31,8 @@ from app.modules.m01_users.schemas import (
     TokenRequest,
     UserOut,
 )
+from app.modules.m01_users.sso_routes import login_router as sso_login_router
+from app.modules.m01_users.sso_routes import organization_router as sso_organization_router
 
 auth_router = APIRouter(prefix="/auth", tags=["M1 Authentication"])
 
@@ -153,5 +155,7 @@ router.include_router(mfa_account_router)
 router.include_router(organization_router)
 router.include_router(member_router)
 router.include_router(mfa_organization_router)
+router.include_router(sso_organization_router)
+router.include_router(sso_login_router)
 router.include_router(invitation_admin_router)
 router.include_router(invitation_router)

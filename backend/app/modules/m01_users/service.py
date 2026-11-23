@@ -272,6 +272,26 @@ def login(
     return user, LoginStep.DONE, raw
 
 
+def sso_session(
+    db: Session,
+    user: User,
+    organization_id,
+    user_agent: str | None,
+    ip_address: str | None,
+) -> tuple[LoginStep, str]:
+    """UC-1.5 step 6: the session of a login that the identity provider vouched for, and the
+    workspace it opens. Quality requirement 6 — the same security rules as a password login — so
+    an organization that requires two-step verification still gets it: the requirement is the
+    organization's own, and a provider cannot answer for it. The caller commits."""
+    user.last_organization_id = organization_id
+    if user.mfa_enabled or organizations.mfa_required_by(db, user):
+        step = LoginStep.MFA if user.mfa_enabled else LoginStep.MFA_SETUP
+        return step, start_second_step(db, user)
+    raw = start_session(db, user, user_agent, ip_address)
+    record(db, user, AccountEventKind.LOGGED_IN_SSO, ip_address, user_agent)
+    return LoginStep.DONE, raw
+
+
 def start_second_step(db: Session, user: User) -> str:
     """The raw token of a login's second step (steps 3-4). Starting a new login ends an older
     one that is still waiting."""

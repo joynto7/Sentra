@@ -25,6 +25,7 @@ from app.modules.m01_users.schemas import (
     RecoveryCodesOut,
     SecondStepIn,
 )
+from app.modules.m01_users.sso_routes import state_of
 
 login_router = APIRouter(prefix="/auth/login/mfa", tags=["M1 Authentication"])
 account_router = APIRouter(prefix="/account/mfa", tags=["M1 Profile"])
@@ -173,6 +174,7 @@ def _security_out(
     return OrganizationSecurityOut(
         mfa_required=organization.mfa_required,
         members_without_mfa=len(mfa.members_without_mfa(db, organization.id)),
+        sso=state_of(db, organization.id),
         password_confirmed_at=session.password_confirmed_at,
         password_confirmed_until=service.password_confirmed_until(session),
     )
