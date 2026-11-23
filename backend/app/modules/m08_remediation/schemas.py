@@ -265,6 +265,7 @@ class GatewayOut(BaseModel):
     target_id: uuid.UUID
     target_name: str
     target_environment: str
+    target_archived: bool = False  # (FR-2.6, M2): kept only while its gateway isn't revoked
     position: str  # in_front or before_model (UC-8.1 step 1)
     position_label: str
     status: str  # pending, not_in_path, active, not_reporting or revoked
