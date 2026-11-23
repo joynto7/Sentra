@@ -278,6 +278,16 @@ export function DeployDialog({
           </div>
         )}
 
+        {!busy && !one && (
+          <p id="deploy-at-hint" className="mt-4 text-[13px] text-muted-foreground">
+            No approved remediation of this target waits to be deployed.
+          </p>
+        )}
+        {!busy && one && later && !at && (
+          <p id="deploy-at-hint" className="mt-4 text-[13px] text-muted-foreground">
+            Choose when the maintenance window starts, or deploy now.
+          </p>
+        )}
         <DialogFooter className="mt-6">
           <Button variant="outline" disabled={busy} onClick={onClose}>
             Cancel
@@ -285,6 +295,7 @@ export function DeployDialog({
           <Button
             className="hover:bg-primary-hover"
             disabled={busy || !one || (later && !at)}
+            aria-describedby={!one || (later && !at) ? "deploy-at-hint" : undefined}
             onClick={deploy}
           >
             {busy ? "Deploying…" : later ? "Schedule the deployment" : "Deploy now"}

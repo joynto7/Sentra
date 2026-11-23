@@ -11,6 +11,8 @@ export type Gateway = {
   target_id: string
   target_name: string
   target_environment: string
+  /** The target is archived but its gateway was never revoked, so it is still listed */
+  target_archived?: boolean
   position: GatewayPosition
   position_label: string
   status: GatewayStatus
@@ -38,7 +40,8 @@ export type TargetRef = { id: string; name: string }
 
 export type GatewayList = {
   rows: Gateway[]
-  targets_without_gateway: TargetRef[]
+  /** `verified: false`: the target's ownership isn't verified, so it can't take a gateway yet */
+  targets_without_gateway: (TargetRef & { verified?: boolean })[]
   heartbeat_seconds: number
 }
 

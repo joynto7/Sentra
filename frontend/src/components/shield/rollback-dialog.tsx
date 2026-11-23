@@ -190,6 +190,11 @@ export function RollbackDialog({
           </>
         )}
 
+        {!busy && told && (reason.trim().length === 0 || password.length === 0) && (
+          <p id="rollback-needs" className="mt-4 text-[13px] text-muted-foreground">
+            Write why, and enter your password, to confirm.
+          </p>
+        )}
         <DialogFooter className="mt-6">
           <Button variant="outline" disabled={busy} onClick={onClose}>
             Cancel
@@ -197,6 +202,9 @@ export function RollbackDialog({
           <Button
             variant="destructive"
             disabled={busy || !told || reason.trim().length === 0 || password.length === 0}
+            aria-describedby={
+              told && (reason.trim().length === 0 || password.length === 0) ? "rollback-needs" : undefined
+            }
             onClick={confirm}
           >
             <TriangleAlert aria-hidden="true" />
