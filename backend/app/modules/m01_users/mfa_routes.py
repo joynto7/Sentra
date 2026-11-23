@@ -170,11 +170,15 @@ def renew_recovery_codes(
 def _security_out(
     db: Session, membership: Membership, session: UserSession
 ) -> OrganizationSecurityOut:
+    from app.modules.m05_campaigns import approval  # FR-5.2 (M5) keeps its own rule
+
     organization = db.get_one(Organization, membership.organization_id)
     return OrganizationSecurityOut(
         mfa_required=organization.mfa_required,
         members_without_mfa=len(mfa.members_without_mfa(db, organization.id)),
         sso=state_of(db, organization.id),
+        requires_scope_approval=organization.requires_scope_approval,
+        security_managers=len(approval.managers(db, organization.id)),
         password_confirmed_at=session.password_confirmed_at,
         password_confirmed_until=service.password_confirmed_until(session),
     )
@@ -199,7 +203,11 @@ def update_organization_security(
     db: Session = Depends(get_db),
 ) -> OrganizationSecurityOut:
     """Steps 3, 6 and 7 (3a), with the password confirmed in the last 10 minutes (step 2)."""
+    from app.modules.m05_campaigns import approval  # FR-5.2 (M5) keeps its own rule
+
     organization = db.get_one(Organization, membership.organization_id)
     admin = db.get_one(User, membership.user_id)
     mfa.require_mfa(db, organization, admin, data.mfa_required, background)
+    if data.requires_scope_approval is not None:
+        approval.set_policy(db, organization, admin, data.requires_scope_approval)
     return _security_out(db, membership, session)
