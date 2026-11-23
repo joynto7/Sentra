@@ -9,7 +9,6 @@ from sqlalchemy import select, update
 
 from app.core.audit import AuditLogEntry
 from app.core.config import get_settings
-from app.core.models import Organization
 from app.modules.m01_users.models import Membership, Role, User
 from app.modules.m02_targets.models import Target
 from app.modules.m05_campaigns import limits, runs
@@ -155,9 +154,6 @@ def test_only_security_analysts_launch_campaigns(team, use):
 
 def test_a_campaign_waiting_for_approval_or_rejected_cant_be_launched(team, use):
     use()
-    # FR-5.2 is optional, so the check only applies where the organization requires approval;
-    # the requirement itself and every other case are tested in test_scope_approval.py.
-    team.db.execute(update(Organization).values(requires_scope_approval=True))
     for status, code in (
         ("awaiting_approval", "awaiting_approval"),
         ("rejected", "approval_rejected"),

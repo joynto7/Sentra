@@ -45,8 +45,6 @@ EVENTS = [
     Event("api_key_expiring", "API key about to expire"),
     # UC-9.7, 6a1: Sentra switched a webhook off after repeated failures, so its events stop
     Event("webhook_disabled", "Webhook disabled after repeated failures"),
-    # UC-5.2 step 4 and 3a1: a Security Manager approved or rejected a campaign I submitted
-    Event("campaign_scope_decided", "Decision on a campaign I submitted"),
     Event(
         "account_security",
         "Account security alerts (password changes, new logins)",

@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime, time
+from datetime import datetime, time
 from decimal import Decimal
 from enum import IntEnum, StrEnum
 
@@ -422,34 +422,3 @@ class AgentRefinement(UUIDPrimaryKey, OrganizationScoped, Base):
     model: Mapped[str | None] = mapped_column(String(200))
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal(0))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class ApprovalAction(StrEnum):
-    """What happened in a campaign's approval, for the timeline of Screen 35 (UC-5.2 step 2)."""
-
-    SUBMITTED = "submitted"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    SCOPE_CHANGED = "scope_changed"  # 5a: an approved campaign changed and needs a new approval
-
-
-class CampaignApproval(UUIDPrimaryKey, OrganizationScoped, Base):
-    """One step of a campaign's scope approval (FR-5.2, optional): who submitted it, who decided
-    and why. Decisions are never undone, so the rows are the whole history of UC-5.2 — the
-    timeline of Screen 35 and the attribution of quality requirement 4 (FR-10.2)."""
-
-    __tablename__ = "campaign_approvals"
-    __table_args__ = (Index("ix_campaign_approvals_campaign", "campaign_id", "created_at"),)
-
-    campaign_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
-    )
-    action: Mapped[str] = mapped_column(String(20))
-    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    # The analyst's comment when submitting, or the manager's reason when rejecting (3a1)
-    note: Mapped[str | None] = mapped_column(Text)
-    # Set in Python, not by the database: two steps of one approval can be written inside one
-    # transaction, where now() would give them the same moment and leave the timeline unsorted.
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now()
-    )

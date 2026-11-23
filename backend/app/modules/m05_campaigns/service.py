@@ -22,7 +22,7 @@ from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m04_tests.models import TestDefinition, TestSuite
 from app.modules.m04_tests.schema import DetectionMethod
 from app.modules.m04_tests.suites import ATTEMPTS_PER_TEST
-from app.modules.m05_campaigns import approval, limits, scheduling
+from app.modules.m05_campaigns import limits, scheduling
 from app.modules.m05_campaigns.models import Campaign
 from app.modules.m05_campaigns.window import clock_time
 
@@ -117,8 +117,6 @@ def estimate(
     return {
         "tests": len(applicable),
         "skipped": skipped,
-        # FR-5.2: the builder says so before the campaign is submitted (Screen 34)
-        "requires_scope_approval": approval.required(db, organization_id),
         "estimated_attempts": attempts,
         "target_safe_rate": target.max_request_rate if target else None,
         # UC-5.1 step 2; None without an approved threat model (2a)
@@ -248,8 +246,6 @@ def get_campaign(db: Session, organization_id: uuid.UUID, code: str) -> dict:
             db, organization_id, campaign.target_id, campaign.suites, campaign.attempt_budget
         ),
         "based_on_threat_model": _version(db, campaign.threat_model_id),
-        # FR-5.2: the decision in force, for the campaign's page and Screen 35
-        "approval_decision": approval.decided_by(db, campaign),
     }
 
 
@@ -405,8 +401,6 @@ def create(db: Session, membership: Membership, data: CampaignInput) -> Campaign
         created_by_id=membership.user_id,
         # FR-3.3: the threat model version the campaign is based on
         threat_model_id=approved.id if approved else None,
-        # FR-5.2: where the organization requires it, creating a campaign submits its scope
-        approval_status=approval.initial_status(db, membership.organization_id),
         **checked,
     )
     db.add(campaign)
@@ -418,5 +412,4 @@ def create(db: Session, membership: Membership, data: CampaignInput) -> Campaign
     except IntegrityError as exc:  # someone saved a campaign at the same moment
         db.rollback()
         raise ConflictError("Another campaign was saved at the same moment. Save again.") from exc
-    approval.after_created(db, membership, campaign)  # UC-5.2 step 1, if approval is required
     return campaign
