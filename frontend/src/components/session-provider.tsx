@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 
 import { ApiError, apiFetch } from "@/lib/api"
 import type { SessionUser } from "@/lib/session"
+import { forgetKeptLists } from "@/lib/kept-lists"
 
 const SessionContext = createContext<SessionUser | null>(null)
 
@@ -39,6 +40,7 @@ export function SessionProvider({
         if (cancelled || !(error instanceof ApiError) || error.status !== 401) return
         // Remove the expired cookie, then log in again and come back here.
         await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
+        forgetKeptLists() // Back to a list keeps nothing of this person (UX task 3.0)
         router.replace(`/login?next=${encodeURIComponent(pathname)}`)
       })
     return () => {
