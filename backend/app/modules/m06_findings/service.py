@@ -17,7 +17,7 @@ from app.modules.m02_targets.models import Target
 from app.modules.m04_tests.models import TestDefinition
 from app.modules.m04_tests.schema import CATEGORY_NAMES, DETECTION_LABELS, DetectionMethod, Severity
 from app.modules.m05_campaigns import lifecycle, runs
-from app.modules.m05_campaigns.models import Attempt, Campaign, CampaignRun
+from app.modules.m05_campaigns.models import Attempt, Campaign, CampaignRun, RunType
 from app.modules.m06_findings import evidence, reproducibility
 from app.modules.m06_findings.models import (
     CLOSED,
@@ -33,6 +33,7 @@ from app.modules.m06_findings.models import (
     Outcome,
     component_label,
 )
+from app.modules.m11_lab.models import BenchmarkRun
 
 # The order of the methods everywhere: canary token, rule matching, tool calls, LLM judge
 ORDER = {method.value: number for number, method in enumerate(DetectionMethod)}
@@ -211,13 +212,37 @@ def _filtered(
 
 
 def _run_refs(db: Session, run_ids: set[uuid.UUID]) -> dict[uuid.UUID, dict]:
-    """The code of each run, such as R-001-2."""
+    """The code of each run: R-001-2 for a campaign's run, BR-003 for a repetition of a benchmark
+    run, and "Retest" for a retest, whose run has no code of its own that people know."""
     rows = db.execute(
         select(CampaignRun, Campaign)
         .outerjoin(Campaign, Campaign.id == CampaignRun.campaign_id)
         .where(CampaignRun.id.in_(run_ids))
     ).all()
-    return {run.id: {"id": run.id, "code": lifecycle.code(run, campaign)} for run, campaign in rows}
+    benchmark_ids = {
+        run.settings["benchmark_run_id"]
+        for run, _ in rows
+        if run.run_type == RunType.BENCHMARK and (run.settings or {}).get("benchmark_run_id")
+    }
+    benchmarks = (
+        {
+            str(found.id): found.code
+            for found in db.scalars(select(BenchmarkRun).where(BenchmarkRun.id.in_(benchmark_ids)))
+        }
+        if benchmark_ids
+        else {}
+    )
+
+    def code(run: CampaignRun, campaign: Campaign | None) -> str:
+        if campaign is not None:
+            return lifecycle.code(run, campaign)
+        if run.run_type == RunType.RETEST:
+            return "Retest"
+        return benchmarks.get(
+            (run.settings or {}).get("benchmark_run_id"), lifecycle.code(run, None)
+        )
+
+    return {run.id: {"id": run.id, "code": code(run, campaign)} for run, campaign in rows}
 
 
 def _owners(db: Session, findings: list[Finding]) -> dict[uuid.UUID, dict]:
