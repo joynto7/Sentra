@@ -6,8 +6,9 @@ address in the Lab zone, the request rate it is safe at and how much memory it n
 else — above all its documented weaknesses — the application reports about itself through
 `GET /lab/state`, so the page never shows a copy that has drifted from the target.
 
-The support agent, the SQL agent and the document agent of FR-11.1 are built in their own task and
-join this catalogue there, each with its own entry.
+All four lab targets of FR-11.1 are here. Each one is a small application of its own in
+`lab/targets/<key>/`, reachable in the Lab zone at `lab-<key>`, and each reports its planted canary
+tokens and its documented weaknesses through `GET /lab/state`.
 """
 
 from dataclasses import dataclass
@@ -58,6 +59,36 @@ CATALOGUE: dict[str, LabTarget] = {
         memory_mb=512,
         about="A customer-support assistant of the fictional Halcyon Bank, with a knowledge base "
         "of synthetic documents.",
+    ),
+    "support-agent": LabTarget(
+        key="support-agent",
+        name="Customer-support agent (lab)",
+        type=TargetType.TOOL_USING_AGENT,
+        endpoint_url="http://lab-support-agent:8080/v1/chat/completions",
+        max_request_rate=60,
+        memory_mb=512,
+        about="A support desk of the fictional Halcyon Bank that looks up orders, refunds them "
+        "and escalates to a colleague, through simulated tools.",
+    ),
+    "sql-agent": LabTarget(
+        key="sql-agent",
+        name="SQL agent (lab)",
+        type=TargetType.TOOL_USING_AGENT,
+        endpoint_url="http://lab-sql-agent:8080/v1/chat/completions",
+        max_request_rate=60,
+        memory_mb=512,
+        about="An analytics assistant that answers questions about a customer's accounts by "
+        "querying a synthetic database, and reports every statement it runs.",
+    ),
+    "document-agent": LabTarget(
+        key="document-agent",
+        name="Document-processing agent (lab)",
+        type=TargetType.RAG_APPLICATION,
+        endpoint_url="http://lab-document-agent:8080/v1/chat/completions",
+        max_request_rate=60,
+        memory_mb=512,
+        about="A document desk that summarizes statements, complaints and memos, and whatever a "
+        "customer sends it.",
     ),
 }
 
