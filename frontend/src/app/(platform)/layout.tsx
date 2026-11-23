@@ -23,7 +23,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           <SidebarProvider defaultOpen={defaultOpen}>
             <AppSidebar platform />
             <SidebarInset className="min-w-0 bg-background">
-              <TopBar />
+              <TopBar platform />
               <main id="main-content" tabIndex={-1} className="flex-1 px-4 py-6 outline-none md:px-8">
                 {children}
               </main>
