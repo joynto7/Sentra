@@ -323,9 +323,15 @@ export function VersionsPage({
                   className="mb-0.5 h-9 hover:bg-primary-hover"
                   onClick={() => base !== null && compare !== null && void run(base, compare)}
                   disabled={comparing || base === null || compare === null || base === compare}
+                  aria-describedby={base === null || compare === null || base === compare ? "compare-hint" : undefined}
                 >
                   {comparing ? "Comparing…" : "Compare"}
                 </Button>
+                {(base === null || compare === null || base === compare) && (
+                  <p id="compare-hint" className="mb-1.5 text-xs text-muted-foreground">
+                    Choose two different versions to compare them.
+                  </p>
+                )}
                 {canRestore && base !== null && (
                   <Button
                     variant="outline"

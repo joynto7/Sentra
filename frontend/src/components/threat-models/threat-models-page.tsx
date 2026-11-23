@@ -137,6 +137,7 @@ function ActionCell({
  * UC-3.4). Drafts that need a person come first and are marked AI-generated (NFR-9.4). */
 export function ThreatModelsPage() {
   const canManage = useCan("manage_threat_models")
+  const canRegister = useCan("manage_targets")
   const [list, setList] = useState<ThreatModelList | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -215,11 +216,17 @@ export function ThreatModelsPage() {
       {list && list.rows.length === 0 && (
         <EmptyState
           title="No targets yet"
-          description="A threat model is made for each registered target once its ownership is verified and its profile is reviewed."
+          description={
+            canRegister
+              ? "A threat model is made for each registered target once its ownership is verified and its profile is reviewed."
+              : "A threat model is made for each registered target once its ownership is verified and its profile is reviewed. An AI Application Developer registers the targets."
+          }
           action={
-            <Button asChild variant="outline">
-              <Link href="/targets">Go to Targets</Link>
-            </Button>
+            canRegister ? (
+              <Button asChild className="h-9 hover:bg-primary-hover">
+                <Link href="/targets/new">Register target</Link>
+              </Button>
+            ) : undefined
           }
         />
       )}

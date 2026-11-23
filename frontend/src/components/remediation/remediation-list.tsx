@@ -79,7 +79,7 @@ const EMPTY: Record<RemediationTab, { title: string; description: string }> = {
   approval: {
     title: "Nothing waits for your approval",
     description:
-      "A proposal appears here when a developer sends it for approval and you are allowed to decide it — never the person who last edited it (UC-8.3, 4a).",
+      "A proposal appears here when a developer sends it for approval and you are allowed to decide it — never the person who last edited it.",
   },
   retesting: {
     title: "No retest is running",

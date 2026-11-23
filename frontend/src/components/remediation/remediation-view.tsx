@@ -310,7 +310,9 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
             running
               ? "It reads the finding, its evidence and the Target Profile, and the version appears here as soon as it is written."
               : (data.blocker ??
-                "Ask Sentra for a proposal: it reads the finding, its evidence and the Target Profile and recommends how to fix it.")
+                (canRequest
+                  ? "Ask Sentra for a proposal: it reads the finding, its evidence and the Target Profile and recommends how to fix it."
+                  : "Sentra writes a proposal when an AI Application Developer or a Security Analyst asks for one. It reads the finding, its evidence and the Target Profile and recommends how to fix it."))
           }
           action={
             canRequest && !data.blocker && !running ? (
