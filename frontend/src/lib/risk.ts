@@ -85,7 +85,7 @@ export type RiskDashboard = {
   by_status: Record<string, number>
   targets: TargetRiskRow[]
   top_findings: { total: number; items: TopFinding[] }
-  /** FR-7.4: the trends of the period and the OWASP categories (Screen 42). */
+  /** FR-7.4 (M7): the trends of the period and the OWASP categories (Screen 42). */
   by_category: CategoryRow[]
   trends: Trends
   category: string | null
