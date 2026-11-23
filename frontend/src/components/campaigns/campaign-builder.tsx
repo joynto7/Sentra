@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { TriangleAlert } from "lucide-react"
+import { ShieldAlert, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { FormField } from "@/components/auth/form-field"
@@ -228,9 +228,15 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
         router.push(`/campaigns/${saved.code}/runs/${saved.launched_run.number}`)
         return
       }
-      toast.success(`${saved.code} saved`, {
-        description: saved.launch_error ?? "Nothing has been sent to the target.",
-      })
+      toast.success(
+        saved.approval_status === "awaiting_approval" ? `${saved.code} submitted for approval` : `${saved.code} saved`,
+        {
+          description:
+            saved.approval_status === "awaiting_approval"
+              ? "A Security Manager has been asked to approve its scope."
+              : (saved.launch_error ?? "Nothing has been sent to the target."),
+        },
+      )
       router.push(`/campaigns/${saved.code}`)
     } catch (error) {
       setBusy(false)
@@ -550,6 +556,7 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
               draft={schedule}
               onChange={setSchedule}
               timeZone={timeZone}
+              needsApproval={estimate?.requires_scope_approval ?? false}
               error={errors.schedule_kind ?? errors.schedule_run_at ?? errors.schedule_at_time}
             />
           </Section>
@@ -652,6 +659,16 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
                 {warning}
               </p>
             ))}
+          {/* FR-5.2: the requirement is said before anything is saved (UC-5.2 step 1). */}
+          {estimate?.requires_scope_approval && (
+            <p className="flex items-start gap-2 border-t pt-3 text-sm text-text-secondary">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span>
+                {organizationName || "Your organization"} requires scope approval. A Security
+                Manager reviews this campaign before it can run.
+              </span>
+            </p>
+          )}
           <p className="border-t pt-3 text-xs text-muted-foreground">Creating a campaign sends nothing to the target.</p>
           <p className="sr-only" aria-live="polite">
             {estimate && chosen.length ? `About ${formatCount(estimate.estimated_attempts)} attempts.` : ""}
@@ -664,7 +681,13 @@ export function CampaignBuilder({ target: preselected, suite }: { target?: strin
           Cancel
         </Button>
         <Button type="submit" form="campaign" className="h-9 hover:bg-primary-hover" disabled={busy}>
-          {busy ? "Saving…" : "Save campaign"}
+          {busy
+            ? estimate?.requires_scope_approval
+              ? "Submitting…"
+              : "Saving…"
+            : estimate?.requires_scope_approval
+              ? "Submit for approval"
+              : "Save campaign"}
         </Button>
       </div>
 

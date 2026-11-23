@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ApiError } from "@/lib/api"
-import { launchRun } from "@/lib/campaigns"
+import { type ApprovalStatus, launchRun } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 
 /**
@@ -19,11 +19,14 @@ import { useCan } from "@/lib/permissions"
 export function LaunchRunButton({
   code,
   targetVerified,
+  approvalStatus = "not_required",
   className,
   size = "default",
 }: {
   code: string
   targetVerified: boolean
+  /** FR-5.2: a campaign that needs a Security Manager's approval doesn't run until it has it */
+  approvalStatus?: ApprovalStatus
   className?: string
   size?: "default" | "sm"
 }) {
@@ -31,6 +34,12 @@ export function LaunchRunButton({
   const canLaunch = useCan("manage_campaigns")
   const [busy, setBusy] = useState(false)
   if (!canLaunch) return null
+  const approved = approvalStatus === "not_required" || approvalStatus === "approved"
+  const why = !approved
+    ? approvalStatus === "rejected"
+      ? "A Security Manager rejected this campaign's scope. Change the campaign and ask for approval again."
+      : "A Security Manager has to approve this campaign's scope first."
+    : "Verify the target's ownership first; only a verified target can be tested." 
 
   async function launch() {
     setBusy(true)
@@ -48,7 +57,7 @@ export function LaunchRunButton({
     <Button
       className={className ?? "h-9 gap-1.5 hover:bg-primary-hover"}
       size={size}
-      disabled={busy || !targetVerified}
+      disabled={busy || !targetVerified || !approved}
       onClick={() => void launch()}
     >
       <Rocket aria-hidden="true" />
@@ -56,13 +65,13 @@ export function LaunchRunButton({
     </Button>
   )
 
-  if (targetVerified) return button
+  if (targetVerified && approved) return button
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span tabIndex={0}>{button}</span>
       </TooltipTrigger>
-      <TooltipContent>Verify the target&apos;s ownership first; only a verified target can be tested.</TooltipContent>
+      <TooltipContent>{why}</TooltipContent>
     </Tooltip>
   )
 }

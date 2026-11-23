@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Plus, Search } from "lucide-react"
 
+import { ApprovalBadge } from "@/components/campaigns/approval-view"
 import { RunProgress, RunsTable } from "@/components/campaigns/runs-table"
 import { EmptyState } from "@/components/layout/empty-state"
 import { FilterSelect } from "@/components/sentra/filter-select"
@@ -15,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  type ApprovalStatus,
   type CampaignItem,
   RUNNING_STATUSES,
   RUN_STATUS_LABEL,
@@ -199,7 +201,25 @@ export function CampaignsList() {
                 </TableCell>
                 <TableCell>
                   {(() => {
+                    const approval = campaign.approval_status as ApprovalStatus
                     const run = lastRun.get(campaign.code)
+                    // FR-5.2: while a decision is open or was refused, that is the campaign's
+                    // state — it cannot run until it is approved (UC-5.2).
+                    if (approval === "awaiting_approval" || approval === "rejected") {
+                      return (
+                        <>
+                          <ApprovalBadge status={approval} />
+                          <div className="mt-0.5 text-xs">
+                            <Link
+                              href={`/campaigns/${campaign.code}/approval`}
+                              className="text-link hover:underline"
+                            >
+                              {approval === "rejected" ? "See the reason" : "Review the scope"}
+                            </Link>
+                          </div>
+                        </>
+                      )
+                    }
                     if (!run) {
                       return (
                         <>
@@ -239,12 +259,14 @@ export function CampaignsList() {
     ["running", active.filter((run) => run.status === "running").length],
     ["paused", active.filter((run) => run.status === "paused").length],
     ["queued", active.filter((run) => run.status === "queued").length],
+    // FR-5.2: how many campaigns are waiting for a Security Manager (UC-5.2 step 1)
+    ["awaiting approval", campaigns.filter((c) => c.approval_status === "awaiting_approval").length],
   ]
 
   return (
     <>
-      {active.length > 0 && (
-        <ul className="mb-4 flex flex-wrap gap-2" aria-label="Campaign runs going on now">
+      {chips.some(([, count]) => count > 0) && (
+        <ul className="mb-4 flex flex-wrap gap-2" aria-label="Campaign runs going on now, and campaigns waiting for approval">
           {chips
             .filter(([, count]) => count > 0)
             .map(([label, count]) => (

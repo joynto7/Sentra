@@ -5,15 +5,18 @@ import Link from "next/link"
 import { TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
+import { ApprovalBadge } from "@/components/campaigns/approval-view"
 import { LaunchRunButton } from "@/components/campaigns/launch-run"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { EnvironmentBadge } from "@/components/targets/target-badges"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
 import {
+  type ApprovalStatus,
   type CampaignDetail,
   type RunOverviewItem,
   RUN_STATUS_LABEL,
@@ -271,6 +274,8 @@ export function CampaignView({ code }: { code: string }) {
   }
 
   const { target, estimate } = campaign
+  const approval = campaign.approval_status as ApprovalStatus
+  const canRun = approval === "not_required" || approval === "approved"
 
   return (
     <div className="space-y-5">
@@ -279,16 +284,44 @@ export function CampaignView({ code }: { code: string }) {
         <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           <span className="font-mono">{campaign.code}</span>
-          <Badge variant="outline" className="font-normal">
-            Ready
-          </Badge>
+          {approval === "not_required" ? (
+            <Badge variant="outline" className="font-normal">
+              Ready
+            </Badge>
+          ) : (
+            <ApprovalBadge status={approval} />
+          )}
           <span className="text-muted-foreground">
             Created by {campaign.created_by ?? "a former member"} on {formatDate(campaign.created_at)}
           </span>
         </div>
         </div>
-        <LaunchRunButton code={campaign.code} targetVerified={target?.status === "verified"} />
+        <LaunchRunButton
+          code={campaign.code}
+          targetVerified={target?.status === "verified"}
+          approvalStatus={approval}
+        />
       </div>
+
+      {/* FR-5.2: while a campaign needs a decision, the page says so where the eye lands first. */}
+      {!canRun && (
+        <Alert role="status" variant={approval === "rejected" ? "destructive" : "default"}>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-4">
+            <span>
+              {approval === "rejected"
+                ? `A Security Manager rejected this campaign's scope${
+                    campaign.approval_decision?.note ? `: “${campaign.approval_decision.note}”` : "."
+                  } Change the campaign and ask for approval again.`
+                : "This campaign is waiting for a Security Manager to approve its scope. It can't be launched until then."}
+            </span>
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link href={`/campaigns/${campaign.code}/approval`}>
+                {approval === "rejected" ? "Ask for approval again" : "Open the approval"}
+              </Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-5">
