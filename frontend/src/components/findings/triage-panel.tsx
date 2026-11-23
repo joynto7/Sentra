@@ -60,11 +60,14 @@ export function TriagePanel({
   open,
   onOpenChange,
   onDone,
+  returnFocus,
 }: {
   finding: FindingDetail
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone: (finding: FindingDetail) => void
+  /** Where the keyboard goes back to when the panel closes, when it wasn't opened by a trigger */
+  returnFocus?: () => HTMLElement | null
 }) {
   const [options, setOptions] = useState<TriageOptions | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -138,7 +141,17 @@ export function TriagePanel({
   const changedSeverity = draft && options && draft.severity !== options.severity
   return (
     <Sheet open={open} onOpenChange={close}>
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-[480px]">
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-[480px]"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocus?.()
+          if (target) {
+            event.preventDefault()
+            target.focus()
+          }
+        }}
+      >
         <SheetHeader className="border-b">
           <SheetTitle>Triage {finding.code}</SheetTitle>
           <SheetDescription>{finding.title}</SheetDescription>

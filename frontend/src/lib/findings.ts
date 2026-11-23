@@ -72,6 +72,12 @@ export type FindingPage = {
   page: number
   page_size: number
   counts: Partial<Record<FindingView, number>>
+  /** Screen 38's severity strip: the view and every filter but the severity, by severity */
+  severity_counts?: Record<string, number>
+  sort?: string
+  direction?: "asc" | "desc"
+  /** UC-6.4, 2a1: an AI Application Developer's own findings come first */
+  mine_first?: boolean
   in_run_counts: InRunCounts | null
 }
 
