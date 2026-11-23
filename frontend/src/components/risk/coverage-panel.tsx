@@ -176,7 +176,7 @@ export function CoveragePanel({
                 {shown.suites.length === 0 ? (
                   <p className="mt-1 text-text-secondary">
                     No test of Sentra&apos;s library covers this for a {shown.target.type.replace(/_/g, " ")}.
-                    Write a custom test for it (FR-4.3), or record why the gap is accepted.
+                    Write a custom test for it, or record why the gap is accepted.
                   </p>
                 ) : (
                   <ul className="mt-1 space-y-1">

@@ -21,11 +21,15 @@ export type TargetRiskRow = {
   band: RiskBand | null
   calculated_at: string | null
   last_run_at: string | null
+  /** A campaign run of the target that is going on now: its live monitor is /campaigns/C-238/runs/2 */
+  live_run?: LiveRun | null
   open_total: number
   open_by_severity: SeverityCounts
   awaiting_confirmation: number
   not_scored_reason: NotScoredReason
 }
+
+export type LiveRun = { code: string; campaign: string; number: number; status: "queued" | "running" | "paused" }
 
 export type ScoreHistoryItem = {
   score: number
@@ -92,8 +96,9 @@ export const BAND_LABEL: Record<RiskBand, string> = {
   none: "No counted findings",
 }
 
-/** The severities the counts show, the most serious first. */
-export const COUNTED: Severity[] = ["critical", "high", "medium", "low"]
+/** The severities the counts show, the most serious first. Informational is counted too, because
+ * every total of open findings includes it. */
+export const COUNTED: Severity[] = ["critical", "high", "medium", "low", "informational"]
 
 /** What the pages say instead of a score (Screens 16, 20 and 42). */
 export function notScoredText(reason: NotScoredReason): string {
@@ -213,6 +218,9 @@ export type CategoryRow = {
   label: string
   reason: string
   worst_target: string | null
+  /** How many of the verified targets the category applies to were tested, and still are */
+  tested_targets: number
+  applicable_targets: number
   open_total: number
   open_by_severity: SeverityCounts
 }
