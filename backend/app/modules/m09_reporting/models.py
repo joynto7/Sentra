@@ -299,6 +299,11 @@ class GateRun(UUIDPrimaryKey, OrganizationScoped, Base):
     )
     new_findings: Mapped[list] = mapped_column(JSONB, default=list)
     breaking: Mapped[list] = mapped_column(JSONB, default=list)  # the ones the policy fails on
+    # The policy this release was judged by (UC-9.4, quality requirement 2). It is copied from the
+    # gate when the run starts, so a later change of the policy never changes a result that has
+    # already been explained to a pipeline, and every row says what it was measured against.
+    fail_on: Mapped[list] = mapped_column(JSONB, default=list)
+    fail_on_reopened: Mapped[bool] = mapped_column(default=True)
     # Why it could not decide, or what the policy decided, in one sentence (NFR-4.2)
     message: Mapped[str | None] = mapped_column(Text)
     started_by_key_id: Mapped[uuid.UUID | None] = mapped_column(
