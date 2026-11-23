@@ -25,6 +25,47 @@ export type CampaignItem = {
   created_at: string
 }
 
+// ---------------------------------------------------------------- scope approval (FR-5.2)
+
+/** Where an organization requires it, a campaign's scope is approved before it can run (UC-5.2). */
+export type ApprovalStatus = "not_required" | "awaiting_approval" | "approved" | "rejected"
+
+export const APPROVAL_LABEL: Record<ApprovalStatus, string> = {
+  not_required: "Ready",
+  awaiting_approval: "Awaiting approval",
+  approved: "Approved",
+  rejected: "Rejected",
+}
+
+export type ApprovalAction = "created" | "submitted" | "approved" | "rejected" | "scope_changed"
+
+/** One step of the approval, as Screen 35's timeline reads it. */
+export type ApprovalStep = {
+  action: ApprovalAction
+  actor: string | null
+  /** The analyst's comment when submitting, or the reason for a rejection (3a1) */
+  note: string | null
+  at: string
+}
+
+export const APPROVAL_STEP_LABEL: Record<ApprovalAction, string> = {
+  created: "created the campaign",
+  submitted: "submitted it for approval",
+  approved: "approved the scope",
+  rejected: "rejected the scope",
+  scope_changed: "changed it, so it needs a new approval",
+}
+
+/** What Screen 35 shows: the scope, how it got there, and whether this user may decide. */
+export type ApprovalView = {
+  campaign: CampaignDetail
+  /** Whether this organization requires approval at all */
+  required: boolean
+  timeline: ApprovalStep[]
+  can_decide: boolean
+  cannot_decide_reason: string | null
+}
+
 // ---------------------------------------------------------------- the schedule (FR-5.3)
 
 export type ScheduleKind = "immediately" | "once" | "recurring"
@@ -122,6 +163,8 @@ export type Estimate = {
   llm_cost: CostEstimate
   monthly: MonthlyUsage
   warnings: string[]
+  /** FR-5.2: the organization requires a Security Manager to approve the scope (Screen 34) */
+  requires_scope_approval: boolean
 }
 
 export type CampaignDetail = CampaignItem & {
@@ -135,6 +178,10 @@ export type CampaignDetail = CampaignItem & {
   time_zone: string
   suites: { code: string; found: boolean; name: string; version: number; test_count: number }[]
   estimate: Estimate
+  /** FR-5.2: who approved or rejected the scope, and when; null while nobody has decided */
+  approval_decision: ApprovalStep | null
+  /** FR-3.3: the version of the threat model the campaign was created with; null if there was none */
+  based_on_threat_model: number | null
 }
 
 export type CampaignInput = {
@@ -163,6 +210,17 @@ export const estimateCampaign = (input: {
   attempt_budget: number | null
 }) => apiFetch<Estimate>("/v1/campaigns/estimate", post(input))
 export const createCampaign = (input: CampaignInput) => apiFetch<CampaignDetail>("/v1/campaigns", post(input))
+
+// Scope approval (FR-5.2, UC-5.2)
+const approvalPath = (code: string) => `/v1/campaigns/${encodeURIComponent(code)}/approval`
+export const getApproval = (code: string, signal?: AbortSignal) =>
+  apiFetch<ApprovalView>(approvalPath(code), { signal })
+/** 3a1: the analyst asks for a decision again, with a comment on what changed. */
+export const submitForApproval = (code: string, note: string | null) =>
+  apiFetch<ApprovalView>(approvalPath(code), post({ note }))
+/** UC-5.2 steps 3 and 3a: a rejection needs a reason. */
+export const decideApproval = (code: string, approve: boolean, reason: string | null) =>
+  apiFetch<ApprovalView>(`${approvalPath(code)}/decision`, post({ approve, reason }))
 
 export type RunStatus = "queued" | "running" | "paused" | "completed" | "stopped" | "cancelled"
 
