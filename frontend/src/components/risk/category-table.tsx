@@ -15,6 +15,7 @@ const SEVERITY_COLOUR: Record<string, string> = {
   high: "var(--severity-high)",
   medium: "var(--severity-medium)",
   low: "var(--severity-low)",
+  informational: "var(--severity-info)",
 }
 
 /** The open findings of one category as a bar; the counts beside it carry the numbers. */
@@ -127,11 +128,18 @@ export function CategoryTable({
               <TableCell>
                 <span className="text-[13px]" title={row.reason}>
                   <span aria-hidden="true">{COVERAGE_SYMBOL[row.status]} </span>
-                  {row.label}
-                  {row.worst_target && SHORT[row.status] && (
-                    <span className="block text-xs text-muted-foreground">
-                      {row.worst_target}: {SHORT[row.status]}
-                    </span>
+                  {row.applicable_targets > 1 ? (
+                    // With several targets, how many were tested says more than one target's gap.
+                    `${row.tested_targets} of ${row.applicable_targets} targets tested`
+                  ) : (
+                    <>
+                      {row.label}
+                      {row.worst_target && SHORT[row.status] && (
+                        <span className="block text-xs text-muted-foreground">
+                          {row.worst_target}: {SHORT[row.status]}
+                        </span>
+                      )}
+                    </>
                   )}
                 </span>
               </TableCell>

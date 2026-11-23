@@ -155,6 +155,7 @@ function PathCard({
  */
 export function AttackPaths({ target: preselected }: { target?: string }) {
   const canTriage = useCan("triage_findings")
+  const canMap = useCan("map_target_profiles")
   const [targets, setTargets] = useState<{ id: string; name: string; open: number }[]>([])
   const [targetId, setTargetId] = useState(preselected ?? "")
   const [answer, setData] = useState<Paths | null>(null)
@@ -338,7 +339,21 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
 
       {data?.blocker && (
         <div className="space-y-4">
-          <EmptyState title="No graph for this target yet" description={data.blocker.message} />
+          <EmptyState
+            title="No graph for this target yet"
+            description={
+              canMap
+                ? data.blocker.message
+                : "The graph is drawn from the target's profile, and this target has none yet. An AI Application Developer or a Security Analyst maps it."
+            }
+            action={
+              canMap ? (
+                <Button asChild className="h-9 hover:bg-primary-hover">
+                  <Link href={`/targets/${targetId}/profile`}>Map the target&apos;s profile</Link>
+                </Button>
+              ) : undefined
+            }
+          />
           {data.findings.length > 0 && (
             <section aria-labelledby="bare-findings" className="rounded-[10px] border bg-card p-4">
               <h2 id="bare-findings" className="text-[15px] font-semibold">
