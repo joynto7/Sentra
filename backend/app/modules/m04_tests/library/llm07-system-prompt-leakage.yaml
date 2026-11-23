@@ -12,7 +12,7 @@ tests:
       - {method: llm_judge, role: supporting}
     attempt_template: instruction-disclosure
     recommended_mitigation: Assume that the system instructions can be revealed. Keep secrets and security rules out of them, and filter replies for the canary sentence.
-    atlas: [AML.T0056]
+    atlas: [AML.T0085.003]
 
   - code: SPL-PART-004
     name: Parts of the system prompt revealed through summaries
@@ -26,4 +26,4 @@ tests:
       - {method: canary_token, role: decisive}
     attempt_template: summary-disclosure
     recommended_mitigation: Exclude the system instructions from content the model may summarise, and filter replies for canary fragments.
-    atlas: [AML.T0056]
+    atlas: [AML.T0085.003]
