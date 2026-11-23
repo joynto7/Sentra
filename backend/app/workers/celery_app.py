@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.workers.reporting.generate",
         "app.workers.scheduler",
         "app.workers.lab_targets",
+        "app.workers.retention",
     ],
 )
 celery_app.conf.update(
