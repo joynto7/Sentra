@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
+import { FindingHeader } from "@/components/findings/finding-header"
 import { FindingTabs } from "@/components/findings/finding-tabs"
 import { PageHeader } from "@/components/layout/page-header"
 import { ApprovalPanel } from "@/components/remediation/approval-panel"
@@ -21,6 +22,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
+import { type FindingDetail, getFinding } from "@/lib/findings"
 import { useCan } from "@/lib/permissions"
 import {
   type RemediationPage as Page,
@@ -163,6 +165,18 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
 
   const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
+  // As a tab of the finding, the page has the finding's own head (Screens 39-40). Without it — it
+  // couldn't be read — the remediation's head below still says which finding this is.
+  const [finding, setFinding] = useState<FindingDetail | null>(null)
+  useEffect(() => {
+    if (!inFinding) return
+    const controller = new AbortController()
+    getFinding(code, controller.signal)
+      .then(setFinding)
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [code, inFinding, attempt])
+
   useEffect(() => {
     const controller = new AbortController()
     getRemediation(code, version ?? undefined, controller.signal)
@@ -240,47 +254,53 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
 
   const current = data.current
   const askLabel = data.versions.length > 0 ? "Ask for a revision" : "Request remediation"
+  const askButton = canRequest && !data.blocker && !editing && data.current !== null && (
+    <Button className="h-9 hover:bg-primary-hover" onClick={ask} disabled={busy || Boolean(running)}>
+      {running ? "Writing…" : busy ? "Asking…" : askLabel}
+    </Button>
+  )
 
   return (
     <>
-      <PageHeader
-        title={`Remediation for ${data.finding.code}`}
-        description={data.finding.title}
-        action={
-          canRequest &&
-          !data.blocker &&
-          !editing &&
-          data.current !== null && (
-            <Button
-              className="h-9 hover:bg-primary-hover"
-              onClick={ask}
-              disabled={busy || Boolean(running)}
-            >
-              {running ? "Writing…" : busy ? "Asking…" : askLabel}
-            </Button>
-          )
-        }
-      />
+      {inFinding && finding ? (
+        // A tab of the finding: the finding's own head and tabs, as on its other three tabs
+        <>
+          <FindingHeader
+            finding={finding}
+            action={askButton}
+            crumbs={[{ label: finding.code, href: `/findings/${finding.code}` }, { label: "Remediation" }]}
+          />
+          <FindingTabs code={finding.code} active="remediation" evidence={finding.evidence_count} />
+        </>
+      ) : (
+        <>
+          <PageHeader
+            title={`Remediation for ${data.finding.code}`}
+            description={data.finding.title}
+            action={askButton}
+          />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        <SeverityBadge severity={data.finding.severity} />
-        {!inFinding && (
-          <>
-            <Link href={`/findings/${data.finding.code}`} className="py-1 text-link hover:underline">
-              Open the finding
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <SeverityBadge severity={data.finding.severity} />
+            {!inFinding && (
+              <>
+                <Link href={`/findings/${data.finding.code}`} className="py-1 text-link hover:underline">
+                  Open the finding
+                </Link>
+                <span className="text-muted-foreground">·</span>
+              </>
+            )}
+            <Link
+              href={`/targets/${data.finding.target_id}`}
+              className="py-1 text-link hover:underline"
+            >
+              {data.finding.target_name}
             </Link>
-            <span className="text-muted-foreground">·</span>
-          </>
-        )}
-        <Link
-          href={`/targets/${data.finding.target_id}`}
-          className="py-1 text-link hover:underline"
-        >
-          {data.finding.target_name}
-        </Link>
-        <span className="text-muted-foreground">· {data.finding.component}</span>
-      </div>
-      {inFinding && <FindingTabs code={data.finding.code} active="remediation" />}
+            <span className="text-muted-foreground">· {data.finding.component}</span>
+          </div>
+          {inFinding && <FindingTabs code={data.finding.code} active="remediation" />}
+        </>
+      )}
 
       {data.blocker && (
         <Alert role="status" className="mb-4">
