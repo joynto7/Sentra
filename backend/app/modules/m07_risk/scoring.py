@@ -144,12 +144,28 @@ def last_run_at(db: Session, organization_id: uuid.UUID, target_id: uuid.UUID):
 def current(db: Session, organization_id: uuid.UUID) -> dict[uuid.UUID, RiskScore]:
     """The newest score of each of the organization's targets (Screens 16, 20, 42). A target
     without one has not been tested yet and is shown as not scored (UC-7.2 precondition)."""
+    return _newest(db, organization_id)
+
+
+def before(db: Session, organization_id: uuid.UUID, moment: datetime) -> dict[uuid.UUID, RiskScore]:
+    """The score each target had at `moment`: its newest calculation before it. Screen 42 compares
+    the current score with it, and the findings it counted are the ones open at that moment,
+    because every change to a finding calculates the score again (UC-7.2's triggers). A target
+    without one had not been tested yet."""
+    return _newest(db, organization_id, moment)
+
+
+def _newest(
+    db: Session, organization_id: uuid.UUID, moment: datetime | None = None
+) -> dict[uuid.UUID, RiskScore]:
     last = (
         select(RiskScore.target_id, func.max(RiskScore.calculated_at).label("at"))
         .where(RiskScore.organization_id == organization_id)
         .group_by(RiskScore.target_id)
-        .subquery()
     )
+    if moment is not None:
+        last = last.where(RiskScore.calculated_at < moment)
+    last = last.subquery()
     newest = (
         scoped_select(RiskScore, organization_id)
         .join(

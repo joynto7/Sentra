@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.core.tenancy import scoped_select
+from app.modules.m01_users.models import User
 from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m02_targets.service import owner_names
 from app.modules.m04_tests.models import TestDefinition
@@ -120,6 +121,7 @@ def _target_row(
     counts: Counts,
     owner: str,
     live: dict | None = None,
+    then: RiskScore | None = None,
 ) -> dict:
     return {
         "id": target.id,
@@ -133,6 +135,9 @@ def _target_row(
         "calculated_at": score.calculated_at if score else None,
         "last_run_at": score.last_run_at if score else None,
         "live_run": live,
+        # The score at the start of the period, for the change Screen 42 shows beside the score
+        "score_then": then.score if then else None,
+        "score_then_at": then.calculated_at if then else None,
         "open_total": counts.open_total,
         "open_by_severity": counts.open_by_severity,
         "awaiting_confirmation": counts.awaiting_confirmation(),
@@ -212,6 +217,7 @@ def dashboard(
             raise NotFoundError("Target not found.")
     counts = _counts(db, organization_id, target_id, cutoff, category)
     scores = scoring.current(db, organization_id)
+    then = scoring.before(db, organization_id, cutoff)
     owners = owner_names(db, targets)
     live = _live_runs(db, organization_id, [target.id for target in targets])
     empty = _zero()
@@ -222,6 +228,7 @@ def dashboard(
             counts.get(target.id, empty),
             owners.get(target.created_by_id, ""),
             live.get(target.id),
+            then.get(target.id),
         )
         for target in targets
     ]
@@ -251,7 +258,52 @@ def dashboard(
         "top_findings": _top_findings(db, organization_id, target_id, mine, category),
         "by_category": coverage.by_category(db, organization_id, targets),
         "trends": trends.of(db, organization_id, rows, days=days, until=now, category=category),
+        "changes": _changes(db, organization_id, targets, then, cutoff, days, category),
     }
+
+
+def _changes(
+    db: Session,
+    organization_id: uuid.UUID,
+    targets: list[Target],
+    then: dict[uuid.UUID, RiskScore],
+    cutoff: datetime,
+    days: int,
+    category: str | None,
+) -> dict:
+    """What the tiles of Screen 42 compare with (UC-7.3): the open findings when the period began,
+    and the findings fixed and verified in the period of the same length before it.
+
+    The open findings of the start come from the score each target had then: a calculation keeps
+    the findings it counted and those awaiting confirmation, which together are every open finding
+    of the target at that moment. A score covers every category, so while a category is chosen
+    there is no such number, and the tile shows no comparison."""
+    shown = {target.id for target in targets}
+    open_then = (
+        None
+        if category
+        else sum(
+            score.counted + score.awaiting_confirmation
+            for target_id, score in then.items()
+            if target_id in shown
+        )
+    )
+    entered, closed_at = trends.closing(organization_id)
+    fixed = (
+        select(func.count())
+        .select_from(Finding)
+        .outerjoin(entered, entered.c.finding_id == Finding.id)
+        .where(
+            Finding.organization_id == organization_id,
+            Finding.target_id.in_(shown),
+            Finding.status == FindingStatus.FIXED_AND_VERIFIED,
+            closed_at >= cutoff - timedelta(days=days),
+            closed_at < cutoff,
+        )
+    )
+    if category:
+        fixed = fixed.where(Finding.category == category)
+    return {"since": cutoff, "open_then": open_then, "fixed_before": db.scalar(fixed) or 0}
 
 
 def _top_findings(
@@ -286,15 +338,24 @@ def _top_findings(
             select(Target.id, Target.name).where(Target.id.in_({f.target_id for f in found}))
         ).all()
     )
+    # Screen 42's Owner column: who owns each finding (FR-6.5, M6), or nobody yet
+    owner_ids = {f.owner_id for f in found if f.owner_id}
+    owners = (
+        dict(db.execute(select(User.id, User.name).where(User.id.in_(owner_ids))).all())
+        if owner_ids
+        else {}
+    )
     return {
         "total": total,
         "items": [
             {
                 "code": finding.code,
                 "title": finding.title,
+                "category": finding.category,
                 "severity": finding.severity,
                 "status": finding.status,
                 "target": {"id": finding.target_id, "name": names.get(finding.target_id, "")},
+                "owner": owners.get(finding.owner_id),
                 "reproducibility": _decimal(finding.reproducibility),
                 "provisional": finding.severity_provisional,
                 "last_seen_at": finding.last_seen_at,
