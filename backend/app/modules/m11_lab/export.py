@@ -328,7 +328,7 @@ def build(db: Session, run: BenchmarkRun, *, fmt: str, level: str) -> Export:
         "level": level,
         "level_label": LEVEL_LABELS[level],
         "rows": len(rows),
-        "sentra": "Sentra benchmark export (FR-11.5)",
+        "sentra": "Sentra benchmark export",
     }
     if fmt == "json":
         content = json.dumps(
