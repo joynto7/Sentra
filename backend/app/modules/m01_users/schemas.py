@@ -312,6 +312,10 @@ class SsoStartOut(BaseModel):
 
 class OrganizationSecurityIn(BaseModel):
     mfa_required: bool
+    # FR-5.2 (M5), optional: campaigns need a Security Manager's approval before they can run.
+    # None leaves the requirement as it is, so a page that only changes one of the two may send
+    # only that one.
+    requires_scope_approval: bool | None = None
 
 
 class OrganizationSecurityOut(BaseModel):
@@ -321,6 +325,10 @@ class OrganizationSecurityOut(BaseModel):
     members_without_mfa: int
     # The identity provider of FR-1.3, in the same answer: Screen 11 is one page.
     sso: SsoOut
+    # FR-5.2 (M5): the requirement, and how many people could approve a campaign. Turning the
+    # requirement on without a Security Manager is refused, because no campaign could run.
+    requires_scope_approval: bool
+    security_managers: int
     # This session's last password confirmation, and until when it allows changes (step 2).
     password_confirmed_at: datetime | None
     password_confirmed_until: datetime | None
