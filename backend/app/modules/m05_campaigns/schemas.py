@@ -139,6 +139,15 @@ class CampaignListItem(BaseModel):
     created_at: datetime
 
 
+class CampaignRowOut(CampaignListItem):
+    """A row of the campaigns page (Screen 33): also who approved it and its newest run, so the
+    page can tell running, scheduled, paused and waiting campaigns apart and sort by the last run
+    (UX task 4.5)."""
+
+    approved_by: str | None
+    last_run: "RunListItem | None"
+
+
 class CampaignSuiteOut(BaseModel):
     code: str
     found: bool
