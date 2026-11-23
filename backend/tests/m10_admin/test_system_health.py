@@ -335,3 +335,36 @@ def test_the_llm_row_names_the_runs_that_wait_for_a_verdict(lena, db, monkeypatc
     lines = component(page(lena), "llm")["lines"]
 
     assert "2 campaign runs waiting" in lines
+
+
+REAL_WORKERS = health.workers  # the tests' set-up replaces it
+
+
+class FakeInspect:
+    """Celery's inspection, which waits its whole timeout unless it knows how many will answer."""
+
+    def __init__(self, calls, timeout, limit=None):
+        calls.append({"timeout": timeout, "limit": limit})
+
+    def stats(self):
+        return {
+            "worker-1": {"pool": {"processes": [1, 2]}},
+            "worker-2": {"pool": {"processes": [1]}},
+        }
+
+    def active(self):
+        return {"worker-1": [{"id": "a"}], "worker-2": []}
+
+
+def test_the_second_inspection_stops_waiting_when_every_worker_has_answered(monkeypatch):
+    from app.workers.celery_app import celery_app
+
+    calls = []
+    monkeypatch.setattr(
+        celery_app.control,
+        "inspect",
+        lambda timeout, limit=None: FakeInspect(calls, timeout, limit),
+    )
+
+    assert REAL_WORKERS() == (2, 1, 3)
+    assert calls == [{"timeout": 1, "limit": None}, {"timeout": 1, "limit": 2}]

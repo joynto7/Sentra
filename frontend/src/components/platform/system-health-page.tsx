@@ -172,8 +172,15 @@ export function SystemHealthPage() {
                 No alert is open. A component that passes a threshold raises one by itself.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div>
+                <Table
+                  container={{
+                    tabIndex: 0,
+                    role: "group",
+                    "aria-label": "Active alerts",
+                    className: "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                  }}
+                >
                   <TableHeader>
                     <TableRow>
                       <TableHead>Alert</TableHead>

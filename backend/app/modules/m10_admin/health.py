@@ -234,11 +234,14 @@ def workers() -> tuple[int, int, int] | None:
     try:
         from app.workers.celery_app import celery_app
 
-        inspect = celery_app.control.inspect(timeout=2)
-        stats, active = inspect.stats(), inspect.active()
+        # An inspection waits its whole timeout for answers it can't count on, which made the page
+        # wait 4.3 s (NFR-1.1 asks for 2). The first one finds out how many workers answer, so the
+        # second one returns as soon as they all have.
+        stats = celery_app.control.inspect(timeout=1).stats()
+        if not stats:
+            return None
+        active = celery_app.control.inspect(timeout=1, limit=len(stats)).active()
     except Exception:  # redis down, no worker, a broken inspection: the page says "unknown"
-        return None
-    if not stats:
         return None
     capacity = sum(
         len(worker.get("pool", {}).get("processes", [])) or 1 for worker in stats.values()
