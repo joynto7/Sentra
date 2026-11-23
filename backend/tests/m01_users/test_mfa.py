@@ -370,6 +370,9 @@ def test_changing_the_requirement_needs_the_password_again(tom, db):
     assert tom.get(SECURITY).json() | {"sso": None} == {
         "mfa_required": False,
         "members_without_mfa": 3,
+        # FR-5.2 (M5) shares this page: the scope-approval requirement and who could approve
+        "requires_scope_approval": False,
+        "security_managers": 0,
         "password_confirmed_at": None,
         "password_confirmed_until": None,
         "sso": None,
