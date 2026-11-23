@@ -8,7 +8,6 @@ import { RefreshCw } from "lucide-react"
 import { StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
 import { ReportDialog } from "@/components/reports/report-dialog"
-import { CategoryChart, SeverityChart, StatusChart } from "@/components/risk/breakdown-charts"
 import { CategoryTable } from "@/components/risk/category-table"
 import { CriticalFindings } from "@/components/risk/critical-findings"
 import { DEFAULT_DAYS, DashboardFilters, focusFilters } from "@/components/risk/dashboard-filters"
@@ -37,9 +36,7 @@ function ByStatus({
   periodDays,
   filterQuery,
   since,
-  className,
 }: {
-  className?: string
   byStatus: Record<string, number>
   periodDays: number
   filterQuery: string
@@ -76,7 +73,7 @@ function ByStatus({
     )
   }
   return (
-    <section aria-labelledby="by-status" className={cn("min-w-0 rounded-[10px] border bg-card p-4", className)}>
+    <section aria-labelledby="by-status" className="min-w-0 rounded-[10px] border bg-card p-4">
       <h2 id="by-status" className="text-[15px] font-semibold">
         Findings by status
       </h2>
@@ -382,11 +379,7 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
                   filtered={target !== "" || category !== ""}
                 />
               </div>
-              {/* Each chart sits beside the section it draws; below 928 px it comes under it */}
-              <div className="grid gap-3 @min-[58rem]/dash:grid-cols-12">
-                <TargetRisk className="@min-[58rem]/dash:col-span-8" rows={data.targets} canVerify={canVerify} since={since} />
-                <SeverityChart key={`${target}|${days}|${category}`} className="@min-[58rem]/dash:col-span-4" data={data} filterQuery={filterQuery} />
-              </div>
+              <TargetRisk rows={data.targets} canVerify={canVerify} since={since} />
               {/* New filters start the readouts afresh */}
               <TrendCharts
                 key={`${target}|${days}|${category}`}
@@ -394,25 +387,20 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
                 periodDays={data.period_days}
                 filterQuery={filterQuery}
               />
-              <div className="grid gap-3 @min-[58rem]/dash:grid-cols-12">
+              <div className="grid items-start gap-3 @min-[58rem]/dash:grid-cols-3">
                 <ByStatus
-                  className="@min-[58rem]/dash:col-span-5"
                   byStatus={data.by_status}
                   periodDays={data.period_days}
                   filterQuery={filterQuery}
                   since={data.changes.since}
                 />
-                <StatusChart key={`${target}|${days}|${category}`} className="@min-[58rem]/dash:col-span-7" data={data} filterQuery={filterQuery} />
-              </div>
-              <div className="grid gap-3 @min-[58rem]/dash:grid-cols-12">
                 <CategoryTable
-                  className="@min-[58rem]/dash:col-span-7"
+                  className="@min-[58rem]/dash:col-span-2"
                   rows={data.by_category}
                   targetQuery={targetQuery}
                   chosen={data.category}
                   onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
                 />
-                <CategoryChart key={`${target}|${days}|${category}`} className="@min-[58rem]/dash:col-span-5" data={data} targetQuery={targetQuery} />
               </div>
             </>
           )}
