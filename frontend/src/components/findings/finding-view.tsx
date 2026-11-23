@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { CircleCheck, CircleX, TriangleAlert } from "lucide-react"
+import { toast } from "sonner"
 
 import { HistoryEntry } from "@/components/findings/finding-activity"
 import { Reproducibility } from "@/components/findings/finding-badges"
@@ -11,11 +13,12 @@ import { FindingTabs } from "@/components/findings/finding-tabs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { STATUS_LABEL, getRemediation, requestRemediation, type RemediationPage } from "@/lib/remediation"
 import { ApiError } from "@/lib/api"
 import { TriagePanel } from "@/components/findings/triage-panel"
 import { type FindingDetail, type HistoryItem, getFinding, getHistory } from "@/lib/findings"
 import { useCan } from "@/lib/permissions"
-import { OPEN_STATUSES, type FindingSeverity, getFindingSeverity } from "@/lib/risk"
+import { OPEN_STATUSES, type AttackPath, type FindingSeverity, getAttackPaths, getFindingSeverity } from "@/lib/risk"
 import { formatDate, formatDateTime } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
@@ -55,7 +58,7 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
       <Card title={title}>
         <p className="text-sm text-muted-foreground">
           {rating
-            ? "Not rated yet: the severity is the one of its test definition until a campaign run has been evaluated (FR-4.2)."
+            ? "Not rated yet: the severity is the one of its test definition until a campaign run has been evaluated."
             : "Loading…"}
         </p>
       </Card>
@@ -81,7 +84,7 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
         )}
         {reproducibility && (
           <Row term="Reproducibility">
-            <span className="tabular">{reproducibility.value}</span>
+            <span className="tabular">{Math.round(Number(reproducibility.value) * 100)} %</span>
             <p className="text-xs text-muted-foreground">{reproducibility.sentence}</p>
           </Row>
         )}
@@ -98,9 +101,20 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
   )
 }
 
+/** A run as a sentence names it: BR-012 is a benchmark run, and a retest has no code of its own. */
+function runName(code: string): string {
+  if (code === "Retest") return "a retest"
+  return code.startsWith("BR-") ? `benchmark run ${code}` : `campaign run ${code}`
+}
+
 /** Screen 39: one finding in plain language, with its rating, its detection and its details. */
 export function FindingView({ code }: { code: string }) {
+  const router = useRouter()
   const canTriage = useCan("triage_findings")
+  const canRequest = useCan("request_remediations")
+  const [remediation, setRemediation] = useState<RemediationPage | null>(null)
+  const [paths, setPaths] = useState<AttackPath[]>([])
+  const [asking, setAsking] = useState(false)
   const [finding, setFinding] = useState<FindingDetail | null>(null)
   const [history, setHistory] = useState<HistoryItem[] | null>(null)
   const [triaging, setTriaging] = useState(false)
@@ -116,8 +130,32 @@ export function FindingView({ code }: { code: string }) {
     getHistory(code, controller.signal)
       .then(setHistory)
       .catch(() => undefined)
+    getRemediation(code, undefined, controller.signal)
+      .then(setRemediation)
+      .catch(() => undefined)
     return () => controller.abort()
   }, [code])
+
+  const targetId = finding?.target.id
+  useEffect(() => {
+    if (!targetId) return
+    const controller = new AbortController()
+    getAttackPaths(targetId, controller.signal)
+      .then((found) => setPaths(found.paths.filter((path) => path.finding_codes.includes(code))))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [targetId, code])
+
+  async function ask() {
+    setAsking(true)
+    try {
+      await requestRemediation(code)
+      router.push(`/findings/${code}/remediation`)
+    } catch (problem) {
+      toast.error(problem instanceof ApiError ? problem.message : "The remediation could not be requested.")
+      setAsking(false)
+    }
+  }
 
   if (notFound) {
     return (
@@ -143,18 +181,33 @@ export function FindingView({ code }: { code: string }) {
   }
 
   const detection = finding.detection
+  // A proposal can be asked for once the finding is confirmed; the row below says why not before.
+  const writing = remediation?.job?.status === "queued" || remediation?.job?.status === "running"
+  const requestable = Boolean(
+    canRequest && remediation && !remediation.blocker && !remediation.current && !writing,
+  )
 
   return (
     <div>
       <FindingHeader
         finding={finding}
         action={
-          canTriage &&
-          (OPEN_STATUSES as readonly string[]).includes(finding.status) && (
-            <Button className="h-9 hover:bg-primary-hover" onClick={() => setTriaging(true)}>
-              Triage
-            </Button>
-          )
+          <div className="flex flex-wrap items-center gap-2">
+            {requestable && (
+              <Button className="h-9 hover:bg-primary-hover" onClick={() => void ask()} disabled={asking}>
+                {asking ? "Requesting…" : "Request remediation"}
+              </Button>
+            )}
+            {canTriage && (OPEN_STATUSES as readonly string[]).includes(finding.status) && (
+              <Button
+                variant={requestable ? "outline" : "default"}
+                className={cn("h-9", !requestable && "hover:bg-primary-hover")}
+                onClick={() => setTriaging(true)}
+              >
+                Triage
+              </Button>
+            )}
+          </div>
         }
       />
       <FindingTabs code={finding.code} active="summary" />
@@ -167,7 +220,7 @@ export function FindingView({ code }: { code: string }) {
           <Link href={`/findings/${finding.merged_into}`} className="text-link underline underline-offset-2">
             {finding.merged_into}
           </Link>
-          , which has the same root cause. Its evidence and history are read there as well (FR-6.6).
+          , which has the same root cause. Its evidence and history are read there as well.
         </p>
       )}
 
@@ -176,7 +229,7 @@ export function FindingView({ code }: { code: string }) {
           <span className="font-medium">Marked a false positive</span>
           {finding.closed_by ? ` by ${finding.closed_by}` : ""}
           {finding.closed_at ? ` on ${formatDate(finding.closed_at)}` : ""}: {finding.close_reason} It is kept, so
-          that the quality of Sentra&apos;s detection can be measured (UC-6.6, 2a1).
+          that the quality of Sentra&apos;s detection can be measured.
         </p>
       )}
 
@@ -187,7 +240,7 @@ export function FindingView({ code }: { code: string }) {
         >
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           Only the LLM judge supports this finding, so an analyst confirms or rejects it before it counts towards the
-          target&apos;s risk score (NFR-9.3).
+          target&apos;s risk score.
         </p>
       )}
 
@@ -232,9 +285,9 @@ export function FindingView({ code }: { code: string }) {
                   ))}
                 </ul>
                 <p className="text-xs text-muted-foreground">
-                  From attempt {detection.attempt_no} of campaign run {detection.run.code}.
+                  From attempt {detection.attempt_no} of {runName(detection.run.code)}.
                   {detection.disagreement
-                    ? " The LLM judge disagreed with the deterministic methods; the deterministic evidence decided (NFR-9.5)."
+                    ? " The LLM judge disagreed with the deterministic methods; the deterministic evidence decided."
                     : ""}
                 </p>
               </>
@@ -271,6 +324,31 @@ export function FindingView({ code }: { code: string }) {
                 )}
               </Row>
               <Row term="Owner">{finding.owner ? finding.owner.name : "Nobody yet"}</Row>
+              <Row term="Remediation">
+                {remediation?.current ? (
+                  <Link href={`/findings/${finding.code}/remediation`} className="text-link hover:underline">
+                    Version {remediation.current.version} · {STATUS_LABEL[remediation.current.status]}
+                  </Link>
+                ) : writing ? (
+                  <Link href={`/findings/${finding.code}/remediation`} className="text-link hover:underline">
+                    Being written
+                  </Link>
+                ) : (
+                  "Not started"
+                )}
+                {remediation && !remediation.current && remediation.blocker && (
+                  <div className="text-xs text-muted-foreground">{remediation.blocker}</div>
+                )}
+              </Row>
+              <Row term="Attack path">
+                {paths.length > 0 ? (
+                  <Link href={`/attack-paths?target=${finding.target.id}`} className="text-link hover:underline">
+                    Part of {paths.map((path) => path.code).join(", ")}
+                  </Link>
+                ) : (
+                  "Not part of a path"
+                )}
+              </Row>
               {finding.confirmed_by && (
                 <Row term="Confirmed">
                   {finding.confirmed_by}
@@ -329,7 +407,7 @@ export function FindingView({ code }: { code: string }) {
               ))}
             </ul>
             <p className="text-xs text-muted-foreground">
-              A weakness found again adds its evidence to this finding instead of a second one (UC-6.2, 2a).
+              A weakness found again adds its evidence to this finding instead of a second one.
             </p>
           </Card>
         </div>
