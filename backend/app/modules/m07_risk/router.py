@@ -4,14 +4,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import FieldValidationError
+from app.core.errors import AppError, FieldValidationError
 from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership, User
 from app.modules.m01_users.permissions import Action, require
 from app.modules.m03_threat_models.frameworks import OWASP_NAMES
-from app.modules.m07_risk import coverage, paths, service
+from app.modules.m07_risk import attention, coverage, paths, service
 from app.modules.m07_risk.schemas import (
     AttackPathsOut,
+    AttentionOut,
     CoverageCellOut,
     CoverageOut,
     DashboardOut,
@@ -20,12 +21,16 @@ from app.modules.m07_risk.schemas import (
     MethodOut,
     TargetRiskOut,
 )
+from app.modules.search.service import Limiter
 
 router = APIRouter(tags=["M7 Risk Analysis & Visualization"])
 
 # Dismissing an attack path is an analyst's judgement about findings, like adjusting a severity
 # (UC-7.5, 6a1; the actor of UC-7.1). Everyone of the organization reads the dashboards.
 can_triage = require(Action.TRIAGE_FINDINGS)
+# The attention panel is asked once per visit of the dashboard; a script asking hundreds of times
+# a minute is refused, as the search box refuses it.
+attention_limiter = Limiter(limit=60, seconds=60)
 
 
 def _category(code: str | None) -> str | None:
@@ -63,6 +68,22 @@ def dashboard(
         category=_category(category),
     )
     return DashboardOut.model_validate(data)
+
+
+@router.get("/risk/attention")
+def needs_attention(
+    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> AttentionOut:
+    """Screen 42's "Needs attention" (UC-7.3, "what should I do next"): at most five things this
+    person can act on now, each with the count its own page shows. Every member may read it; what
+    it lists depends on the role (attention.py)."""
+    if not attention_limiter.allow(membership.user_id):
+        raise AppError(
+            "Too many requests in a short time. Wait a minute and try again.",
+            code="too_many_requests",
+            status_code=429,
+        )
+    return AttentionOut.model_validate(attention.of(db, membership))
 
 
 @router.get("/risk/coverage")
