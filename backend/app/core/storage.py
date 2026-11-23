@@ -69,6 +69,13 @@ class LocalStorage:
         except FileNotFoundError as exc:
             raise ObjectMissing(f"The object {key} isn't stored.") from exc
 
+    def delete(self, key: str) -> None:
+        """Removes the object. The only caller is the retention clean-up of FR-10.5, which
+        deletes data whose period has ended (UC-10.8); an object that is already gone counts as
+        deleted, so a clean-up that was interrupted can simply run again. Empty directories are
+        left behind: they carry no data and another object may use them next."""
+        self._path(key).unlink(missing_ok=True)
+
 
 @cache
 def backend() -> LocalStorage:
@@ -81,3 +88,7 @@ def put(key: str, data: bytes) -> None:
 
 def get(key: str) -> bytes:
     return backend().get(key)
+
+
+def delete(key: str) -> None:
+    backend().delete(key)
