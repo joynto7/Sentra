@@ -177,7 +177,7 @@ export function ThreatFields({
             </SelectContent>
           </Select>
           <p id={`${id}-atlas-hint`} className="text-xs text-muted-foreground">
-            Only where one applies (FR-3.2).
+            Only where one applies.
           </p>
         </div>
         {form.atlas === "other" && (

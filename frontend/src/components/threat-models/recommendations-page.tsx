@@ -363,9 +363,19 @@ export function RecommendationsPage({ targetId }: { targetId: string }) {
                     {others ? "Hide the other suites" : "Add another suite"}
                   </Button>
                 )}
-                <Button className="h-9 hover:bg-primary-hover" onClick={() => void save()} disabled={busy !== null || !changed}>
+                <Button
+                  className="h-9 hover:bg-primary-hover"
+                  onClick={() => void save()}
+                  disabled={busy !== null || !changed}
+                  aria-describedby={!changed ? "save-suites-hint" : undefined}
+                >
                   {busy === "save" ? "Saving…" : "Save as default for new campaigns"}
                 </Button>
+                {!changed && (
+                  <p id="save-suites-hint" className="w-full text-xs text-muted-foreground">
+                    Tick or untick a suite first; then the choice can be saved.
+                  </p>
+                )}
               </div>
             )}
           </div>

@@ -94,9 +94,19 @@ export function ReviewPanel({
                 {busy === "approve" ? "Approving…" : `Approve v${approving}`}
               </Button>
             )}
-            <Button variant="outline" onClick={onSave} disabled={changes === 0 || busy !== null}>
+            <Button
+              variant="outline"
+              onClick={onSave}
+              disabled={changes === 0 || busy !== null}
+              aria-describedby={changes === 0 ? "save-draft-hint" : undefined}
+            >
               {busy === "save" ? "Saving…" : "Save draft"}
             </Button>
+            {changes === 0 && (
+              <p id="save-draft-hint" className="text-xs text-muted-foreground">
+                Change a threat first; then the draft can be saved.
+              </p>
+            )}
           </div>
         </>
       )}
