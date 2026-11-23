@@ -24,11 +24,10 @@ from app.llm.usage import cost_of_run
 from app.modules.m01_users.models import Membership, User
 from app.modules.m02_targets.models import Target, TargetStatus
 from app.modules.m04_tests.models import TestDefinition
-from app.modules.m05_campaigns import lifecycle, limits, service
+from app.modules.m05_campaigns import approval, lifecycle, limits, service
 from app.modules.m05_campaigns.models import (
     ENDED,
     AgentRefinement,
-    ApprovalStatus,
     Attempt,
     Campaign,
     CampaignRun,
@@ -66,18 +65,7 @@ def launch(
     organization_id = membership.organization_id
     campaign = campaign_row(db, organization_id, code)
     user = db.get_one(User, membership.user_id)
-    if campaign.approval_status == ApprovalStatus.AWAITING_APPROVAL:
-        raise ConflictError(
-            "This campaign is waiting for a Security Manager's approval, so it can't be launched "
-            "yet.",
-            code="awaiting_approval",
-        )
-    if campaign.approval_status == ApprovalStatus.REJECTED:
-        raise ConflictError(
-            "A Security Manager rejected this campaign's scope. Change the campaign and ask for "
-            "approval again.",
-            code="approval_rejected",
-        )
+    approval.check_before_launch(db, campaign)  # FR-5.2, if the organization requires it
     target = db.get_one(Target, campaign.target_id)
     if target.status != TargetStatus.VERIFIED:  # FR-5.7: only a verified target is tested
         raise ConflictError(
