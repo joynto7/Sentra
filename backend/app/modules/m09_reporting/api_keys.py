@@ -47,12 +47,14 @@ SCOPE_LABELS = {
 }
 # The scopes whose endpoints exist today. The others are kept, because an administrator sets a key
 # up before the feature arrives, and the page says what each one waits for.
-AVAILABLE = {ApiKeyScope.READ_FINDINGS}
+AVAILABLE = {
+    ApiKeyScope.READ_FINDINGS,
+    ApiKeyScope.RUN_SECURITY_GATE,  # the security gate's endpoints (FR-9.4, M9)
+    ApiKeyScope.READ_GATE_RESULTS,
+}
 WAITING_FOR = {
-    ApiKeyScope.RUN_SECURITY_GATE: "the security gate (FR-9.4)",
-    ApiKeyScope.READ_GATE_RESULTS: "the security gate (FR-9.4)",
-    ApiKeyScope.READ_REPORTS: "the reports (FR-9.1)",
-    ApiKeyScope.LAUNCH_CAMPAIGNS: "campaigns through the API (FR-5.3)",
+    ApiKeyScope.READ_REPORTS: "the reports endpoint of the API",  # FR-9.1 (M9) through FR-9.5
+    ApiKeyScope.LAUNCH_CAMPAIGNS: "the campaign launch through the API",  # FR-5.3 (M5), FR-9.5 (M9)
 }
 
 
