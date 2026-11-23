@@ -16,7 +16,9 @@ export function PasswordInput({
   id: string
   value: string
   onChange: (value: string) => void
-  autoComplete: "current-password" | "new-password"
+  // "off" for a secret that is not the person's own password, such as an identity provider's
+  // client secret (FR-1.3): a password manager should not offer to remember it as their password.
+  autoComplete: "current-password" | "new-password" | "off"
   invalid?: boolean
 }) {
   const [visible, setVisible] = useState(false)
