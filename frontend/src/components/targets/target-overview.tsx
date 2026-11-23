@@ -12,6 +12,7 @@ import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
 import { ArchiveDialog, RestoreButton } from "@/components/targets/archive-dialog"
 import { ConnectionSummary, TestConnectionButton, useConnectionTest } from "@/components/targets/connection-test"
 import { EnvironmentBadge, OwnershipBadge } from "@/components/targets/target-badges"
+import { TargetCoverageSummary, TargetShieldSummary } from "@/components/targets/target-cards"
 import { TargetTabs } from "@/components/targets/target-tabs"
 import { TargetThreatModel } from "@/components/threat-models/target-threat-model"
 import { Badge } from "@/components/ui/badge"
@@ -59,15 +60,6 @@ function Card({
       </div>
       {children}
     </section>
-  )
-}
-
-/** A card of a page that a later module brings (the sidebar says the same of its items). */
-function LaterCard({ title, comesWith }: { title: string; comesWith: string }) {
-  return (
-    <Card title={title}>
-      <p className="text-sm text-muted-foreground">Comes with {comesWith}.</p>
-    </Card>
   )
 }
 
@@ -274,7 +266,7 @@ export function TargetOverview({ id }: { id: string }) {
             <>
               <p className="text-sm text-muted-foreground">{notScoredText(risk.not_scored_reason)}</p>
               <p className="text-xs text-muted-foreground">
-                A target is scored after its first campaign run (UC-7.2), and every score is shown with the date of
+                A target is scored after its first campaign run, and every score is shown with the date of
                 that run.
               </p>
             </>
@@ -301,9 +293,14 @@ export function TargetOverview({ id }: { id: string }) {
             <>
               <p className="tabular text-3xl font-semibold">{risk.open_total}</p>
               <SeverityCountsStrip counts={risk.open_by_severity} />
-              <Link href={`/findings?target_id=${target.id}`} className="text-sm text-link hover:underline">
-                View findings
-              </Link>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <Link href={`/targets/${target.id}/findings`} className="text-sm text-link hover:underline">
+                  View findings
+                </Link>
+                <Link href={`/attack-paths?target=${target.id}`} className="text-sm text-link hover:underline">
+                  View attack paths
+                </Link>
+              </div>
             </>
           )}
         </Card>
@@ -334,7 +331,9 @@ export function TargetOverview({ id }: { id: string }) {
           )}
         </Card>
 
-        <LaterCard title="Sentra Shield" comesWith="Sentra Shield (M8)" />
+        <Card title="Sentra Shield">
+          <TargetShieldSummary targetId={target.id} />
+        </Card>
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
@@ -439,7 +438,9 @@ export function TargetOverview({ id }: { id: string }) {
           <Card title="Threat model">
             <TargetThreatModel targetId={target.id} />
           </Card>
-          <LaterCard title="Framework coverage" comesWith="the framework coverage view (FR-7.4)" />
+          <Card title="Framework coverage">
+            <TargetCoverageSummary targetId={target.id} />
+          </Card>
         </div>
       </div>
     </div>
