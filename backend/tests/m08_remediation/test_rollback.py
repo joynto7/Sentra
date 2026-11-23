@@ -91,7 +91,9 @@ def actions(team) -> list[str]:
 
 
 def notes(team) -> list[Notification]:
-    return list(team.db.scalars(select(Notification).where(Notification.event == "shield_policy")))
+    # In the order they were written: the database returns rows in no particular order otherwise
+    query = select(Notification).where(Notification.event == "shield_policy")
+    return list(team.db.scalars(query.order_by(Notification.created_at)))
 
 
 # ---------------------------------------------------------------- step 2: before it happens

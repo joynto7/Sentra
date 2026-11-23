@@ -397,16 +397,42 @@ def test_a_target_without_a_gateway_has_nothing_to_check(team):
 def test_screen_47_lists_the_targets_with_and_without_a_gateway(team):
     """Screen 47: the gateways of the organization, and the targets that have none with
     "Connect" beside them. Every member reads it."""
-    add_target(team.db, team.org, name="Depot Gate Bot")
+    depot = add_target(team.db, team.org, name="Depot Gate Bot")
+    branch = add_target(team.db, team.org, name="Branch Locator Assistant", status="registered")
     connect(team)
 
     log_in(team.client, ANALYST)
     listed = team.client.get(SHIELD).json()
 
     assert [row["target_name"] for row in listed["rows"]] == ["Payments Operations Agent"]
-    assert [one["name"] for one in listed["targets_without_gateway"]] == ["Depot Gate Bot"]
+    # an unverified target is listed, but can't take a gateway yet, so the page offers no Connect
+    assert listed["targets_without_gateway"] == [
+        {"id": str(branch.id), "name": "Branch Locator Assistant", "verified": False},
+        {"id": str(depot.id), "name": "Depot Gate Bot", "verified": True},
+    ]
     assert listed["rows"][0]["target_environment"] == "staging"
     assert listed["heartbeat_seconds"] == 30
+
+
+def test_screen_47_leaves_out_archived_targets_but_not_a_gateway_still_in_place(team):
+    """An archived target can't be given a gateway, so it isn't offered "Connect" (FR-2.6). One
+    whose gateway was never revoked stays listed and marked, because that gateway still sits in
+    the application's traffic and is revoked from here."""
+    add_target(team.db, team.org, name="Branch Locator Assistant", status="archived")
+    connect(team)
+    team.agent.status = "archived"
+    team.db.commit()
+
+    log_in(team.client, ANALYST)
+    listed = team.client.get(SHIELD).json()
+
+    assert listed["targets_without_gateway"] == []
+    (row,) = listed["rows"]
+    assert (row["target_name"], row["target_archived"]) == ("Payments Operations Agent", True)
+
+    log_in(team.client, DEVELOPER)
+    assert team.client.post(f"{SHIELD}/targets/{team.agent.id}/revoke").status_code == 200
+    assert team.client.get(SHIELD).json()["rows"] == []
 
 
 def test_the_policy_is_empty_until_a_version_is_deployed(team):
