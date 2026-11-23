@@ -144,6 +144,11 @@ export function AddWebhookDialog({
             </fieldset>
           </div>
 
+          {!busy && (!name.trim() || !url.trim() || chosen.length === 0) && (
+            <p id="webhook-missing" className="mt-4 text-[13px] text-muted-foreground">
+              Give the webhook a name and an address and choose at least one event, then you can add it.
+            </p>
+          )}
           <DialogFooter className="mt-6">
             <DialogClose asChild>
               <Button type="button" variant="outline" className="h-9">
@@ -154,6 +159,9 @@ export function AddWebhookDialog({
               type="submit"
               className="h-9 hover:bg-primary-hover"
               disabled={busy || !name.trim() || !url.trim() || chosen.length === 0}
+              aria-describedby={
+                !name.trim() || !url.trim() || chosen.length === 0 ? "webhook-missing" : undefined
+              }
             >
               {busy ? "Adding…" : "Add webhook"}
             </Button>

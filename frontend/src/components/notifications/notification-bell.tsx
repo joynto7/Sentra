@@ -73,17 +73,20 @@ function Panel({ onCount, onClose }: { onCount: (count: number) => void; onClose
           Notifications
         </h2>
         <div className="flex items-center gap-1">
-          <Button
-            variant="link"
-            className="h-8 px-2 text-xs"
-            disabled={!unread}
-            onClick={async () => {
-              await markAllRead().catch(() => undefined)
-              load()
-            }}
-          >
-            Mark all as read
-          </Button>
+          {unread ? (
+            <Button
+              variant="link"
+              className="h-8 px-2 text-xs"
+              onClick={async () => {
+                await markAllRead().catch(() => undefined)
+                load()
+              }}
+            >
+              Mark all as read
+            </Button>
+          ) : (
+            <span className="px-2 text-xs text-muted-foreground">All read</span>
+          )}
           <Button asChild variant="ghost" size="icon" className="size-8">
             <Link href="/account/profile#notifications" aria-label="Notification settings" onClick={onClose}>
               <Settings aria-hidden="true" />
