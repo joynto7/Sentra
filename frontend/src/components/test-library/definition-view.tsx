@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { CircleCheck, Lock, Minus } from "lucide-react"
 
+import { AtlasId, OwaspId } from "@/components/sentra/framework-ids"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
@@ -219,14 +220,10 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
 
           <section className="rounded-[10px] border bg-card p-5">
             <h2 className="mb-3 text-[15px] font-semibold">Framework mapping</h2>
-            <div className="flex flex-wrap gap-1.5">
-              <Badge variant="outline" className="font-normal">
-                <span className="font-mono">{test.category}</span> {test.category_name}
-              </Badge>
+            <div className="space-y-2 text-sm">
+              <OwaspId code={test.category} name={test.category_name} />
               {test.atlas.map((technique) => (
-                <Badge key={technique} variant="outline" className="font-mono font-normal">
-                  {technique}
-                </Badge>
+                <AtlasId key={technique} code={technique} className="block text-[13px]" />
               ))}
             </div>
             {test.atlas.length === 0 && (
