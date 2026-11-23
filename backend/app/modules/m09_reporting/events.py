@@ -43,6 +43,8 @@ EVENTS = [
     Event("gate_failed", "Security gate did not pass"),
     # UC-9.6, 3a1: an API key is about to expire, so it can be replaced in time
     Event("api_key_expiring", "API key about to expire"),
+    # UC-9.7, 6a1: Sentra switched a webhook off after repeated failures, so its events stop
+    Event("webhook_disabled", "Webhook disabled after repeated failures"),
     Event(
         "account_security",
         "Account security alerts (password changes, new logins)",
