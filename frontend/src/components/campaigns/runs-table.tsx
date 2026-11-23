@@ -28,8 +28,9 @@ export function RunProgress({ run }: { run: RunOverviewItem }) {
   const planned = run.attempt_budget || 1
   const percent = Math.min(100, Math.round((run.attempts_sent / planned) * 100))
   if (!RUNNING_STATUSES.includes(run.status)) {
+    // A block, so that it stands under the run it belongs to and not against it (Screen 33).
     return (
-      <span className="text-[13px] text-muted-foreground">
+      <span className="block text-[13px] text-muted-foreground">
         {END_REASON_LABEL[run.end_reason ?? ""] ?? RUN_STATUS_LABEL[run.status]}
       </span>
     )
