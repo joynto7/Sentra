@@ -46,6 +46,9 @@ export function OrganizationSecurityPage() {
   const [security, setSecurity] = useState<OrganizationSecurity | null>(null)
   const [failed, setFailed] = useState(false)
   const [required, setRequired] = useState(false) // the switch, saved or not
+  // FR-5.2 (M5): the second setting of this page — campaigns need a Security Manager's approval
+  const [approval, setApproval] = useState(false)
+  const [approvalError, setApprovalError] = useState<string>()
   const [now, setNow] = useState(0)
   const [password, setPassword] = useState("")
   const [passwordError, setPasswordError] = useState<string>()
@@ -58,7 +61,10 @@ export function OrganizationSecurityPage() {
     organizationSecurity()
       .then((found) => {
         setSecurity(found)
-        if (!keepSwitch) setRequired(found.mfa_required)
+        if (!keepSwitch) {
+          setRequired(found.mfa_required)
+          setApproval(found.requires_scope_approval)
+        }
         setNow(Date.now())
         setFailed(false)
       })
@@ -119,11 +125,28 @@ export function OrganizationSecurityPage() {
   async function save() {
     if (!security) return
     const told = security.members_without_mfa
+    const approvalChanged = approval !== security.requires_scope_approval
+    const mfaChanged = required !== security.mfa_required
     setSaving(true)
+    setApprovalError(undefined)
     try {
-      const saved = await saveOrganizationSecurity(required)
+      const saved = await saveOrganizationSecurity(required, approval)
       setSecurity(saved)
       setRequired(saved.mfa_required)
+      setApproval(saved.requires_scope_approval)
+      if (approvalChanged) {
+        toast.success(
+          saved.requires_scope_approval
+            ? "Campaigns now need a Security Manager's approval"
+            : "Campaigns no longer need a Security Manager's approval",
+          {
+            description: saved.requires_scope_approval
+              ? "A new campaign waits for a decision before it can run."
+              : "Campaigns that were waiting can run again.",
+          },
+        )
+      }
+      if (!mfaChanged) return
       if (saved.mfa_required) {
         toast.success("Two-step verification is now required", {
           description: told ? `${told === 1 ? "1 member was" : `${told} members were`} told by e-mail.` : "Every member already uses it.",
@@ -132,7 +155,11 @@ export function OrganizationSecurityPage() {
         toast.success("Two-step verification is no longer required", { description: "Members can log in without it." })
       }
     } catch (error) {
-      if (error instanceof ApiError && error.code === "password_confirmation_required") {
+      if (error instanceof ApiError && error.code === "no_security_manager") {
+        // FR-5.2: without someone who could approve, no campaign could be launched again
+        setApprovalError(error.message)
+        setApproval(security.requires_scope_approval)
+      } else if (error instanceof ApiError && error.code === "password_confirmation_required") {
         setSecurity({ ...security, password_confirmed_until: null }) // ask again; the switch stays
       } else {
         toast.error(error instanceof ApiError ? error.message : "The settings could not be saved. Try again.")
@@ -142,14 +169,16 @@ export function OrganizationSecurityPage() {
     }
   }
 
-  const changed = !!security && required !== security.mfa_required
+  const changed =
+    !!security && (required !== security.mfa_required || approval !== security.requires_scope_approval)
   const without = security?.members_without_mfa ?? 0
   let helper: React.ReactNode = "Members can turn it on for their own account in Account › Security."
-  if (security && changed && required) {
+  const mfaChangedNow = !!security && required !== security.mfa_required
+  if (security && mfaChangedNow && required) {
     helper = without
       ? `When you save, the ${without === 1 ? "member who hasn't" : `${without} members who haven't`} set it up ${without === 1 ? "is" : "are"} told by e-mail and asked to set it up at their next login.`
       : "When you save, every member must use it. All members have set it up already."
-  } else if (security && changed) {
+  } else if (security && mfaChangedNow) {
     helper = "When you save, members can log in without it again. Members who set it up keep using it."
   } else if (security?.mfa_required) {
     helper = without ? `${membersWithout(without)} set it up yet. They'll be asked to at their next login.` : "Every member has set it up."
@@ -161,7 +190,9 @@ export function OrganizationSecurityPage() {
       <div className="min-w-0 flex-1 space-y-5">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Organization Security</h1>
-          <p className="mt-1 text-sm text-muted-foreground">How the members of {organization?.name} log in.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            How the members of {organization?.name} log in, and what a campaign needs before it runs.
+          </p>
         </div>
 
         {failed && (
@@ -242,23 +273,89 @@ export function OrganizationSecurityPage() {
                     </div>
                     <Switch id="require-mfa" checked={required} onCheckedChange={setRequired} aria-describedby="require-mfa-help" className="mt-0.5" />
                   </div>
-                  <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-                    {changed && (
-                      <Button type="button" variant="outline" className="h-9" onClick={() => setRequired(security.mfa_required)}>
-                        Undo change
-                      </Button>
-                    )}
-                    <Button type="button" className="h-9 hover:bg-primary-hover" disabled={!changed || saving} onClick={save}>
-                      {saving ? "Saving…" : "Save settings"}
-                    </Button>
-                  </div>
                 </section>
+
+                {/* FR-5.2 (M5), optional: the organization may require a Security Manager to
+                    approve a campaign's scope and budget before it can run (UC-5.2). */}
+                <section
+                  aria-labelledby="approval-setting-heading"
+                  className="space-y-5 rounded-[10px] border bg-card p-6"
+                >
+                  <h2 id="approval-setting-heading" className="text-[15px] font-semibold">
+                    Campaign scope approval
+                  </h2>
+                  <div className="flex items-start justify-between gap-6">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="require-approval" className="text-sm font-medium">
+                        Require a Security Manager to approve a campaign&apos;s scope
+                      </Label>
+                      <p id="require-approval-help" className="text-sm text-text-secondary" aria-live="polite">
+                        {approval !== security.requires_scope_approval
+                          ? approval
+                            ? "When you save, a new campaign waits for a decision, and campaigns that were never submitted have to be submitted before they run."
+                            : "When you save, the campaigns that are waiting can run again."
+                          : approval
+                            ? "A campaign waits for a decision before it can run. Every decision is recorded with the manager who made it."
+                            : "Campaigns run as soon as a Security Analyst launches them."}
+                      </p>
+                      <p className="text-sm text-text-secondary">
+                        {security.security_managers === 0
+                          ? "Nobody in this organization has the Security Manager role yet."
+                          : `${security.security_managers === 1 ? "1 member" : `${security.security_managers} members`} can give that approval.`}{" "}
+                        <Link
+                          href="/admin/members"
+                          className="font-medium text-link underline-offset-4 hover:underline"
+                        >
+                          View members
+                        </Link>
+                      </p>
+                    </div>
+                    <Switch
+                      id="require-approval"
+                      checked={approval}
+                      onCheckedChange={(next) => {
+                        setApproval(next)
+                        setApprovalError(undefined)
+                      }}
+                      aria-describedby="require-approval-help"
+                      className="mt-0.5"
+                    />
+                  </div>
+                  {approvalError && (
+                    <Alert variant="destructive" role="alert">
+                      <AlertDescription>{approvalError}</AlertDescription>
+                    </Alert>
+                  )}
+                </section>
+
+                <div className="flex flex-wrap justify-end gap-2">
+                  {changed && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9"
+                      onClick={() => {
+                        setRequired(security.mfa_required)
+                        setApproval(security.requires_scope_approval)
+                        setApprovalError(undefined)
+                      }}
+                    >
+                      Undo changes
+                    </Button>
+                  )}
+                  <Button type="button" className="h-9 hover:bg-primary-hover" disabled={!changed || saving} onClick={save}>
+                    {saving ? "Saving…" : "Save settings"}
+                  </Button>
+                </div>
                 <SsoCard
                   connection={security.sso}
                   onChange={(sso) => setSecurity((before) => (before ? { ...before, sso } : before))}
                 />
               </div>
-              <aside aria-labelledby="help-heading" className="space-y-2 rounded-[10px] border bg-muted/40 p-5 text-sm text-text-secondary">
+              <aside
+                aria-labelledby="help-heading"
+                className="space-y-2 rounded-[10px] border bg-muted/40 p-5 text-sm text-text-secondary"
+              >
                 <h2 id="help-heading" className="text-sm font-semibold text-foreground">
                   What does it change?
                 </h2>
