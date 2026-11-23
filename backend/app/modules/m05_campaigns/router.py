@@ -9,10 +9,12 @@ from app.core.errors import AppError
 from app.modules.m01_users.deps import current_membership
 from app.modules.m01_users.models import Membership
 from app.modules.m01_users.permissions import Action, require
-from app.modules.m05_campaigns import runs, scheduling, service
+from app.modules.m05_campaigns import approval, runs, scheduling, service
 from app.modules.m05_campaigns.models import ENDED, AttemptStatus, RunStatus
 from app.modules.m05_campaigns.schemas import (
     AgentOut,
+    ApprovalDecisionIn,
+    ApprovalView,
     AttemptOut,
     AttemptPage,
     CampaignDetail,
@@ -27,12 +29,14 @@ from app.modules.m05_campaigns.schemas import (
     ScheduleIn,
     ScheduleOut,
     StopIn,
+    SubmitForApprovalIn,
 )
 
 router = APIRouter(prefix="/campaigns", tags=["M5 Campaign Management"])
 can_manage = require(Action.MANAGE_CAMPAIGNS)  # Security Analysts (FR-1.6)
 can_pause = require(Action.PAUSE_CAMPAIGN_RUNS)  # Security Analysts (UC-5.7)
 can_stop = require(Action.STOP_CAMPAIGN_RUNS)  # also AI Application Developers (UC-5.7, 1b)
+can_approve = require(Action.APPROVE_CAMPAIGN_SCOPE)  # Security Managers (UC-5.2)
 
 
 @router.get("")
@@ -140,8 +144,13 @@ def save_schedule(
     """UC-5.1 step 5 for a campaign that is already saved: it replaces the schedule it had. The
     member who saves it is the one whose permissions its runs use (UC-5.3, 1a1)."""
     campaign = runs.campaign_row(db, membership.organization_id, code)
+    before = scheduling.view(db, campaign)
     scheduling.save(db, membership, campaign, scheduling.ScheduleInput(**data.model_dump()))
     db.commit()
+    after = scheduling.view(db, campaign)
+    if (before or {}).get("summary") != (after or {}).get("summary"):
+        # UC-5.2, 5a1: a changed schedule needs a new approval, where approval is required
+        approval.after_schedule_change(db, membership, campaign)
     return _schedule(db, membership, code)
 
 
@@ -182,6 +191,44 @@ def remove_schedule(
 def _detail(db: Session, membership: Membership, code: str, number: int) -> RunDetail:
     campaign, run = runs.run_row(db, membership.organization_id, code, number)
     return RunDetail.model_validate(runs.run_detail(db, campaign, run))
+
+
+# ---------------------------------------------------------------- scope approval (FR-5.2)
+
+
+@router.get("/{code}/approval")
+def get_approval(
+    code: str, membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> ApprovalView:
+    """Screen 35, UC-5.2 step 2: everything the decision needs. Every member may read it;
+    `can_decide` says whether this user may decide, and why not when they may not."""
+    return ApprovalView.model_validate(approval.view(db, membership, code))
+
+
+@router.post("/{code}/approval")
+def submit_for_approval(
+    code: str,
+    data: SubmitForApprovalIn | None = None,
+    membership: Membership = Depends(can_manage),
+    db: Session = Depends(get_db),
+) -> ApprovalView:
+    """UC-5.2, 3a1: the analyst asks for a decision again after a rejection, or for a campaign
+    that is older than the organization's requirement."""
+    approval.submit(db, membership, code, data.note if data else None)
+    return ApprovalView.model_validate(approval.view(db, membership, code))
+
+
+@router.post("/{code}/approval/decision")
+def decide_approval(
+    code: str,
+    data: ApprovalDecisionIn,
+    membership: Membership = Depends(can_approve),
+    db: Session = Depends(get_db),
+) -> ApprovalView:
+    """UC-5.2 steps 3 and 4, or 3a: the Security Manager approves or rejects the scope. A
+    rejection needs a reason, and nobody decides on a campaign they created themselves."""
+    approval.decide(db, membership, code, data.approve, data.reason)
+    return ApprovalView.model_validate(approval.view(db, membership, code))
 
 
 @router.post("/{code}/runs", status_code=status.HTTP_202_ACCEPTED)
