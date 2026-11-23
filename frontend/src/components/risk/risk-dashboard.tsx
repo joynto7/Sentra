@@ -2,43 +2,33 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { RefreshCw } from "lucide-react"
 
-import { Reproducibility, StatusBadge } from "@/components/findings/finding-badges"
+import { StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
-import { PageHeader } from "@/components/layout/page-header"
 import { ReportDialog } from "@/components/reports/report-dialog"
 import { CategoryTable } from "@/components/risk/category-table"
+import { CriticalFindings } from "@/components/risk/critical-findings"
+import { DEFAULT_DAYS, DashboardFilters, focusFilters } from "@/components/risk/dashboard-filters"
 import { NeedsAttention } from "@/components/risk/needs-attention"
-import { Delta, RiskTiles } from "@/components/risk/risk-tiles"
-import { ScoreMethod } from "@/components/risk/score-method"
+import { RiskTiles } from "@/components/risk/risk-tiles"
+import { TargetRisk } from "@/components/risk/target-risk"
 import { TrendCharts } from "@/components/risk/trend-charts"
-import { FilterSelect } from "@/components/sentra/filter-select"
-import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
-import { SEVERITY_LABEL, SeverityBadge, type Severity } from "@/components/sentra/severity-badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { refused } from "@/hooks/use-kept-list"
+import { useUrlState } from "@/hooks/use-url-state"
 import type { FindingStatus } from "@/lib/findings"
 import { ApiError } from "@/lib/api"
 import { useCan } from "@/lib/permissions"
-import {
-  CLOSED_STATUSES,
-  COUNTED,
-  OPEN_STATUSES,
-  PERIODS,
-  type RiskDashboard as Dashboard,
-  type TargetRiskRow,
-  getRiskDashboard,
-  notScoredText,
-} from "@/lib/risk"
-import { formatDate, formatDateTime } from "@/lib/targets"
-
-const DEFAULT_DAYS = "90"
-// What "Last campaign run" says while a run of the target is going on (FR-5.6, M5).
-const LIVE: Record<string, string> = { running: "Running now", paused: "Paused", queued: "Waiting to start" }
+import { CLOSED_STATUSES, OPEN_STATUSES, PERIODS, type RiskDashboard as Dashboard, getRiskDashboard } from "@/lib/risk"
+import { formatDateTime, listTargets } from "@/lib/targets"
+import { cn } from "@/lib/utils"
 
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+const clock = (at: Date) => at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
 
 /** "Findings by status" (UC-7.3 step 3): the lifecycle of the findings, each status a link. */
 function ByStatus({
@@ -96,291 +86,46 @@ function ByStatus({
   )
 }
 
-/** The change of a target's score since the start of the period (FR-7.2, M7, keeps every score); the
- * column's header names the date. */
-function ScoreChange({ row, since }: { row: TargetRiskRow; since: string }) {
-  if (row.score === null) return null
-  if (row.score_then === null || row.score_then === undefined) {
-    return (
-      <p className="text-xs whitespace-nowrap text-muted-foreground">
-        First score<span className="sr-only">: no score on {since}</span>
-      </p>
-    )
-  }
-  const change = row.score - row.score_then
-  return (
-    <Delta
-      change={change}
-      worseWhen="up"
-      against={change === 0 ? "Same" : ""}
-      spoken={
-        change === 0
-          ? `The same score as on ${since}.`
-          : `${Math.abs(change)} points ${change > 0 ? "higher" : "lower"} than on ${since}, when it was ${row.score_then}.`
-      }
-      className="text-xs whitespace-nowrap"
-    />
-  )
-}
-
-/** The targets without a score, folded into one row: what each one needs before it can have one. */
-function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: boolean | undefined }) {
-  const verify = (row: TargetRiskRow) => row.not_scored_reason === "ownership_not_verified"
-  return (
-    <TableRow>
-      <TableCell colSpan={5} className="text-[13px] whitespace-normal">
-        <span className="font-medium">
-          {rows.length} {rows.length === 1 ? "target isn't" : "targets aren't"} scored yet:
-        </span>{" "}
-        {rows.map((row, index) => (
-          <span key={row.id}>
-            {index > 0 && "; "}
-            <Link href={`/targets/${row.id}`} className="text-link underline underline-offset-2">
-              {row.name}
-            </Link>
-            <span className="text-muted-foreground"> — {notScoredText(row.not_scored_reason).replace(/^Not scored — /, "")}</span>
-            {verify(row) && canVerify && (
-              <>
-                {" · "}
-                <Link href={`/targets/${row.id}/verify`} className="text-link underline underline-offset-2">
-                  Verify ownership
-                </Link>
-              </>
-            )}
-            {/* Whoever can't verify learns who can (FR-2.3, M2) */}
-            {verify(row) && !canVerify && <span className="text-muted-foreground"> · an AI Application Developer verifies it</span>}
-          </span>
-        ))}
-      </TableCell>
-    </TableRow>
-  )
-}
-
-/** The "Target risk" table (UC-7.3 step 2): a score per target, with its change and its last run. */
-function TargetRisk({ rows, canVerify, since }: { rows: TargetRiskRow[]; canVerify: boolean | undefined; since: string }) {
-  const scored = rows.filter((row) => row.score !== null && row.band !== null)
-  const unscored = rows.filter((row) => row.score === null || row.band === null)
-  return (
-    <section aria-labelledby="target-risk" className="min-w-0 rounded-[10px] border bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-        <h2 id="target-risk" className="text-[15px] font-semibold">
-          Target risk
-          <span className="tabular ml-2 text-[13px] font-normal text-muted-foreground">
-            {rows.length} {rows.length === 1 ? "target" : "targets"}
-          </span>
-        </h2>
-        <ScoreMethod />
-      </div>
-      <Table
-        container={{
-          tabIndex: 0,
-          role: "group",
-          "aria-label": "Target risk",
-          className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        }}
-      >
-        <TableHeader className="bg-muted">
-          <TableRow>
-            <TableHead scope="col" className="text-xs">Target</TableHead>
-            <TableHead scope="col" className="text-xs">
-              Risk score <span className="font-normal text-muted-foreground">· change since {since}</span>
-            </TableHead>
-            <TableHead scope="col" className="text-xs">Open findings</TableHead>
-            <TableHead scope="col" className="text-xs">Awaiting confirmation</TableHead>
-            <TableHead scope="col" className="text-xs">Last campaign run</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {scored.map((row) => (
-            <TableRow key={row.id}>
-              <TableCell>
-                <Link href={`/targets/${row.id}`} className="inline-flex min-h-6 items-center font-medium text-link hover:underline">
-                  {row.name}
-                </Link>
-                <span className="block text-xs text-muted-foreground">
-                  {row.environment} ·{" "}
-                  <Link
-                    href={`/attack-paths?target=${row.id}`}
-                    className="inline-flex min-h-6 items-center text-link underline underline-offset-2"
-                    aria-label={`Attack paths of ${row.name}`}
-                  >
-                    Attack paths
-                  </Link>
-                </span>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-start gap-3">
-                  <RiskScore score={row.score as number} band={row.band!} className="min-w-32" />
-                  <ScoreChange row={row} since={since} />
-                </div>
-              </TableCell>
-              <TableCell>
-                <Link
-                  href={`/findings?view=open&target_id=${row.id}`}
-                  className="block py-1 hover:underline"
-                  aria-label={`${row.open_total} open findings of ${row.name}${
-                    row.open_total
-                      ? `: ${COUNTED.filter((severity) => row.open_by_severity[severity])
-                          .map((severity) => `${row.open_by_severity[severity]} ${SEVERITY_LABEL[severity as Severity].toLowerCase()}`)
-                          .join(", ")}`
-                      : ""
-                  }`}
-                >
-                  <SeverityCountsStrip counts={row.open_by_severity} />
-                </Link>
-              </TableCell>
-              <TableCell className="tabular">
-                {row.awaiting_confirmation > 0 ? (
-                  <Link
-                    href={`/findings?view=requires_confirmation&target_id=${row.id}`}
-                    className="inline-block min-w-6 py-1 text-center text-link hover:underline"
-                    aria-label={`${row.awaiting_confirmation} findings of ${row.name} await confirmation`}
-                  >
-                    {row.awaiting_confirmation}
-                  </Link>
-                ) : (
-                  <span className="text-muted-foreground">0</span>
-                )}
-              </TableCell>
-              <TableCell className="text-[13px] whitespace-nowrap">
-                {row.live_run ? (
-                  <>
-                    <Link
-                      href={`/campaigns/${row.live_run.campaign}/runs/${row.live_run.number}`}
-                      className="inline-flex min-h-6 items-center font-medium text-link hover:underline"
-                      aria-label={`${LIVE[row.live_run.status]}: ${row.live_run.code}, open its live monitor`}
-                    >
-                      {LIVE[row.live_run.status]}
-                    </Link>
-                    <span className="block text-xs text-muted-foreground">{row.live_run.code}</span>
-                    {row.last_run_at && (
-                      <span className="block text-xs text-muted-foreground">before: {formatDate(row.last_run_at)}</span>
-                    )}
-                  </>
-                ) : row.last_run_at ? (
-                  formatDate(row.last_run_at)
-                ) : (
-                  <span className="text-muted-foreground">Never</span>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-          {unscored.length > 0 && <NotScored rows={unscored} canVerify={canVerify} />}
-        </TableBody>
-      </Table>
-    </section>
-  )
-}
-
-/** "Critical and high findings" (Screen 42; UC-7.3 step 6 leads to UC-6.4): the most serious
- * open findings first, as the screen lists them. */
-function TopFindings({ data, filterQuery }: { data: Dashboard["top_findings"]; filterQuery: string }) {
-  return (
-    <section aria-labelledby="top-findings" className="min-w-0 rounded-[10px] border bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-        <h2 id="top-findings" className="text-[15px] font-semibold">
-          Critical and high findings
-          <span className="ml-2 text-[13px] font-normal text-muted-foreground">Most serious first</span>
-        </h2>
-        <span className="tabular text-sm text-muted-foreground">
-          {Math.min(data.items.length, data.total)} of {data.total} ·{" "}
-          <Link
-            href={`/findings?view=open${filterQuery}`}
-            className="inline-flex min-h-6 items-center text-link underline underline-offset-2"
-          >
-            View all
-          </Link>
-        </span>
-      </div>
-      {data.total === 0 ? (
-        <p className="p-4 text-sm text-muted-foreground">
-          Nothing critical or high is open. The medium and low findings are under Findings.
-        </p>
-      ) : (
-        <Table
-          container={{
-            tabIndex: 0,
-            role: "group",
-            "aria-label": "Critical and high findings",
-            className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-          }}
-        >
-          <TableHeader className="bg-muted">
-            <TableRow>
-              <TableHead scope="col" className="text-xs">Finding</TableHead>
-              <TableHead scope="col" className="text-xs">Severity</TableHead>
-              <TableHead scope="col" className="text-xs">Reproducibility</TableHead>
-              <TableHead scope="col" className="text-xs">Status</TableHead>
-              <TableHead scope="col" className="text-xs">Owner</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.items.map((finding) => (
-              <TableRow key={finding.code}>
-                <TableCell className="max-w-lg">
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <Link
-                      href={`/findings/${finding.code}`}
-                      className="inline-flex min-h-6 shrink-0 items-center font-medium text-link hover:underline"
-                    >
-                      {finding.code}
-                    </Link>
-                    <span className="truncate text-[13px]" title={finding.title}>
-                      {finding.title}
-                    </span>
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {finding.target.name}
-                    {finding.category && <span className="font-mono"> · {finding.category}</span>}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <SeverityBadge severity={finding.severity} />
-                  {finding.provisional && <span className="mt-1 block text-xs text-muted-foreground">Provisional</span>}
-                </TableCell>
-                <TableCell>
-                  <Reproducibility value={finding.reproducibility} />
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={finding.status} />
-                </TableCell>
-                <TableCell className="text-[13px]">
-                  {finding.owner ?? <span className="text-muted-foreground">Nobody yet</span>}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </section>
-  )
-}
-
 /**
- * Screen 42: the organization's risk at a glance (UC-7.3), and the score of UC-7.2 per target. The
- * page reads top to bottom as the questions come: what needs me now, how much is open and is it
- * more or less than before, which targets are worst and moving which way, by status and by
- * category, how it developed, and the most serious findings themselves.
+ * The Risk Dashboard (UC-7.3), and the score of UC-7.2 per target. The page reads in the order the
+ * questions come: how much is open and is it more or less than before; what I should look at now,
+ * with the most serious findings beside what needs me; which targets are worst and moving which
+ * way; how it developed; and by status and by category. Its three filters are in its address, so a
+ * reload, Back, or a link somebody shares opens the same view.
  */
 export function RiskDashboard() {
+  // When the address changes without the page (the menu's link, Back or Forward), the page starts
+  // again from the new address, as if it had just been opened
+  const [opened, setOpened] = useState(0)
+  return <DashboardFromAddress key={opened} onOutside={() => setOpened((count) => count + 1)} />
+}
+
+function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
   const canVerify = useCan("verify_targets")
   const canReport = useCan("generate_reports")
   const canRegister = useCan("manage_targets")
   const canRun = useCan("manage_campaigns")
+  const canLab = useCan("use_security_lab")
+  const query = useSearchParams()
   const [report, setReport] = useState(false)
-  const [target, setTarget] = useState("")
-  const [days, setDays] = useState(DEFAULT_DAYS)
-  const [category, setCategory] = useState("")
+  const [target, setTarget] = useState(query.get("target") ?? "")
+  const askedDays = query.get("days")
+  const [days, setDays] = useState(PERIODS.some((one) => one.value === askedDays) ? (askedDays as string) : DEFAULT_DAYS)
+  const [category, setCategory] = useState((query.get("category") ?? "").slice(0, 20))
   const [data, setData] = useState<Dashboard | null>(null)
   const [options, setOptions] = useState<{ id: string; name: string }[]>([])
   // The API's own words when it gave any (too many requests, a session that ended), else ours
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null)
   // Which filters the numbers on screen belong to: while they differ from the chosen ones, the
   // page is updating
   const asked = `${target}|${days}|${category}|${attempt}`
   const [answered, setAnswered] = useState("")
   const loading = answered !== asked
+
+  // The filters are in the address, except what a person has not chosen
+  useUrlState({ target, days, category }, { days: DEFAULT_DAYS }, onOutside)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -391,6 +136,7 @@ export function RiskDashboard() {
       .then((found) => {
         setData(found)
         setError(null)
+        setCheckedAt(new Date())
         setAnswered(`${target}|${days}|${category}|${attempt}`)
         // The answer holds every target while no target is chosen, which is the filter's list.
         if (!target) setOptions(found.targets.map((row) => ({ id: row.id, name: row.name })))
@@ -398,12 +144,31 @@ export function RiskDashboard() {
       .catch((failure) => {
         if (controller.signal.aborted) return
         // Numbers of other filters would contradict the filters above them: they go
-        setError(failure instanceof ApiError ? failure.message : "The dashboard could not be loaded.")
+        setError(
+          refused(failure)
+            ? (failure as ApiError).status === 401
+              ? "Your login has ended. Log in again to see the dashboard."
+              : "You can't see the dashboard of this organization any more. Ask an Organization Administrator for access."
+            : failure instanceof ApiError
+              ? failure.message
+              : "The dashboard could not be loaded.",
+        )
         setData(null)
         setAnswered(`${target}|${days}|${category}|${attempt}`)
       })
     return () => controller.abort()
   }, [target, days, category, attempt])
+
+  // A page opened with a target in its address has no answer that holds them all: the filter's
+  // list comes from the targets themselves
+  useEffect(() => {
+    if (!target || options.length > 0) return
+    const controller = new AbortController()
+    listTargets(new URLSearchParams({ tab: "active", page_size: "100" }), controller.signal)
+      .then((found) => setOptions(found.items.map((one) => ({ id: one.id, name: one.name }))))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [target, options.length])
 
   const filtered = target !== "" || days !== DEFAULT_DAYS || category !== ""
   const reset = useCallback(() => {
@@ -417,29 +182,46 @@ export function RiskDashboard() {
   // Before any run has ended, a run that is going on is what there is to see
   const firstRun = data?.targets.find((row) => row.live_run)
   const since = data ? shortDate(data.changes.since) : ""
+  const calculated = data?.targets
+    .map((row) => row.calculated_at)
+    .filter((at): at is string => at !== null)
+    .sort()
+    .at(-1)
+  const freshness = [
+    "Updated after every campaign run, triage action and retest",
+    data?.last_run_at ? `last campaign run ${formatDateTime(data.last_run_at)}` : null,
+    calculated ? `scores calculated ${formatDateTime(calculated)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
-    <>
-      <PageHeader
-        title="Risk Dashboard"
-        description={
-          data?.last_run_at
-            ? `Updated after every campaign run, triage action and retest · last campaign run ${formatDateTime(data.last_run_at)}`
-            : "Updated after every campaign run, triage action and retest"
-        }
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" className="h-9">
-              <Link href="/findings">View all findings</Link>
+    <div className="@container/dash">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1 basis-80">
+          <h1 className="text-2xl font-semibold tracking-tight">Risk Dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{freshness}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            className="h-9 gap-1.5 text-muted-foreground"
+            onClick={() => setAttempt((n) => n + 1)}
+            aria-label={checkedAt ? `Refresh the dashboard, last checked at ${clock(checkedAt)}` : "Refresh the dashboard"}
+          >
+            <RefreshCw className={cn(loading && "motion-safe:animate-spin")} aria-hidden="true" />
+            <span className="tabular">{loading ? "Updating" : checkedAt ? `Checked ${clock(checkedAt)}` : "Refresh"}</span>
+          </Button>
+          <Button asChild variant="outline" className="h-9">
+            <Link href="/findings">View all findings</Link>
+          </Button>
+          {canReport && (
+            <Button className="h-9 hover:bg-primary-hover" onClick={() => setReport(true)}>
+              Generate executive report
             </Button>
-            {canReport && (
-              <Button className="h-9 hover:bg-primary-hover" onClick={() => setReport(true)}>
-                Generate executive report
-              </Button>
-            )}
-          </div>
-        }
-      />
+          )}
+        </div>
+      </div>
 
       {/* UC-9.1, 1a1: the report takes the filters this page is showing. */}
       <ReportDialog
@@ -447,64 +229,61 @@ export function RiskDashboard() {
         preset={{
           target_id: target || null,
           period_days: Number(days),
-          category: data?.category ?? null,
-          label: `${target ? (options.find((one) => one.id === target)?.name ?? "one target") : `All targets${options.length ? ` (${options.length})` : ""}`} · ${PERIODS.find((one) => one.value === days)?.label ?? `Last ${days} days`} · ${data?.category ?? "All OWASP categories"}`,
+          // What the page's filters say now, not what the last answer was about
+          category: category || null,
+          label: `${target ? (options.find((one) => one.id === target)?.name ?? "one target") : `All targets${options.length ? ` (${options.length})` : ""}`} · ${PERIODS.find((one) => one.value === days)?.label ?? `Last ${days} days`} · ${category || "All OWASP categories"}`,
         }}
         onClose={() => setReport(false)}
         onDone={() => undefined}
       />
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <FilterSelect
-          label="Target"
-          value={target}
-          onChange={setTarget}
-          options={options.map((row) => ({ value: row.id, label: row.name }))}
-          allLabel={`All targets${options.length ? ` (${options.length})` : ""}`}
-        />
-        <FilterSelect
-          label="Period"
-          value={days}
-          onChange={setDays}
-          options={PERIODS}
-          allLabel={null}
-          changed={days !== DEFAULT_DAYS}
-        />
-        <FilterSelect
-          label="Category"
-          value={category}
-          onChange={setCategory}
-          options={(data?.by_category ?? []).map((row) => ({
-            value: row.code,
-            label: `${row.code} ${row.name ?? ""}`.trim(),
-          }))}
-          allLabel="All OWASP categories"
-        />
-        {filtered && (
-          <Button variant="ghost" size="sm" className="h-9" onClick={reset}>
-            Reset filters
-          </Button>
-        )}
-      </div>
+      <DashboardFilters
+        target={target}
+        days={days}
+        category={category}
+        targets={options.map((row) => ({ value: row.id, label: row.name }))}
+        categories={(data?.by_category ?? []).map((row) => ({ value: row.code, label: `${row.code} ${row.name ?? ""}`.trim() }))}
+        onTarget={setTarget}
+        onDays={setDays}
+        onCategory={setCategory}
+        onReset={reset}
+      />
 
       {error && (
         <Alert variant="destructive" role="alert">
-          <AlertDescription className="flex items-center justify-between gap-4">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-4">
             {error}
-            <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
-              Try again
-            </Button>
+            <span className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                Try again
+              </Button>
+              {filtered && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    reset()
+                    focusFilters()
+                  }}
+                >
+                  Reset filters
+                </Button>
+              )}
+            </span>
           </AlertDescription>
         </Alert>
       )}
 
       {!data && !error && (
         <div className="space-y-3" role="status" aria-label="Loading the dashboard">
-          <Skeleton className="h-[76px] w-full" />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 @min-[28rem]/dash:grid-cols-2 @min-[56rem]/dash:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full" />
+              <Skeleton key={i} className="h-[112px] w-full" />
             ))}
+          </div>
+          <div className="grid gap-3 @min-[58rem]/dash:grid-cols-12">
+            <Skeleton className="h-[360px] w-full @min-[58rem]/dash:col-span-8" />
+            <Skeleton className="h-[360px] w-full @min-[58rem]/dash:col-span-4" />
           </div>
           <Skeleton className="h-64 w-full" />
         </div>
@@ -515,8 +294,8 @@ export function RiskDashboard() {
         {loading && data ? "Updating the dashboard" : ""}
       </p>
       {data && (
-        <div className={loading ? "space-y-3 opacity-60 transition-opacity motion-reduce:transition-none" : "space-y-3"} aria-busy={loading}>
-          <NeedsAttention filtered={target !== "" || category !== ""} />
+        <div className={cn("space-y-3", loading && "opacity-60 transition-opacity motion-reduce:transition-none")} aria-busy={loading}>
+          {data.last_run_at === null && <NeedsAttention filtered={target !== "" || category !== ""} />}
 
           {data.last_run_at === null && firstRun && (
             <EmptyState
@@ -543,14 +322,23 @@ export function RiskDashboard() {
                     : "Findings, severities and risk scores appear here after the first campaign run. An AI Application Developer registers and verifies a target, and a Security Analyst runs the campaign."
               }
               action={
-                canRegister ? (
-                  <Button asChild className="h-9 hover:bg-primary-hover">
-                    <Link href="/targets/new">Register target</Link>
-                  </Button>
-                ) : canRun ? (
-                  <Button asChild className="h-9 hover:bg-primary-hover">
-                    <Link href="/campaigns/new">Create campaign</Link>
-                  </Button>
+                canRegister || canRun || canLab ? (
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {canRegister ? (
+                      <Button asChild className="h-9 hover:bg-primary-hover">
+                        <Link href="/targets/new">Register target</Link>
+                      </Button>
+                    ) : canRun ? (
+                      <Button asChild className="h-9 hover:bg-primary-hover">
+                        <Link href="/campaigns/new">Create campaign</Link>
+                      </Button>
+                    ) : null}
+                    {canLab && (
+                      <Button asChild variant="outline" className="h-9">
+                        <Link href="/lab">Deploy a lab target</Link>
+                      </Button>
+                    )}
+                  </div>
                 ) : undefined
               }
             />
@@ -571,26 +359,27 @@ export function RiskDashboard() {
               />
               {data.category_filtered && (
                 <p className="text-[13px] text-muted-foreground">
-                  Every count on this page is narrowed to {data.category}. A risk score covers all of a
-                  target&apos;s findings, so the scores and their lines stay as they are.
+                  The counts, the status list and the charts are narrowed to {data.category}. The category table keeps
+                  every category, so that another one can be chosen. A risk score covers all of a target&apos;s
+                  findings, so the scores and their lines stay as they are.
                 </p>
               )}
-              <TargetRisk rows={data.targets} canVerify={canVerify} since={since} />
-              <div className="grid items-start gap-3 lg:grid-cols-3">
-                <ByStatus
-                  byStatus={data.by_status}
-                  periodDays={data.period_days}
+              {/* The working area: the most serious findings, and what needs this person now */}
+              <div className="grid items-start gap-3 @min-[58rem]/dash:grid-cols-12">
+                <CriticalFindings
+                  className="@min-[58rem]/dash:col-span-8"
+                  data={data.top_findings}
                   filterQuery={filterQuery}
-                  since={data.changes.since}
+                  onChanged={() => setAttempt((n) => n + 1)}
                 />
-                <CategoryTable
-                  className="lg:col-span-2"
-                  rows={data.by_category}
-                  targetQuery={targetQuery}
-                  chosen={data.category}
-                  onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
+                {/* Beside the findings when there is room; above them when the page is narrow, where it
+                    would otherwise come after the whole table */}
+                <NeedsAttention
+                  className="order-first @min-[58rem]/dash:order-none @min-[58rem]/dash:col-span-4"
+                  filtered={target !== "" || category !== ""}
                 />
               </div>
+              <TargetRisk rows={data.targets} canVerify={canVerify} since={since} />
               {/* New filters start the readouts afresh */}
               <TrendCharts
                 key={`${target}|${days}|${category}`}
@@ -598,11 +387,25 @@ export function RiskDashboard() {
                 periodDays={data.period_days}
                 filterQuery={filterQuery}
               />
-              <TopFindings data={data.top_findings} filterQuery={filterQuery} />
+              <div className="grid items-start gap-3 @min-[58rem]/dash:grid-cols-3">
+                <ByStatus
+                  byStatus={data.by_status}
+                  periodDays={data.period_days}
+                  filterQuery={filterQuery}
+                  since={data.changes.since}
+                />
+                <CategoryTable
+                  className="@min-[58rem]/dash:col-span-2"
+                  rows={data.by_category}
+                  targetQuery={targetQuery}
+                  chosen={data.category}
+                  onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
+                />
+              </div>
             </>
           )}
         </div>
       )}
-    </>
+    </div>
   )
 }
