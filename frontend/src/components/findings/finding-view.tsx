@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CircleCheck, CircleX, TriangleAlert } from "lucide-react"
@@ -119,6 +119,8 @@ export function FindingView({ code }: { code: string }) {
   const [finding, setFinding] = useState<FindingDetail | null>(null)
   const [history, setHistory] = useState<HistoryItem[] | null>(null)
   const [triaging, setTriaging] = useState(false)
+  // Closing the triage panel brings the keyboard back to the button that opened it (WCAG 2.4.3)
+  const triageButton = useRef<HTMLButtonElement>(null)
   const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
@@ -201,6 +203,7 @@ export function FindingView({ code }: { code: string }) {
             )}
             {canTriage && (OPEN_STATUSES as readonly string[]).includes(finding.status) && (
               <Button
+                ref={triageButton}
                 variant={requestable ? "outline" : "default"}
                 className={cn("h-9", !requestable && "hover:bg-primary-hover")}
                 onClick={() => setTriaging(true)}
@@ -213,7 +216,13 @@ export function FindingView({ code }: { code: string }) {
       />
       <FindingTabs code={finding.code} active="summary" />
 
-      <TriagePanel finding={finding} open={triaging} onOpenChange={setTriaging} onDone={setFinding} />
+      <TriagePanel
+        finding={finding}
+        open={triaging}
+        onOpenChange={setTriaging}
+        onDone={setFinding}
+        returnFocus={() => triageButton.current}
+      />
 
       {finding.merged_into && (
         <p role="status" className="mb-5 rounded-[10px] border bg-card p-4 text-sm">
