@@ -687,9 +687,12 @@ const FALLBACK: HelpTopic = {
 }
 
 export function helpFor(pathname: string): HelpTopic {
-  // A target's tabs show the same lists and pages as the menu items, so they have the same help.
-  const page = pathname.replace(/^\/targets\/([^/]+)\/(threat-model|campaigns|findings)$/, (_, id, tab) =>
-    tab === "threat-model" ? `/threat-models/${id}` : `/${tab}`,
-  )
+  // A target's tabs and a finding's Remediation tab show the same lists and pages as the menu items,
+  // so they have the same help.
+  const page = pathname
+    .replace(/^\/targets\/([^/]+)\/(threat-model|campaigns|findings)$/, (_, id, tab) =>
+      tab === "threat-model" ? `/threat-models/${id}` : `/${tab}`,
+    )
+    .replace(/^\/findings\/([^/]+)\/remediation$/, "/remediation/$1")
   return TOPICS.find(([pattern]) => pattern.test(page))?.[1] ?? FALLBACK
 }
