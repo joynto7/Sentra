@@ -17,8 +17,8 @@ from fastapi.responses import PlainTextResponse
 
 from app import model, rag
 
-API_KEY = os.environ.get("LAB_API_KEY", "lab-key-rag-chatbot")
-ADMIN_TOKEN = os.environ.get("LAB_ADMIN_TOKEN", "lab-admin-rag-chatbot")
+API_KEY = os.environ.get("LAB_API_KEY", "lab-api-key")
+ADMIN_TOKEN = os.environ.get("LAB_ADMIN_TOKEN", "lab-admin-token")
 MODEL = os.environ.get("LAB_MODEL", "simulated")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
 
