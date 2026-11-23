@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { apiFetch } from "@/lib/api"
 import { initials } from "@/lib/session"
+import { forgetKeptLists } from "@/lib/kept-lists"
 
 /** Minimal top bar for focused pages: the logo on the left, the user menu on the right. */
 export function FocusedHeader() {
@@ -23,6 +24,7 @@ export function FocusedHeader() {
 
   async function logOut() {
     await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
+    forgetKeptLists() // Back to a list keeps nothing of this person (UX task 3.0)
     router.replace("/login")
   }
 
