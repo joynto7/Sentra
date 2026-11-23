@@ -22,6 +22,10 @@ export type MfaStatus = {
 export type OrganizationSecurity = {
   mfa_required: boolean
   members_without_mfa: number
+  /** FR-5.2 (M5): campaigns need a Security Manager's approval before they can run (UC-5.2) */
+  requires_scope_approval: boolean
+  /** How many people could give that approval; without one the requirement can't be turned on */
+  security_managers: number
   password_confirmed_at: string | null
   password_confirmed_until: string | null
   /** The organization's identity provider (FR-1.3); Screen 11 is one page for both settings. */
@@ -49,10 +53,11 @@ export const renewRecoveryCodes = (password: string) =>
 // The organization (UC-1.7)
 export const confirmPassword = (password: string) => apiFetch<null>("/v1/auth/confirm-password", post({ password }))
 export const organizationSecurity = () => apiFetch<OrganizationSecurity>("/v1/organizations/current/security")
-export const saveOrganizationSecurity = (mfa_required: boolean) =>
+export const saveOrganizationSecurity = (mfa_required: boolean, requires_scope_approval?: boolean) =>
   apiFetch<OrganizationSecurity>("/v1/organizations/current/security", {
     method: "PUT",
-    body: JSON.stringify({ mfa_required }),
+    // FR-5.2 is left as it is when the page doesn't send it
+    body: JSON.stringify({ mfa_required, requires_scope_approval }),
   })
 
 /** The page that comes after a correct password; `next` is passed on to the workspace. */
