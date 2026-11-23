@@ -25,6 +25,12 @@ export type CampaignItem = {
   created_at: string
 }
 
+/** A row of the campaigns page (Screen 33): also who approved its scope and its newest run. */
+export type CampaignRow = CampaignItem & {
+  approved_by: string | null
+  last_run: RunItem | null
+}
+
 // ---------------------------------------------------------------- scope approval (FR-5.2)
 
 /** Where an organization requires it, a campaign's scope is approved before it can run (UC-5.2). */
@@ -202,7 +208,7 @@ export type CampaignInput = {
 const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
 
 export const listCampaigns = (params?: URLSearchParams, signal?: AbortSignal) =>
-  apiFetch<CampaignItem[]>(`/v1/campaigns${params?.size ? `?${params}` : ""}`, { signal })
+  apiFetch<CampaignRow[]>(`/v1/campaigns${params?.size ? `?${params}` : ""}`, { signal })
 export const getCampaign = (code: string) => apiFetch<CampaignDetail>(`/v1/campaigns/${encodeURIComponent(code)}`)
 export const estimateCampaign = (input: {
   target_id: string | null
