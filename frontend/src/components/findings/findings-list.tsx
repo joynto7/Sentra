@@ -120,7 +120,7 @@ function Reproducibility({ finding }: { finding: FindingItem }) {
 /** The owner as on Screen 38: an avatar, with the first name beside it and the whole name for
  * screen readers. */
 function Owner({ finding }: { finding: FindingItem }) {
-  if (!finding.owner) return <span className="text-[13px] text-muted-foreground">Nobody yet</span>
+  if (!finding.owner) return <span className="text-[13px] text-muted-foreground">Unassigned</span>
   const name = finding.owner.name
   return (
     <span className="flex min-w-0 items-center gap-1.5" title={name}>

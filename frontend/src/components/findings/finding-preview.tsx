@@ -226,6 +226,7 @@ export function FindingPreview({
             <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-4">
               <div className="flex flex-wrap items-center gap-2">
                 <SeverityBadge severity={shown.severity} />
+                {shown.severity_provisional && <span className="text-xs text-muted-foreground">Provisional</span>}
                 <StatusBadge status={shown.status} />
                 <span className="text-xs text-muted-foreground">
                   <span className="font-mono">{shown.category}</span> {shown.category_name}
