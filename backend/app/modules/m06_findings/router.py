@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import NotFoundError
 from app.modules.m01_users.deps import current_membership
-from app.modules.m01_users.models import Membership
+from app.modules.m01_users.models import Membership, Role
 from app.modules.m01_users.permissions import Action, require
 from app.modules.m04_tests.schema import Category, Severity
 from app.modules.m06_findings import service, triage
@@ -102,6 +102,10 @@ def list_findings(
     first_seen_until: datetime | None = None,
     closed_from: datetime | None = None,
     closed_until: datetime | None = None,
+    sort: Literal[
+        "severity", "title", "category", "status", "reproducibility", "owner", "last_seen"
+    ] = "severity",
+    direction: Literal["asc", "desc"] = "desc",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
     actor: api_keys.Actor = Depends(reads_findings),
@@ -135,7 +139,25 @@ def list_findings(
         closed_from=closed_from,
         closed_until=closed_until,
     )
-    data = service.list_findings(db, actor.organization_id, filters, page, page_size)
+    # UC-6.4, 2a1: an AI Application Developer sees their own findings first, in the usual order
+    member = actor.membership
+    mine_first = (
+        member.user_id
+        if member is not None
+        and member.role == Role.TARGET_OWNER
+        and (sort, direction) == ("severity", "desc")
+        else None
+    )
+    data = service.list_findings(
+        db,
+        actor.organization_id,
+        filters,
+        page,
+        page_size,
+        sort=sort,
+        direction=direction,
+        mine_first=mine_first,
+    )
     return FindingPage.model_validate(data)
 
 
