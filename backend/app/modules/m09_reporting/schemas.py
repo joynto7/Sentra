@@ -239,9 +239,22 @@ class GateRunOut(BaseModel):
     compared_with: str | None  # the last accepted run its findings were measured against
     new_findings: list[GateFindingOut]
     breaking: list[GateFindingOut]
+    # The policy this release was judged by, in the words of UC-9.4 step 2, so that every result
+    # can be explained even after the gate's policy has changed (quality requirement 2)
+    policy_words: str
     started_by: str | None  # the key or the person that started it
     started_at: datetime
     finished_at: datetime | None
+
+
+class GateSuiteOut(BaseModel):
+    """A suite of each gate run (UC-9.4 step 1), with the version a run would fix (FR-4.5)."""
+
+    code: str
+    found: bool  # false when the suite was archived after the campaign was made
+    name: str
+    version: int
+    test_count: int
 
 
 class GateOut(BaseModel):
@@ -252,12 +265,19 @@ class GateOut(BaseModel):
     status: str
     target_id: uuid.UUID
     target_name: str
+    target_environment: str  # 1a: a gate of a production target is worth saying out loud
     campaign_code: str
     campaign_name: str
+    # Step 1: what each gate run sends — the suites with their versions and the attempt budget
+    suites: list[GateSuiteOut]
+    attempt_budget: int
+    # 3a: the campaign's scope approval, which the pipeline needs before it can start a run
+    approval_status: str
     fail_on: list[str]
     fail_on_reopened: bool
     policy_words: str
     baseline_run_code: str | None
+    baseline_at: datetime | None
     created_by: str | None
     created_at: datetime
     runs: list[GateRunOut]
@@ -268,6 +288,12 @@ class GateCampaignRef(BaseModel):
     name: str
     target_id: uuid.UUID
     target_name: str
+    # What choosing this campaign means for the gate (step 1), and whether its target is the
+    # production environment a staging one should be used instead of (1a1)
+    target_environment: str
+    suite_count: int
+    attempt_budget: int
+    approval_status: str
 
 
 class GateList(BaseModel):
