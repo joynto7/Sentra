@@ -61,6 +61,7 @@ const FILLS: Record<string, string> = {
   high: "url(#sentra-dots)",
   medium: "var(--muted-foreground)",
   low: "var(--border)",
+  informational: "var(--card)", // an outline without a fill
 }
 const BANDS: { band: RiskBand; from: number }[] = [
   { band: "critical", from: 75 },
