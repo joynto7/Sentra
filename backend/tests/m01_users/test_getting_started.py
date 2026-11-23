@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.modules.m01_users.models import Invitation, InvitationStatus, Role
 from app.modules.m02_targets.models import Target
+from app.modules.m05_campaigns.models import CampaignRun, RunStatus, RunType
 from tests.m01_users.test_organizations import create, log_in, new_user
 from tests.m01_users.test_permissions import organization_with
 
@@ -95,3 +96,60 @@ def test_every_member_reads_only_their_own_organization(client, db):
     log_in(client, "arif@example.com")
     assert client.get(URL).json()["organization"] == "Halcyon Bank"
     assert "target" in client.get(URL).json()["done"]
+
+
+def add_run(db, organization_id, target, **changes):
+    data = {
+        "number": 1,
+        "status": RunStatus.COMPLETED,
+        "run_type": RunType.CAMPAIGN,
+        "settings": {},
+        "attempt_budget": 10,
+        "request_rate": 5,
+        "attempts_replied": 3,
+    }
+    run = CampaignRun(organization_id=organization_id, target_id=target.id, **(data | changes))
+    db.add(run)
+    db.flush()
+    return run
+
+
+def finished(client) -> bool:
+    return client.get(URL).json()["campaign_run_finished"]
+
+
+def test_a_run_that_ended_with_answers_completes_the_last_step(client, db):
+    organization_id = organization_with(db, client, {})
+    target = add_target(db, organization_id, status="verified")
+    log_in(client, "tom@example.com")
+    assert finished(client) is False
+
+    add_run(db, organization_id, target)
+
+    assert finished(client) is True
+
+
+def test_a_run_without_results_does_not_complete_it(client, db):
+    organization_id = organization_with(db, client, {})
+    target = add_target(db, organization_id, status="verified")
+    log_in(client, "tom@example.com")
+
+    add_run(db, organization_id, target, number=1, status=RunStatus.STOPPED, attempts_replied=0)
+    add_run(db, organization_id, target, number=2, status=RunStatus.RUNNING)
+    add_run(db, organization_id, target, number=3, run_type=RunType.BENCHMARK)
+    add_run(db, organization_id, target, number=4, run_type=RunType.RETEST)
+
+    assert finished(client) is False
+
+
+def test_another_organizations_run_does_not_complete_it(client, db):
+    mine = organization_with(db, client, {})
+    new_user(db, "lena@example.com")
+    log_in(client, "lena@example.com")
+    theirs = create(client, "Another Bank").json()["id"]
+    add_run(db, theirs, add_target(db, theirs, status="verified"))
+    add_target(db, mine, status="verified")
+
+    log_in(client, "tom@example.com")
+
+    assert finished(client) is False
