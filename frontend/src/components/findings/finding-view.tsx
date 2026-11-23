@@ -11,6 +11,7 @@ import { Reproducibility } from "@/components/findings/finding-badges"
 import { FindingHeader } from "@/components/findings/finding-header"
 import { FindingTabs } from "@/components/findings/finding-tabs"
 import { EmptyState } from "@/components/layout/empty-state"
+import { AtlasId, OwaspId } from "@/components/sentra/framework-ids"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { STATUS_LABEL, getRemediation, requestRemediation, type RemediationPage } from "@/lib/remediation"
@@ -304,9 +305,13 @@ export function FindingView({ code }: { code: string }) {
           <Card title="Details">
             <dl className="divide-y">
               <Row term="Category">
-                {finding.category} {finding.category_name}
+                <OwaspId code={finding.category} name={finding.category_name} />
               </Row>
-              <Row term="MITRE ATLAS">{finding.atlas.length ? finding.atlas.join(", ") : "None recorded"}</Row>
+              <Row term="MITRE ATLAS">
+                {finding.atlas.length
+                  ? finding.atlas.map((code) => <AtlasId key={code} code={code} className="block text-xs" />)
+                  : "None recorded"}
+              </Row>
               <Row term="Affected component">{finding.component.label}</Row>
               <Row term="Test definition">
                 <span className="font-mono text-xs">{finding.test.code}</span> v{finding.test.version}
