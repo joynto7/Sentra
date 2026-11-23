@@ -155,7 +155,7 @@ export function FindingActivity({ code }: { code: string }) {
           <h2 className="text-[15px] font-semibold">History</h2>
           <p className="text-[13px] text-muted-foreground">
             Every decision about this finding, oldest first. The history is append-only, so a correction is a new
-            entry (UC-6.6, quality requirement 5).
+            entry.
           </p>
           <ul className="flex flex-col">
             {history.map((entry) => (
@@ -175,7 +175,7 @@ export function FindingActivity({ code }: { code: string }) {
             <section className="space-y-2 rounded-[10px] border bg-card p-5">
               <h2 className="text-[15px] font-semibold">Merged duplicates</h2>
               <p className="text-[13px] text-muted-foreground">
-                Their evidence and their history count as this finding&apos;s (FR-6.6).
+                Their evidence and their history count as this finding&apos;s.
               </p>
               <ul className="flex flex-wrap gap-2">
                 {finding.merged_in.map((other) => (

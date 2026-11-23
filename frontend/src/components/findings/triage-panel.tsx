@@ -51,7 +51,7 @@ type Draft = {
 }
 
 /**
- * Screen 41: triaging a finding (UC-6.6). One save carries the decision, the severity, the owner
+ * Screen 41: triaging a finding. One save carries the decision, the severity, the owner
  * and the comment; each field appears only for the decision that needs it, and the footer says
  * what saving will do — the history, the audit log, the owner's notification and the risk score.
  */
@@ -174,7 +174,7 @@ export function TriagePanel({
                 className="rounded-[7px] border border-confirm/40 bg-confirm/5 p-3 text-[13px] text-confirm"
               >
                 Only the LLM judge supports this finding. It counts towards the target&apos;s risk score after you
-                confirm it (NFR-9.3).
+                confirm it.
               </p>
             )}
 
@@ -252,7 +252,7 @@ export function TriagePanel({
                     </p>
                   )}
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    Evidence is never moved, so both keep their own records and are read together (FR-6.6).
+                    Evidence is never moved, so both keep their own records and are read together.
                   </p>
                 </div>
               )}
@@ -303,8 +303,8 @@ export function TriagePanel({
                     </p>
                   )}
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    A severity you set is never overwritten by the rating again; the calculated one stays beside it
-                    (UC-7.1, 4a).
+                    A severity you set is never overwritten by the rating again; the calculated one stays beside
+                    it.
                   </p>
                 </div>
               )}
