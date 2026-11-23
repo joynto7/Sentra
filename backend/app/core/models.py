@@ -41,6 +41,11 @@ class Organization(UUIDPrimaryKey, Timestamps, Base):
     limit_attempts: Mapped[int | None]
     limit_llm_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     limit_warn_percent: Mapped[int | None]  # the organization is warned at this share of a limit
+    # FR-5.2 (optional): the organization requires a Security Manager to approve a campaign's
+    # scope and budget before it can be launched (UC-5.2). Off until an administrator turns it on.
+    requires_scope_approval: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false")
+    )
 
 
 class OrganizationScoped:
