@@ -122,6 +122,7 @@ class AccountEventKind(StrEnum):
     """Security events of an account, shown under "Recent activity" (UC-1.11 step 6)."""
 
     LOGGED_IN = "logged_in"
+    LOGGED_IN_SSO = "logged_in_sso"  # through the organization's identity provider (FR-1.3)
     LOGIN_FAILED = "login_failed"  # the right address with a wrong password
     PASSWORD_CHANGED = "password_changed"
     PASSWORD_RESET = "password_reset"
@@ -243,3 +244,50 @@ class Invitation(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SsoProtocol(StrEnum):
+    """The protocols FR-1.3 names. This deployment speaks OpenID Connect; the column keeps the
+    protocol so a SAML 2.0 connection can be added later without a migration."""
+
+    OIDC = "oidc"
+
+
+class SsoConnection(UUIDPrimaryKey, Timestamps, OrganizationScoped, Base):
+    """An organization's identity provider (FR-1.3, UC-1.7 step 4). The client secret is stored
+    encrypted and never given back (quality requirement 4)."""
+
+    __tablename__ = "sso_connections"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_sso_connections_organization"),)
+
+    protocol: Mapped[str] = mapped_column(String(20), server_default=SsoProtocol.OIDC.value)
+    # The e-mail domain that identifies the organization at login (UC-1.5 step 2). Unique across
+    # the platform: two organizations claiming one domain would make that step ambiguous.
+    email_domain: Mapped[str] = mapped_column(String(255), unique=True)
+    issuer: Mapped[str] = mapped_column(String(500))
+    client_id: Mapped[str] = mapped_column(String(255))
+    client_secret: Mapped[str] = mapped_column(Text)  # app.core.crypto, never read back out
+    # What the last connection test found (step 5 and 5a). A connection is only ever saved after
+    # a test that succeeded, so `tested_at` is also when it was last known to work.
+    tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class SsoLoginState(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One login that has been sent to the identity provider and has not come back yet (UC-1.5
+    steps 2-5). It carries what makes the answer provably the answer to this request: the state,
+    the nonce of the ID token and the PKCE verifier. Each row is used once."""
+
+    __tablename__ = "sso_login_states"
+
+    state: Mapped[str] = mapped_column(String(64), unique=True)
+    nonce: Mapped[str] = mapped_column(String(64))
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    # The address the person typed on Screen 01, so the identity provider cannot answer with a
+    # different member's account than the one the login was started for.
+    email: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
