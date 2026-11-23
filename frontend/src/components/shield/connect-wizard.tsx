@@ -367,7 +367,7 @@ export function ConnectWizard({ targetId }: { targetId: string }) {
               >
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 This gateway credential is shown only once. Copy it now — Sentra keeps only its
-                hash (NFR-3.1).
+                hash.
               </p>
               <div className="mt-4 space-y-2">
                 <Label htmlFor="credential">Gateway credential</Label>
@@ -522,7 +522,7 @@ export function ConnectWizard({ targetId }: { targetId: string }) {
                   </li>
                   <li>
                     <span className="font-medium">The credential was lost:</span> connect the
-                    gateway again from Screen 47 — that issues a new credential for the same
+                    gateway again from the Sentra Shield page — that issues a new credential for the same
                     gateway and the old one stops working.
                   </li>
                   <li>

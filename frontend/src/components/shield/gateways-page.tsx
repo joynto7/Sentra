@@ -113,6 +113,7 @@ function ConnectDialog({
  */
 export function GatewaysPage() {
   const canManage = useCan("manage_shield")
+  const canRegister = useCan("manage_targets")
   const [data, setData] = useState<GatewayList | null>(null)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -148,6 +149,9 @@ export function GatewaysPage() {
   }
 
   const waiting = data?.targets_without_gateway ?? []
+  // A gateway stands only in front of a verified target (UC-8.1 precondition)
+  const connectable = waiting.filter((target) => target.verified !== false)
+  const canVerify = useCan("verify_targets")
 
   return (
     <>
@@ -155,10 +159,10 @@ export function GatewaysPage() {
         title="Sentra Shield"
         description="Gateways that enforce approved fixes in front of your AI applications."
         action={
-          canManage && waiting.length > 0 ? (
-            waiting.length === 1 ? (
+          canManage && connectable.length > 0 ? (
+            connectable.length === 1 ? (
               <Button asChild className="h-9 hover:bg-primary-hover">
-                <Link href={`/shield/connect/${waiting[0].id}`}>Connect Sentra Shield</Link>
+                <Link href={`/shield/connect/${connectable[0].id}`}>Connect Sentra Shield</Link>
               </Button>
             ) : (
               <Button className="h-9 hover:bg-primary-hover" onClick={() => setPicking(true)}>
@@ -198,11 +202,17 @@ export function GatewaysPage() {
       {data && data.rows.length === 0 && waiting.length === 0 && (
         <EmptyState
           title="No target yet"
-          description="Register a target first; a Sentra Shield gateway stands in the traffic of one."
+          description={
+            canRegister
+              ? "Register a target first; a Sentra Shield gateway stands in the traffic of one."
+              : "A Sentra Shield gateway stands in the traffic of a registered target, and an AI Application Developer registers the targets."
+          }
           action={
-            <Button asChild variant="outline" className="h-9">
-              <Link href="/targets">Go to targets</Link>
-            </Button>
+            canRegister ? (
+              <Button asChild className="h-9 hover:bg-primary-hover">
+                <Link href="/targets/new">Register target</Link>
+              </Button>
+            ) : undefined
           }
         />
       )}
@@ -231,7 +241,7 @@ export function GatewaysPage() {
                 <TableHead scope="col" className="text-xs">
                   Position
                 </TableHead>
-                <TableHead scope="col" className="text-xs">
+                <TableHead scope="col" className="text-xs whitespace-normal">
                   Gateway version
                 </TableHead>
                 <TableHead scope="col" className="text-xs">
@@ -240,10 +250,10 @@ export function GatewaysPage() {
                 <TableHead scope="col" className="text-xs">
                   Last contact
                 </TableHead>
-                <TableHead scope="col" className="text-xs">
+                <TableHead scope="col" className="text-xs whitespace-normal">
                   Active Shield Policy
                 </TableHead>
-                <TableHead scope="col" className="text-xs">
+                <TableHead scope="col" className="text-xs whitespace-normal">
                   Added latency (median)
                 </TableHead>
                 <TableHead scope="col" className="text-xs">
@@ -263,6 +273,7 @@ export function GatewaysPage() {
                     </Link>
                     <span className="block text-xs text-muted-foreground">
                       {gateway.target_environment === "production" ? "Production" : "Staging"}
+                      {gateway.target_archived && " · Target archived: revoke the gateway when it is gone"}
                     </span>
                   </TableCell>
                   <TableCell className="max-w-[12rem] text-[13px] whitespace-normal">
@@ -306,7 +317,8 @@ export function GatewaysPage() {
                     {gateway.added_latency_ms === null ? "—" : `${gateway.added_latency_ms} ms`}
                   </TableCell>
                   <TableCell className="space-x-2 text-right whitespace-nowrap">
-                    {STATUS_IS_A_PROBLEM[gateway.status] && gateway.status !== "revoked" && (
+                    {/* An archived target gets no new gateway, so there is nothing to troubleshoot */}
+                    {STATUS_IS_A_PROBLEM[gateway.status] && gateway.status !== "revoked" && !gateway.target_archived && (
                       <Button asChild variant="outline" size="sm" className="h-8">
                         <Link href={`/shield/connect/${gateway.target_id}?step=3`}>
                           Troubleshoot
@@ -354,10 +366,25 @@ export function GatewaysPage() {
                   <TableCell className="text-[13px]">—</TableCell>
                   <TableCell className="text-[13px]">—</TableCell>
                   <TableCell className="text-right">
-                    {canManage && (
-                      <Button asChild variant="outline" size="sm" className="h-8">
-                        <Link href={`/shield/connect/${target.id}`}>Connect</Link>
-                      </Button>
+                    {target.verified === false ? (
+                      canVerify ? (
+                        <Link
+                          href={`/targets/${target.id}/verify`}
+                          className="inline-block max-w-32 py-0.5 text-[13px] whitespace-normal text-link underline underline-offset-2"
+                        >
+                          Verify ownership first
+                        </Link>
+                      ) : (
+                        <span className="inline-block max-w-32 text-[13px] whitespace-normal text-muted-foreground">
+                          Ownership not verified yet
+                        </span>
+                      )
+                    ) : (
+                      canManage && (
+                        <Button asChild variant="outline" size="sm" className="h-8">
+                          <Link href={`/shield/connect/${target.id}`}>Connect</Link>
+                        </Button>
+                      )
                     )}
                   </TableCell>
                 </TableRow>
@@ -373,7 +400,7 @@ export function GatewaysPage() {
         </section>
       )}
 
-      <ConnectDialog targets={waiting} open={picking} onClose={() => setPicking(false)} />
+      <ConnectDialog targets={connectable} open={picking} onClose={() => setPicking(false)} />
     </>
   )
 }
