@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
+import { FindingTabs } from "@/components/findings/finding-tabs"
 import { PageHeader } from "@/components/layout/page-header"
 import { ApprovalPanel } from "@/components/remediation/approval-panel"
 import { RetestChip, StatusChip } from "@/components/remediation/badges"
@@ -146,7 +147,7 @@ function Verification({ code, page }: { code: string; page: Page }) {
  * what became of the approved version: the changes the application still needs (UC-8.5) and the
  * retests that judged it (UC-8.6).
  */
-export function RemediationView({ code }: { code: string }) {
+export function RemediationView({ code, inFinding = false }: { code: string; inFinding?: boolean }) {
   const canRequest = useCan("request_remediations")
   const [version, setVersion] = useState<number | null>(null)
   const [data, setData] = useState<Page | null>(null)
@@ -156,7 +157,9 @@ export function RemediationView({ code }: { code: string }) {
   const [editing, setEditing] = useState(false)
   const [comparing, setComparing] = useState(false)
 
-  usePageCrumbs([{ label: code }])
+  usePageCrumbs(
+    inFinding ? [{ label: code, href: `/findings/${code}` }, { label: "Remediation" }] : [{ label: code }],
+  )
 
   const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
@@ -261,10 +264,14 @@ export function RemediationView({ code }: { code: string }) {
 
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <SeverityBadge severity={data.finding.severity} />
-        <Link href={`/findings/${data.finding.code}`} className="py-1 text-link hover:underline">
-          Open the finding
-        </Link>
-        <span className="text-muted-foreground">·</span>
+        {!inFinding && (
+          <>
+            <Link href={`/findings/${data.finding.code}`} className="py-1 text-link hover:underline">
+              Open the finding
+            </Link>
+            <span className="text-muted-foreground">·</span>
+          </>
+        )}
         <Link
           href={`/targets/${data.finding.target_id}`}
           className="py-1 text-link hover:underline"
@@ -273,6 +280,7 @@ export function RemediationView({ code }: { code: string }) {
         </Link>
         <span className="text-muted-foreground">· {data.finding.component}</span>
       </div>
+      {inFinding && <FindingTabs code={data.finding.code} active="remediation" />}
 
       {data.blocker && (
         <Alert role="status" className="mb-4">
