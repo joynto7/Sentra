@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   ChevronLeft,
   ChevronRight,
@@ -10,6 +11,7 @@ import {
   CirclePlay,
   MoreHorizontal,
   Search,
+  ShieldCheck,
   TriangleAlert,
   UserCog,
   UserPlus,
@@ -28,6 +30,7 @@ import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { useSession } from "@/components/session-provider"
 import { FilterSelect } from "@/components/sentra/filter-select"
+import { SortHeader, type SortDirection } from "@/components/sentra/sort-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -52,6 +55,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useUrlState } from "@/hooks/use-url-state"
 import { ApiError } from "@/lib/api"
 import {
   type Invitation,
@@ -67,12 +71,32 @@ import { type RoleInfo, loadRoles, useCan } from "@/lib/permissions"
 import { initials } from "@/lib/session"
 
 const PAGE_SIZE = 20
+type SortKey = "name" | "role" | "last_login"
+const SORT_KEYS: SortKey[] = ["name", "role", "last_login"]
+// A column's first direction when it is chosen: names A to Z, the latest login first
+const FIRST_DIRECTION: Record<SortKey, SortDirection> = { name: "asc", role: "asc", last_login: "desc" }
+
+/** The members in the chosen order; a member who never logged in comes last either way. */
+function ordered(members: Member[], sort: SortKey, direction: SortDirection): Member[] {
+  const byName = [...members].sort((a, b) => a.name.localeCompare(b.name))
+  if (sort === "name") return direction === "asc" ? byName : byName.reverse()
+  if (sort === "role") {
+    return byName.sort((a, b) => a.role_label.localeCompare(b.role_label) * (direction === "asc" ? 1 : -1))
+  }
+  const time = (m: Member) => (m.last_login_at ? Date.parse(m.last_login_at) : null)
+  const known = byName.filter((m) => time(m) !== null)
+  known.sort((a, b) => (time(a)! - time(b)!) * (direction === "asc" ? 1 : -1))
+  return [...known, ...byName.filter((m) => time(m) === null)]
+}
 const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
 
 /** Two-step verification of a member (FR-1.2): "Off" carries a warning, so it is easy to spot. */
 function TwoStep({ on }: { on: boolean }) {
   return on ? (
-    <span>On</span>
+    <span className="inline-flex items-center gap-1">
+      <ShieldCheck className="size-3.5 text-success" aria-hidden="true" />
+      On
+    </span>
   ) : (
     <span className="inline-flex items-center gap-1 font-medium text-warning">
       <TriangleAlert className="size-3.5" aria-hidden="true" />
@@ -116,16 +140,22 @@ function MemberStatus({ member }: { member: Member }) {
 
 /** Screen 12: the members of the organization and the pending invitations (FR-1.5, FR-1.6), with
  * each member's status (FR-10.1) and two-step verification (FR-1.2). */
-export function MembersPage({
-  initialMfa = "",
-  initialSearch = "",
-  initialTab = "members",
-}: {
-  initialMfa?: string
-  initialSearch?: string
-  initialTab?: string
-}) {
+export function MembersPage() {
+  // When the address changes without the list (the menu's link, Back or Forward), the list starts
+  // again from the new address, as if the page had just been opened
+  const [opened, setOpened] = useState(0)
+  return <MembersFromAddress key={opened} onOutside={() => setOpened((count) => count + 1)} />
+}
+
+function MembersFromAddress({ onOutside }: { onOutside: () => void }) {
   usePageCrumbs([{ label: "Members" }])
+  // The list starts as its address says: a reload, Back, a link somebody shared. "View members" on
+  // Organization Security opens the members without two-step verification (mfa), and the audit log
+  // opens one member (q) or the pending invitations (tab).
+  const query = useSearchParams()
+  const initialMfa = query.get("mfa") === "on" || query.get("mfa") === "off" ? (query.get("mfa") as string) : ""
+  const initialSearch = (query.get("q") ?? "").slice(0, 200)
+  const initialTab = query.get("tab") === "invitations" ? "invitations" : "members"
   const organization = useSession().organization
   const canManage = useCan("manage_members")
   const [members, setMembers] = useState<Member[] | null>(null)
@@ -134,10 +164,23 @@ export function MembersPage({
   const [error, setError] = useState(false)
   const [tab, setTab] = useState(initialTab)
   const [search, setSearch] = useState(initialSearch)
-  const [role, setRole] = useState("")
-  const [status, setStatus] = useState("")
+  const [role, setRole] = useState(query.get("role") ?? "")
+  const [status, setStatus] = useState(query.get("status") === "suspended" ? "suspended" : query.get("status") === "active" ? "active" : "")
   const [mfa, setMfa] = useState(initialMfa)
-  const [page, setPage] = useState(1)
+  const askedSort = query.get("sort") as SortKey | null
+  const [sort, setSort] = useState<SortKey>(askedSort && SORT_KEYS.includes(askedSort) ? askedSort : "name")
+  const [direction, setDirection] = useState<SortDirection>(() => {
+    const value = query.get("direction")
+    return value === "asc" || value === "desc" ? value : FIRST_DIRECTION[sort]
+  })
+  const [page, setPage] = useState(() => Math.max(1, Number(query.get("page")) || 1))
+  // Everything but the search words goes in the address: what people search for stays out of the
+  // browser's history, as on the Findings list
+  useUrlState(
+    { tab, role, status, mfa, sort, direction, page: String(page) },
+    { tab: "members", sort: "name", direction: FIRST_DIRECTION[sort], page: "1" },
+    onOutside,
+  )
   const [inviting, setInviting] = useState(false)
   const [showRoles, setShowRoles] = useState(false)
   const [changing, setChanging] = useState<Member | null>(null)
@@ -173,8 +216,20 @@ export function MembersPage({
         (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)),
     )
   }, [members, search, role, status, mfa])
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const sorted = useMemo(() => ordered(filtered, sort, direction), [filtered, sort, direction])
+  const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  // An old link to a page beyond the last one shows the last page
+  const current = Math.min(page, pages)
+  const shown = sorted.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
+  function sortBy(column: SortKey) {
+    if (column === sort) setDirection((now) => (now === "asc" ? "desc" : "asc"))
+    else {
+      setSort(column)
+      setDirection(FIRST_DIRECTION[column])
+    }
+    setPage(1)
+  }
+  const sortProps = { sort, direction, onSort: sortBy }
   // Only active administrators count: a suspended one can't administer (FR-10.1).
   const admins = (members ?? []).filter((m) => m.role === "org_admin" && m.status !== "suspended").length
 
@@ -301,11 +356,11 @@ export function MembersPage({
             <Table>
               <TableHeader className="bg-muted">
                 <TableRow>
-                  <TableHead className="text-xs">Member</TableHead>
-                  <TableHead className="hidden text-xs @md:table-cell">Role</TableHead>
+                  <SortHeader column="name" label="Member" {...sortProps} />
+                  <SortHeader column="role" label="Role" className="hidden @md:table-cell" {...sortProps} />
                   <TableHead className="hidden text-xs @lg:table-cell">Status</TableHead>
                   <TableHead className="hidden text-xs @xl:table-cell">Two-step verification</TableHead>
-                  <TableHead className="hidden text-right text-xs @2xl:table-cell">Last login</TableHead>
+                  <SortHeader column="last_login" label="Last login" className="hidden @2xl:table-cell" {...sortProps} />
                   <TableHead className="w-12 text-xs">
                     <span className="sr-only">Actions</span>
                   </TableHead>
@@ -396,12 +451,12 @@ export function MembersPage({
           </div>
           <nav aria-label="Pages" className="flex items-center justify-end gap-3 border-t px-4 py-2.5 text-sm">
             <span className="tabular text-muted-foreground">
-              Page {page} of {pages}
+              Page {current} of {pages}
             </span>
-            <Button variant="outline" size="icon" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <Button variant="outline" size="icon" aria-label="Previous page" disabled={current <= 1} onClick={() => setPage(current - 1)}>
               <ChevronLeft aria-hidden="true" />
             </Button>
-            <Button variant="outline" size="icon" aria-label="Next page" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
+            <Button variant="outline" size="icon" aria-label="Next page" disabled={current >= pages} onClick={() => setPage(current + 1)}>
               <ChevronRight aria-hidden="true" />
             </Button>
           </nav>
