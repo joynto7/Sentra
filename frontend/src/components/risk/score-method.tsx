@@ -24,8 +24,8 @@ const share = (method: RiskMethod, step: number) =>
   `${Math.round(Number(method.severity.reproducibility[step]?.from ?? 0) * 100)} %`
 
 /**
- * "How is the risk score calculated?" (Screen 42): the rating matrix of FR-7.1 and the bands of
- * FR-7.2, read from `/api/v1/risk/method`, which returns the rules the code itself uses. Nothing
+ * "How is the risk score calculated?" (Screen 42): the rating matrix of FR-7.1 (M7) and the bands of
+ * FR-7.2 (M7), read from `/api/v1/risk/method`, which returns the rules the code itself uses. Nothing
  * here is written twice, so the page can never drift from the calculation (NFR-4.2).
  */
 export function ScoreMethod() {

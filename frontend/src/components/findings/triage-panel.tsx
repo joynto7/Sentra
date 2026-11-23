@@ -327,7 +327,7 @@ export function TriagePanel({
               <Label htmlFor="triage-owner">Owner</Label>
               <Select value={draft.ownerId} onValueChange={(value) => set({ ownerId: value })}>
                 <SelectTrigger id="triage-owner" className="mt-1.5 h-9 w-full">
-                  <SelectValue placeholder="Nobody yet" />
+                  <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
                   {options.members.map((member) => (
