@@ -329,6 +329,24 @@ def decided_by(db: Session, campaign: Campaign) -> dict | None:
     }
 
 
+def approvers(db: Session, organization_id: uuid.UUID) -> dict[uuid.UUID, str | None]:
+    """Who approved each approved campaign of the organization, by the campaign's id: Screen 33's
+    Approval column ("Approved by Nadia Karim", UX task 4.5). The newest approval counts, as in
+    `decided_by`; a campaign approved again after a change of scope (5a) names the second one."""
+    rows = db.execute(
+        select(CampaignApproval.campaign_id, User.name)
+        .join(Campaign, Campaign.id == CampaignApproval.campaign_id)
+        .outerjoin(User, User.id == CampaignApproval.actor_id)
+        .where(
+            CampaignApproval.organization_id == organization_id,
+            CampaignApproval.action == ApprovalAction.APPROVED,
+            Campaign.approval_status == ApprovalStatus.APPROVED,
+        )
+        .order_by(CampaignApproval.created_at, CampaignApproval.id)
+    ).all()
+    return dict(rows)  # the newest of each campaign is written last
+
+
 # ---------------------------------------------------------------- the small parts
 
 
