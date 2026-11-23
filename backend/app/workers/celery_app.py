@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.workers.reporting.generate",
         "app.workers.scheduler",
         "app.workers.lab_targets",
+        "app.workers.reporting.webhooks",
         "app.workers.retention",
     ],
 )
