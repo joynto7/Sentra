@@ -84,7 +84,7 @@
   --confirm: #7a47c9;             /* "requires confirmation" */
   --border: #e3e6eb;
   --border-strong: #d0d5dd;
-  --input: #d0d5dd;
+  --input: #868e9e;               /* at least 3:1 on panels and the page, WCAG 1.4.11 */
   --ring: #2b4fd8;
   --radius: 0.625rem;             /* 10 px cards */
 
@@ -100,7 +100,7 @@
   --severity-low: #667085;
   --severity-low-text: #475467;
   --severity-low-bg: #eef0f4;
-  --severity-info: #98a2b3;
+  --severity-info: #7c8698;       /* the ring is the whole mark, so at least 3:1 */
 
   --chart-1: #2b4fd8;
   --chart-2: #0f7a55;
@@ -140,7 +140,7 @@
   --link: #a9bbff;
   --border: #1f2839;
   --border-strong: #2a3550;
-  --input: #2a3550;
+  --input: #6b7690;               /* at least 3:1 on dark panels and the page, WCAG 1.4.11 */
   --ring: #6c8cff;
   --sidebar: #0e1322;
   --sidebar-border: #1f2839;
@@ -171,5 +171,30 @@
   }
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* A skeleton appears only after 200 ms, so a page that loads fast doesn't flash it. */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes skeleton-appear {
+  to {
+    opacity: 1;
+  }
+}
+.skeleton {
+  opacity: 0;
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) 200ms infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: skeleton-appear 1ms linear 200ms forwards;
   }
 }

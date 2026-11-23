@@ -37,7 +37,13 @@ export function SeverityShape({ severity }: { severity: Severity }) {
     case "medium":
       return (
         <svg {...common}>
-          <polygon points="5,0 10,5 5,10 0,5" fill="var(--severity-medium)" />
+          {/* The amber fill alone reaches 2.26:1, so the mark gets a dark edge (WCAG 1.4.11). */}
+          <polygon
+            points="5,0.5 9.5,5 5,9.5 0.5,5"
+            fill="var(--severity-medium)"
+            stroke="var(--severity-medium-text)"
+            strokeWidth="1"
+          />
         </svg>
       )
     case "low":
