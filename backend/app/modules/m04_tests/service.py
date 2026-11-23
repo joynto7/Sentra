@@ -75,12 +75,35 @@ def _checks(filters: CatalogueFilters) -> dict[str, Callable[[TestDefinition], b
     }
 
 
+# Screen 29's sortable columns (UX task 3.4, as Screen 38's): "desc" puts the most severe first and
+# Z to A for a name; ties keep the usual order, by category and then by ID
+SORTS = ("category", "id", "name", "severity")
+SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "informational": 4}
+
+
+def _ordered(tests: list[TestDefinition], sort: str, direction: str) -> list[TestDefinition]:
+    usual = sorted(tests, key=lambda t: (t.category, t.code))
+    if sort == "category":
+        return (
+            usual if direction == "asc" else sorted(usual, key=lambda t: t.category, reverse=True)
+        )
+    if sort == "severity":
+        # A higher rank is less severe, so "desc" (the most severe first) sorts the rank up
+        return sorted(
+            usual, key=lambda t: SEVERITY_RANK.get(t.severity, 9), reverse=direction == "asc"
+        )
+    field = "code" if sort == "id" else "name"
+    return sorted(usual, key=lambda t: getattr(t, field).lower(), reverse=direction == "desc")
+
+
 def list_catalogue(
     db: Session,
     organization_id: uuid.UUID | None,
     filters: CatalogueFilters,
     page: int,
     page_size: int,
+    sort: str = "category",
+    direction: str = "asc",
 ) -> tuple[list[TestDefinition], int, dict[str, dict[str, int]]]:
     tests = _visible_current(db, organization_id)
     checks = _checks(filters)
@@ -90,16 +113,23 @@ def list_catalogue(
 
     # Each facet counts the tests that match every OTHER filter, so the numbers show what
     # ticking that option would give.
+    # "atlas" counts the MITRE ATLAS techniques, for the framework mapping filter (UC-4.1 step 3)
     facets: dict[str, Counter] = {
-        name: Counter() for name in ("category", "severity", "target_type", "origin")
+        name: Counter() for name in ("category", "severity", "target_type", "origin", "atlas")
     }
     for test in tests:
         for name in facets:
             if passes(test, skip=name):
-                values = test.target_types if name == "target_type" else [getattr(test, name)]
+                values = (
+                    test.target_types
+                    if name == "target_type"
+                    else test.atlas
+                    if name == "atlas"
+                    else [getattr(test, name)]
+                )
                 facets[name].update(values)
 
-    matching = [t for t in tests if passes(t)]
+    matching = _ordered([t for t in tests if passes(t)], sort, direction)
     start = (page - 1) * page_size
     return (
         matching[start : start + page_size],
