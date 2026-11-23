@@ -347,7 +347,9 @@ def test_the_database_keeps_one_finding_per_root_cause(team, run_with, monkeypat
 def test_stored_evidence_cant_be_changed_or_deleted(team, run_with):
     plant(team.db, team.agent, "system_instructions", SYSTEM_TOKEN)
     run_with(canary_test(team), [f"Reference {SYSTEM_TOKEN}"])
-    refused = "Evidence can't be changed or deleted"
+    # Deleting it is possible in one transaction only, the retention clean-up of FR-10.5, which
+    # declares itself with `SET LOCAL sentra.retention`. Nothing here does, so both are refused.
+    refused = "Evidence can't be changed"
 
     with pytest.raises(DBAPIError, match=refused), team.db.begin_nested():
         team.db.execute(
