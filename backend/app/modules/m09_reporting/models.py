@@ -316,3 +316,65 @@ class GateRun(UUIDPrimaryKey, OrganizationScoped, Base):
         DateTime(timezone=True), default=_now, server_default=func.now()
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WebhookStatus(StrEnum):
+    """UC-9.7: a webhook is sent events only while it is active."""
+
+    INACTIVE = "inactive"  # created, its test event not confirmed yet (step 4)
+    ACTIVE = "active"
+    PAUSED = "paused"  # switched off by an administrator
+    DISABLED = "disabled"  # switched off by Sentra after repeated failures (6a1)
+
+
+class Webhook(UUIDPrimaryKey, OrganizationScoped, Base):
+    """An address of the organization's own systems that receives selected events as signed
+    notifications (FR-9.6, UC-9.7). The signing secret is stored encrypted — Sentra needs it to
+    sign every delivery — and it is shown once, when it is created or rotated."""
+
+    __tablename__ = "webhooks"
+
+    name: Mapped[str] = mapped_column(String(80))
+    url: Mapped[str] = mapped_column(String(500))
+    # The event keys of m09_reporting/events.py this address is sent (step 1).
+    events: Mapped[list] = mapped_column(JSONB, default=list)
+    secret: Mapped[str] = mapped_column(Text)  # app.core.crypto; never given back out
+    secret_created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+    status: Mapped[str] = mapped_column(String(20), server_default=WebhookStatus.INACTIVE.value)
+    # Step 4: when the receiving system last confirmed a test event.
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 6a1: deliveries that failed in a row. A delivery that arrives sets it back to zero.
+    failures: Mapped[int] = mapped_column(default=0, server_default="0")
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
+
+
+class WebhookDelivery(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One event on its way to one webhook, with what the receiving system answered. It is the
+    "Recent deliveries" list of Screen 57, and it is how 6a is seen before it bites."""
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (Index("ix_webhook_deliveries_webhook_created", "webhook_id", "created_at"),)
+
+    webhook_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("webhooks.id", ondelete="CASCADE"), index=True
+    )
+    event: Mapped[str] = mapped_column(String(60))
+    # What was sent: a summary and a link, never evidence or secrets (quality requirement 6).
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    status_code: Mapped[int | None] = mapped_column()
+    duration_ms: Mapped[int | None] = mapped_column()
+    # Why it did not arrive, in the receiver's own words or as the problem Sentra ran into (4a1).
+    error: Mapped[str | None] = mapped_column(Text)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=func.now()
+    )
