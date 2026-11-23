@@ -360,8 +360,8 @@ def _technical(db: Session, report: Report) -> dict:
                 "first_seen_at": finding.first_seen_at.isoformat() if finding else None,
                 "last_seen_at": one["last_seen_at"],
                 "evidence_count": finding.evidence_count if finding else 0,
-                "evidence_note": "The evidence is kept in Sentra, masked and with its checksum "
-                "(FR-6.3); open the finding to read it.",
+                "evidence_note": "The evidence is kept in Sentra, masked and with its checksum; "
+                "open the finding to read it.",
                 "severity_factors": finding.severity_factors if finding else {},
                 "remediation": (
                     {
@@ -471,6 +471,11 @@ def generate(db: Session, report_id: uuid.UUID) -> Report:
     report = db.get(Report, report_id)
     if report is None:
         raise NotFoundError("Report not found.")
+    if report.status != ReportStatus.GENERATING:
+        # The queue may deliver a job twice. A report that is already written, empty or failed
+        # stays as it is: writing it again would fail on the object that exists and mark a good
+        # report as failed.
+        return report
     try:
         data = document(db, report)
         if data["counts"]["findings"] == 0 and data["counts"]["unconfirmed"] == 0:
