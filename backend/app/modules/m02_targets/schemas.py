@@ -122,8 +122,20 @@ class ActiveRunOut(BaseModel):
     campaign: str | None  # C-238
 
 
+class ShieldStateOut(BaseModel):
+    """Screen 16's Sentra Shield column: the state of the gateway in front of the target (FR-8.3,
+    M8): "active", "not_reporting", "pending", "not_in_path" or "not_connected"."""
+
+    status: str
+    label: str
+
+
+class TargetListItemOut(TargetOut):
+    shield: ShieldStateOut
+
+
 class TargetListOut(BaseModel):
-    items: list[TargetOut]
+    items: list[TargetListItemOut]
     total: int
     page: int
     page_size: int

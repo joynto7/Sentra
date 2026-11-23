@@ -49,8 +49,10 @@ from app.modules.m02_targets.schemas import (
     ProfileKnowledgeOut,
     ProfileOut,
     ProfileToolOut,
+    ShieldStateOut,
     TargetHistoryOut,
     TargetIn,
+    TargetListItemOut,
     TargetListOut,
     TargetOut,
     TargetPatch,
@@ -157,6 +159,9 @@ def _one(db: Session, target: Target) -> TargetOut:
     return out
 
 
+ShieldState = Literal["active", "not_reporting", "pending", "not_in_path", "not_connected"]
+
+
 @router.get("")
 def list_targets(
     tab: Literal["active", "archived"] = "active",
@@ -164,13 +169,17 @@ def list_targets(
     target_type: list[str] = Query(default=[], alias="type"),
     environment: list[str] = Query(default=[]),
     ownership: list[str] = Query(default=[]),
+    shield: list[ShieldState] = Query(default=[]),
+    sort: Literal["name", "risk", "last_run"] = "name",
+    direction: Literal["asc", "desc"] = "asc",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
     membership: Membership = Depends(current_membership),
     db: Session = Depends(get_db),
 ) -> TargetListOut:
-    """The targets page (Screen 16)."""
-    items, total, counts = service.list_targets(
+    """The targets page (Screen 16): tabs, search, filters, the order and the Sentra Shield
+    state of each target (UX task 4.5)."""
+    items, total, counts, states = service.list_targets(
         db,
         membership.organization_id,
         tab,
@@ -180,9 +189,20 @@ def list_targets(
         ownership,
         page,
         page_size,
+        shield=list(shield),
+        sort=sort,
+        direction=direction,
     )
     return TargetListOut(
-        items=targets_out(db, items),
+        items=[
+            TargetListItemOut(
+                **out.model_dump(),
+                shield=ShieldStateOut(
+                    status=states[out.id], label=service.SHIELD_LABELS[states[out.id]]
+                ),
+            )
+            for out in targets_out(db, items)
+        ],
         total=total,
         page=page,
         page_size=page_size,
