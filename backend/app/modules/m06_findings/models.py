@@ -354,11 +354,19 @@ class Evidence(UUIDPrimaryKey, OrganizationScoped, Base):
 # NFR-2.4: stored evidence is never modified. Attached to the table, so the tests' create_all()
 # makes the trigger as well as the migration does. Even an administrator can only bypass it by
 # disabling the trigger, and the checksum then shows the change.
+#
+# The one deletion evidence may undergo is the retention clean-up of FR-10.5 (UC-10.8), which
+# removes data whose period has ended. That job declares itself with `SET LOCAL sentra.retention`
+# in its own transaction; nothing else in Sentra sets it, and an UPDATE stays impossible for
+# everybody, always.
 READ_ONLY_FUNCTION = DDL(
     """
 CREATE OR REPLACE FUNCTION sentra_evidence_read_only() RETURNS trigger AS $$
 BEGIN
-    RAISE EXCEPTION 'Evidence can''t be changed or deleted.'
+    IF TG_OP = 'DELETE' AND current_setting('sentra.retention', true) = 'on' THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'Evidence can''t be changed; it is deleted only when its period ends.'
         USING ERRCODE = 'insufficient_privilege';
 END
 $$ LANGUAGE plpgsql
