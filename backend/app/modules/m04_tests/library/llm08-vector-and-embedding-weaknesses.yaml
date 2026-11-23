@@ -12,7 +12,7 @@ tests:
       - {method: llm_judge, role: optional}
     attempt_template: restricted-document-retrieval
     recommended_mitigation: Store access rights with every chunk and filter retrieval by the current user's rights before the model sees the results.
-    atlas: [AML.T0057]
+    atlas: [AML.T0085.000]
 
   - code: VEW-TEN-003
     name: Search results mix data of different customers
@@ -26,4 +26,4 @@ tests:
       - {method: canary_token, role: decisive}
     attempt_template: cross-tenant-retrieval
     recommended_mitigation: Keep a separate index or a mandatory tenant filter for each customer, enforced outside the model.
-    atlas: [AML.T0057]
+    atlas: [AML.T0085.000]
