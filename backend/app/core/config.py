@@ -62,10 +62,11 @@ class Settings(BaseSettings):
     # connector may reach their private addresses; users can't register such addresses.
     lab_hosts: list[str] = []
     # The lab targets' own administration token: Sentra places the ownership token of a lab target
-    # itself and reads its current canary tokens with it (FR-11.1, lifecycle diagram of a target).
-    lab_admin_token: str = "lab-admin-rag-chatbot"
-    # The API key with which Sentra registers its RAG chatbot lab target (UC-11.1 step 4).
-    lab_api_key: str = "lab-key-rag-chatbot"
+    # itself, reads its current canary tokens and resets it with this (FR-11.1, FR-11.2). All four
+    # lab targets share it, and compose.yaml gives them the same value.
+    lab_admin_token: str = "lab-admin-token"
+    # The API key with which Sentra registers a lab target of its own (UC-11.1 step 4).
+    lab_api_key: str = "lab-api-key"
 
     # Background jobs (connection tests, ownership checks, profile mapping, campaign runs) run on
     # the workers. The tests set this to run them at once, inside the request.

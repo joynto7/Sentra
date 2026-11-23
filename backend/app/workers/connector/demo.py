@@ -51,12 +51,12 @@ def main() -> None:
         credential = TargetCredential(
             target_id=target.id, name="Authorization", credential_type=CredentialType.BEARER_TOKEN
         )
-        credential.set_value(os.environ.get("LAB_API_KEY", "lab-key-rag-chatbot"))
+        credential.set_value(os.environ.get("LAB_API_KEY", "lab-api-key"))
         target.credentials.append(credential)
         db.flush()
 
         # The Security Lab knows the current canary tokens; the attempts never do (Module 11).
-        admin = {"X-Lab-Admin-Token": os.environ.get("LAB_ADMIN_TOKEN", "lab-admin-rag-chatbot")}
+        admin = {"X-Lab-Admin-Token": os.environ.get("LAB_ADMIN_TOKEN", "lab-admin-token")}
         canaries = httpx.get(f"{LAB_URL}/lab/state", headers=admin, timeout=10).json()["canaries"]
 
         budget = FixedBudget(len(QUESTIONS))

@@ -19,7 +19,7 @@ x-backend: &backend
     # a CREDENTIALS_KEY in .env replaces it, and every real deployment sets its own.
     CREDENTIALS_KEY: "${CREDENTIALS_KEY:-kqmQKFLVD12H8tuxKcXU0ZIN4O2Y/EMTbbrptiL5Yew=}"
     # Sentra's own lab targets, which only the Target Connector may reach (FR-11.2)
-    LAB_HOSTS: '["lab-rag-chatbot"]'
+    LAB_HOSTS: '["lab-rag-chatbot", "lab-support-agent", "lab-sql-agent", "lab-document-agent"]'
   volumes:
     - ./backend:/app
     # The object storage (app/core/storage.py), shared by the API and the workers: evidence
@@ -30,6 +30,20 @@ x-backend: &backend
       condition: service_healthy
     redis:
       condition: service_healthy
+
+# Every lab target of the Security Lab (FR-11.1) runs the same way: behind the "lab" profile, on
+# the isolated lab network only (FR-11.2), with fixed answers unless a local model is configured,
+# and with the two credentials it shares with Sentra — the API key it is registered with and the
+# administration token that reads /lab/state and resets it. The defaults are the ones
+# backend/app/core/config.py starts with; a LAB_API_KEY and LAB_ADMIN_TOKEN in .env replace them
+# on both sides at once.
+x-lab-target: &lab-target
+  profiles: ["lab"]
+  networks: [lab]
+  environment:
+    LAB_MODEL: "${LAB_MODEL:-simulated}"
+    LAB_API_KEY: "${LAB_API_KEY:-lab-api-key}"
+    LAB_ADMIN_TOKEN: "${LAB_ADMIN_TOKEN:-lab-admin-token}"
 
 services:
   db:
@@ -88,14 +102,31 @@ services:
     # of campaign runs (NFR-1.4). It reaches only the LLM providers, never a target or the lab.
     command: celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=analysis --hostname=analysis@%h
 
+  # The four intentionally vulnerable lab targets of FR-11.1, each with its own synthetic data
+  # and its own planted canary tokens. Start the Lab zone with:
+  #   docker compose --profile lab up -d
+  # Sentra never starts them itself (a container that can start containers can become root on the
+  # host), so the Security Lab page asks for this command when the zone isn't running (UC-11.1,
+  # 2a1), and "Deploy" does the rest.
   lab-rag-chatbot:
-    # The first lab target (FR-11.1): an intentionally vulnerable RAG chatbot with synthetic data.
-    # Start it with:  docker compose --profile lab up -d
-    profiles: ["lab"]
+    <<: *lab-target
+    # A RAG chatbot that answers from five synthetic documents.
     build: ./lab/targets/rag-chatbot
-    environment:
-      LAB_MODEL: simulated  # fixed answers; a local model through Ollama comes with FR-11.2
-    networks: [lab]
+
+  lab-support-agent:
+    <<: *lab-target
+    # A customer-support agent with simulated tools: it looks up orders, refunds and escalates.
+    build: ./lab/targets/support-agent
+
+  lab-sql-agent:
+    <<: *lab-target
+    # An analytics assistant that answers by querying a synthetic SQLite database.
+    build: ./lab/targets/sql-agent
+
+  lab-document-agent:
+    <<: *lab-target
+    # A document desk that summarizes the documents it holds and the ones it is sent.
+    build: ./lab/targets/document-agent
 
   prometheus:
     # Operational metrics (NFR-5.5, FR-10.6): it scrapes the API's /api/metrics. Start the
