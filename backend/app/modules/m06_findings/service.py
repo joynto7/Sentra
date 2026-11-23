@@ -6,7 +6,8 @@ member of the organization may read them, like the runs themselves; another orga
 import re
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -32,8 +33,10 @@ from app.modules.m06_findings.models import (
     FindingEventKind,
     FindingStatus,
     Outcome,
+    ReproducibilityMeasurement,
     component_label,
 )
+from app.modules.m10_admin.models import RetentionRun
 from app.modules.m11_lab.models import BenchmarkRun
 
 # The order of the methods everywhere: canary token, rule matching, tool calls, LLM judge
@@ -607,6 +610,8 @@ def finding_detail(db: Session, organization_id: uuid.UUID, code: str) -> dict:
     refs = _run_refs(db, run_ids)
     names = _names(db, {finding.owner_id, finding.confirmed_by_id, finding.closed_by_id})
     merged_into = _codes(db, organization_id, {finding.merged_into_id})
+    kept = sum(count for _, count in _evidence_counts(db, codes))
+    basis = reproducibility.counted(db, finding)
     return _item(
         finding,
         _target_names(db, {finding.target_id}),
@@ -630,7 +635,16 @@ def finding_detail(db: Session, organization_id: uuid.UUID, code: str) -> dict:
         "severity_provisional": finding.severity_provisional,
         "severity_adjusted": finding.severity_adjusted,
         "severity_justification": finding.severity_justification,
-        "evidence_count": sum(count for _, count in _evidence_counts(db, codes)),
+        "evidence_count": kept,
+        # UC-6.5, 4a: evidence the retention clean-up of FR-10.5 (M10) has deleted, and when
+        "evidence_deleted": _deleted_evidence(db, organization_id, codes, kept),
+        # The attempts the reproducibility score counts (FR-6.4, M6), as the header of Screens 39-40
+        # shows them: "Reproducibility 4/6"
+        "counted": (
+            {"attempts": len(basis), "successes": sum(1 for one in basis if one.mine)}
+            if basis
+            else None
+        ),
         "test": {
             "code": definition.code,
             "version": definition.version,
@@ -734,4 +748,125 @@ def evidence_detail(db: Session, organization_id: uuid.UUID, code: str, number: 
             "computed": content.computed,
         },
         "content": content.document,
+    }
+
+
+def _deleted_evidence(
+    db: Session, organization_id: uuid.UUID, codes: dict[uuid.UUID, str], kept: int
+) -> dict | None:
+    """UC-6.5, 4a: evidence the finding once stored and no longer holds. Nothing but the retention
+    clean-up of FR-10.5 (M10) can delete evidence (the trigger in models.py), so it went at the end
+    of its retention period. The clean-up that took the last of it says when, and with which
+    period, because each clean-up keeps the periods it ran with (UC-10.8)."""
+    rows = db.execute(
+        select(Finding.evidence_count, Finding.last_seen_at).where(Finding.id.in_(codes))
+    ).all()
+    deleted = sum(count for count, _ in rows) - kept
+    if deleted <= 0:
+        return None
+    last_seen = max(seen for _, seen in rows)
+    cleanups = db.scalars(
+        scoped_select(RetentionRun, organization_id)
+        .where(RetentionRun.evidence_deleted > 0)
+        .order_by(RetentionRun.started_at)
+    )
+    # The first clean-up whose period had ended for the newest evidence of the finding
+    took = next(
+        (one for one in cleanups if one.started_at - timedelta(days=one.evidence_days) > last_seen),
+        None,
+    )
+    return {
+        "count": deleted,
+        "on": took.started_at if took else None,  # the moment the clean-up deleted as of
+        "days": took.evidence_days if took else None,
+    }
+
+
+def _measurement(row: ReproducibilityMeasurement | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "status": row.status,
+        "reason": row.reason,
+        "wanted": row.wanted,
+        "attempts": row.attempts,
+        "successes": row.successes,
+    }
+
+
+ATTEMPTS_SHOWN = 500  # the attempts Screen 40 lists; the score always counts them all
+
+
+def reproducibility_detail(db: Session, organization_id: uuid.UUID, code: str) -> dict:
+    """Screen 40, UC-6.3: the attempts the finding's reproducibility score counts, by campaign run,
+    each with its verdict and, for a success, the evidence that proves it; and the measurement of
+    each run: complete, incomplete with its reason (2a1, 2b1), or still measuring. Results are
+    rates over repeated attempts (quality requirement 4), so the page shows every attempt the rate
+    is made of."""
+    finding = finding_row(db, organization_id, code)
+    codes = group(db, organization_id, finding)
+    rows = reproducibility.counted(db, finding)
+    proof: dict[uuid.UUID, tuple[str, int]] = {}
+    elsewhere: dict[uuid.UUID, str] = {}
+    if rows:
+        found = db.execute(
+            select(Evidence.attempt_id, Evidence.finding_id, Evidence.evidence_no)
+            .where(
+                Evidence.organization_id == organization_id,
+                Evidence.kind == EvidenceKind.ATTEMPT,
+                Evidence.attempt_id.in_([row.attempt_id for row in rows]),
+            )
+            .order_by(Evidence.evidence_no)
+        ).all()
+        others = _codes(db, organization_id, {one for _, one, _ in found if one not in codes})
+        for attempt_id, finding_id, number in found:
+            if finding_id in codes:  # this finding's, or a duplicate's merged into it (FR-6.6, M6)
+                proof.setdefault(attempt_id, (codes[finding_id], number))
+            elif finding_id in others:  # it met for another component of the target (FR-6.6, M6)
+                elsewhere.setdefault(attempt_id, others[finding_id])
+    measured = {
+        row.campaign_run_id: row
+        for row in db.scalars(
+            select(ReproducibilityMeasurement)
+            .where(ReproducibilityMeasurement.finding_id == finding.id)
+            .order_by(ReproducibilityMeasurement.started_at)
+        )
+    }
+    order = list(dict.fromkeys([*(row.run_id for row in rows), *measured]))
+    refs = _run_refs(db, set(order))
+    listed: dict[uuid.UUID, list[dict]] = {run_id: [] for run_id in order}
+    for position, row in enumerate(rows[:ATTEMPTS_SHOWN], start=1):
+        evidence_of = proof.get(row.attempt_id)
+        listed[row.run_id].append(
+            {
+                "position": position,
+                "attempt_no": row.attempt_no,
+                "sent_at": row.sent_at,
+                "outcome": row.outcome,
+                "success": row.mine,
+                "repeat": row.repeat,
+                "evidence": (
+                    {"finding": evidence_of[0], "number": evidence_of[1]} if evidence_of else None
+                ),
+                "other_finding": elsewhere.get(row.attempt_id),
+            }
+        )
+    successes = sum(1 for row in rows if row.mine)
+    return {
+        "attempts": len(rows),
+        "successes": successes,
+        "rate": (
+            str((Decimal(successes) / Decimal(len(rows))).quantize(Decimal("0.001")))
+            if rows
+            else None
+        ),
+        "shown": min(len(rows), ATTEMPTS_SHOWN),
+        "runs": [
+            {
+                "run": refs[run_id],
+                "measurement": _measurement(measured.get(run_id)),
+                "attempts": listed[run_id],
+            }
+            for run_id in order
+        ],
     }
