@@ -101,7 +101,9 @@ def actions(team) -> list[str]:
 
 
 def notes(team, event="shield_policy") -> list[Notification]:
-    return list(team.db.scalars(select(Notification).where(Notification.event == event)))
+    # In the order they were written: the database returns rows in no particular order otherwise
+    query = select(Notification).where(Notification.event == event)
+    return list(team.db.scalars(query.order_by(Notification.created_at)))
 
 
 def rule_kinds(response) -> list[str]:
