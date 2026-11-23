@@ -6,6 +6,7 @@ import { ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminNav } from "@/components/admin/admin-nav"
+import { SsoCard } from "@/components/admin/sso-card"
 import { FormField } from "@/components/auth/form-field"
 import { PasswordInput } from "@/components/auth/password-input"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
@@ -220,37 +221,43 @@ export function OrganizationSecurityPage() {
               </AlertDescription>
             </Alert>
             <div className="grid max-w-4xl items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-              <section aria-labelledby="mfa-setting-heading" className="space-y-5 rounded-[10px] border bg-card p-6">
-                <h2 id="mfa-setting-heading" ref={settingsHeading} tabIndex={-1} className="text-[15px] font-semibold outline-none">
-                  Two-step verification
-                </h2>
-                <div className="flex items-start justify-between gap-6">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="require-mfa" className="text-sm font-medium">
-                      Require two-step verification for all members
-                    </Label>
-                    <p id="require-mfa-help" className="text-sm text-text-secondary" aria-live="polite">
-                      {helper}
-                    </p>
-                    {security.mfa_required && !changed && without > 0 && (
-                      <Link href="/admin/members?mfa=off" className="inline-block text-sm font-medium text-link underline-offset-4 hover:underline">
-                        View members
-                      </Link>
-                    )}
+              <div className="min-w-0 space-y-5">
+                <section aria-labelledby="mfa-setting-heading" className="space-y-5 rounded-[10px] border bg-card p-6">
+                  <h2 id="mfa-setting-heading" ref={settingsHeading} tabIndex={-1} className="text-[15px] font-semibold outline-none">
+                    Two-step verification
+                  </h2>
+                  <div className="flex items-start justify-between gap-6">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="require-mfa" className="text-sm font-medium">
+                        Require two-step verification for all members
+                      </Label>
+                      <p id="require-mfa-help" className="text-sm text-text-secondary" aria-live="polite">
+                        {helper}
+                      </p>
+                      {security.mfa_required && !changed && without > 0 && (
+                        <Link href="/admin/members?mfa=off" className="inline-block text-sm font-medium text-link underline-offset-4 hover:underline">
+                          View members
+                        </Link>
+                      )}
+                    </div>
+                    <Switch id="require-mfa" checked={required} onCheckedChange={setRequired} aria-describedby="require-mfa-help" className="mt-0.5" />
                   </div>
-                  <Switch id="require-mfa" checked={required} onCheckedChange={setRequired} aria-describedby="require-mfa-help" className="mt-0.5" />
-                </div>
-                <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-                  {changed && (
-                    <Button type="button" variant="outline" className="h-9" onClick={() => setRequired(security.mfa_required)}>
-                      Undo change
+                  <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+                    {changed && (
+                      <Button type="button" variant="outline" className="h-9" onClick={() => setRequired(security.mfa_required)}>
+                        Undo change
+                      </Button>
+                    )}
+                    <Button type="button" className="h-9 hover:bg-primary-hover" disabled={!changed || saving} onClick={save}>
+                      {saving ? "Saving…" : "Save settings"}
                     </Button>
-                  )}
-                  <Button type="button" className="h-9 hover:bg-primary-hover" disabled={!changed || saving} onClick={save}>
-                    {saving ? "Saving…" : "Save settings"}
-                  </Button>
-                </div>
-              </section>
+                  </div>
+                </section>
+                <SsoCard
+                  connection={security.sso}
+                  onChange={(sso) => setSecurity((before) => (before ? { ...before, sso } : before))}
+                />
+              </div>
               <aside aria-labelledby="help-heading" className="space-y-2 rounded-[10px] border bg-muted/40 p-5 text-sm text-text-secondary">
                 <h2 id="help-heading" className="text-sm font-semibold text-foreground">
                   What does it change?
@@ -258,6 +265,17 @@ export function OrganizationSecurityPage() {
                 <p>After their password, members enter a 6-digit code from an authenticator app on their phone, so a stolen password alone is not enough to log in.</p>
                 <p>Members who haven&apos;t set it up are asked to at their next login. Sessions that are open now continue until they end.</p>
                 <p>A member who loses their phone logs in with one of their recovery codes.</p>
+                <h2 id="sso-help-heading" className="pt-2 text-sm font-semibold text-foreground">
+                  What does single sign-on change?
+                </h2>
+                <p>
+                  Members with an address at the domain you enter log in through your identity provider instead of
+                  with a Sentra password. Sentra accepts only signed responses from the issuer you configure.
+                </p>
+                <p>
+                  It is not a way into Sentra by itself: a person still has to be a member of this organization, so
+                  invite them first. Your two-step requirement above still applies to them.
+                </p>
               </aside>
             </div>
           </>
