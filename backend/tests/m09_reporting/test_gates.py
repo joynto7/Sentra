@@ -16,7 +16,7 @@ from app.modules.m01_users.models import User
 from app.modules.m05_campaigns import planning
 from app.modules.m05_campaigns.models import Attempt, CampaignRun, RunStatus, RunTrigger
 from app.modules.m06_findings.models import FindingStatus
-from app.modules.m09_reporting import api_keys
+from app.modules.m09_reporting import api_keys, gates
 from app.modules.m09_reporting.models import (
     ApiKeyScope,
     GateRun,
@@ -415,3 +415,96 @@ def test_the_results_of_a_gate_are_read_with_the_reading_scope(team, pipeline): 
     assert team.client.get(f"{URL}/G-001/runs", headers=headers(both)).status_code == 200
     refused = team.client.get(f"{URL}/G-001/runs/1", headers=headers(only_runs))
     assert refused.status_code == 401 and refused.json()["error"]["code"] == "scope_missing"
+
+
+# ---------------------------------------------------------------- what Screen 55 reads
+
+
+def test_the_gate_says_what_each_run_sends(team):  # noqa: F811
+    """Step 1 on the gate's page: the suites with the version a run fixes, the attempt budget and
+    the scope approval of the campaign — what the developer has to see before trusting the gate."""
+    make_gate(team)
+
+    read = team.client.get(f"{URL}/G-001").json()
+
+    assert read["target_environment"] == "staging"  # 1a: a gate belongs on staging
+    assert read["attempt_budget"] == 10 and read["approval_status"] == "not_required"
+    suites = {one["code"]: one for one in read["suites"]}
+    assert set(suites) == {"LLM06-EXCESSIVE-AGENCY", "LLM01-PROMPT-INJECTION"}
+    for suite in suites.values():
+        assert suite["found"] and suite["version"] >= 1 and suite["test_count"] > 0
+        assert suite["name"] and suite["name"] != suite["code"]
+
+
+def test_the_campaigns_a_gate_can_be_made_of_say_what_they_would_run(team):  # noqa: F811
+    """Step 1 and 1a1: the choice names the environment, so a campaign of a production target can
+    be recommended against before the gate exists."""
+    offered = team.client.get(URL).json()["campaigns"]
+
+    assert [one["code"] for one in offered] == ["C-001"]
+    assert offered[0]["target_environment"] == "staging" and offered[0]["suite_count"] == 2
+    assert offered[0]["attempt_budget"] == 10 and offered[0]["approval_status"] == "not_required"
+
+
+def test_a_release_keeps_the_policy_it_was_judged_by(team, pipeline, db):  # noqa: F811
+    """Quality requirement 2: every gate run records the policy it was evaluated against, so a
+    result stays explainable after an analyst has changed the gate's policy."""
+    make_gate(team)
+    plant(team.db, team.agent, "personal_data", PERSONAL_TOKEN)
+    key = key_for(team, ApiKeyScope.RUN_SECURITY_GATE, ApiKeyScope.READ_GATE_RESULTS)
+    team.client.cookies.clear()
+    judged = pipeline(key, canary_test(team), ["nothing to see here"])
+    assert judged["policy_words"] == (
+        "fail if a new finding of severity Critical or High appears, or a fixed finding comes back"
+    )
+
+    log_in(team.client, "arif@example.com")
+    changed = team.client.patch(
+        f"{URL}/G-001", json={"fail_on": ["low"], "fail_on_reopened": False}
+    )
+    assert changed.status_code == 200
+
+    gate = team.client.get(f"{URL}/G-001").json()
+    assert gate["policy_words"] == "fail if a new finding of severity Low appears"
+    assert gate["runs"][0]["policy_words"] == judged["policy_words"], (
+        "the release was judged before the change and still says so"
+    )
+    row = db.scalar(select(GateRun).where(GateRun.number == judged["number"]))
+    assert row.fail_on == ["critical", "high"] and row.fail_on_reopened is True
+
+
+def test_a_release_is_judged_by_the_policy_of_its_own_run(team, pipeline, db):  # noqa: F811
+    """Quality requirement 2, the half the page shows: a verdict is decided when the campaign run
+    ends, which can be after an analyst has changed the policy. `decide()` therefore reads the
+    gate run's own copy, so a tightened policy judges the next release and not this one."""
+    make_gate(team)  # Critical or High, and a fixed finding that comes back
+    plant(team.db, team.agent, "personal_data", PERSONAL_TOKEN)
+    key = key_for(team, ApiKeyScope.RUN_SECURITY_GATE, ApiKeyScope.READ_GATE_RESULTS)
+    team.client.cookies.clear()
+    pipeline(key, canary_test(team), ["nothing to see here"])  # the baseline, without a finding
+    second = canary_test(team, code="SID-NEW-004", name="A weakness of the new release")
+    blocked = pipeline(key, second, [f"Write to {PERSONAL_TOKEN} for help."])
+    assert blocked["verdict"] == GateVerdict.FAILED
+
+    # The same campaign run, decided again the way the run engine does it when a run ends, but as
+    # a release that had started while the gate still failed on Low findings only.
+    gate = db.scalar(select(SecurityGate))
+    started = db.scalar(select(GateRun).where(GateRun.number == blocked["number"]))
+    run = db.get(CampaignRun, started.campaign_run_id)
+    lenient = GateRun(
+        organization_id=team.org,
+        gate_id=gate.id,
+        number=blocked["number"] + 1,
+        campaign_run_id=run.id,
+        fail_on=["low"],
+        fail_on_reopened=False,
+    )
+    db.add(lenient)
+    db.flush()
+    gates.decide(db, lenient, run)
+
+    assert lenient.verdict == GateVerdict.PASSED, "judged by its own policy, which Low alone fails"
+    assert [one["code"] for one in lenient.new_findings] == [
+        one["code"] for one in blocked["new_findings"]
+    ], "the same findings are reported as new; only the policy that judges them differs"
+    assert lenient.breaking == [] and gate.fail_on == ["critical", "high"]
