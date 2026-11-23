@@ -23,6 +23,9 @@ export type TargetRiskRow = {
   last_run_at: string | null
   /** A campaign run of the target that is going on now: its live monitor is /campaigns/C-238/runs/2 */
   live_run?: LiveRun | null
+  /** The score at the start of the period, for the change beside the score; null: not scored then */
+  score_then?: number | null
+  score_then_at?: string | null
   open_total: number
   open_by_severity: SeverityCounts
   awaiting_confirmation: number
@@ -61,9 +64,11 @@ export type TargetRisk = {
 export type TopFinding = {
   code: string
   title: string
+  category?: string | null
   severity: Severity
   status: FindingStatus
   target: { id: string; name: string }
+  owner?: string | null
   reproducibility: string | null // None until FR-7.1 has rated the finding
   provisional: boolean
   last_seen_at: string
@@ -86,6 +91,9 @@ export type RiskDashboard = {
   category: string | null
   /** True while a category is chosen: the finding counts follow it, the risk scores don't. */
   category_filtered: boolean
+  /** What the tiles compare with: the start of the period, and the period of the same length
+   * before it. `open_then` is null while a category is chosen, because a score counts them all. */
+  changes: { since: string; open_then: number | null; fixed_before: number }
 }
 
 export const BAND_LABEL: Record<RiskBand, string> = {
@@ -134,6 +142,35 @@ export function getRiskDashboard(params?: URLSearchParams, signal?: AbortSignal)
   const query = params?.toString()
   return apiFetch<RiskDashboard>(`/v1/risk/dashboard${query ? `?${query}` : ""}`, { signal })
 }
+
+/** "Needs attention": what this person can act on now, each with the count its own page shows. */
+export type AttentionKey =
+  | "paused_runs"
+  | "new_findings"
+  | "requires_confirmation"
+  | "awaiting_my_approval"
+  | "threat_model_drafts"
+  | "assigned_to_me"
+  | "open_changes"
+  | "unverified_targets"
+  | "gateways_not_reporting"
+  | "scopes_to_approve"
+  | "critical_findings"
+  | "usage_limit"
+  | "pending_invitations"
+  | "expiring_api_keys"
+
+export type AttentionItem = {
+  key: AttentionKey
+  count: number
+  /** The one campaign, run or target when there is just one, so the item can open it directly */
+  one: { campaign?: string; number?: number; code?: string; target_id?: string }
+  detail: { expired?: number; kind?: string; label?: string; percent?: number; resets?: string; within_days?: number }
+}
+
+export type Attention = { role: string; items: AttentionItem[]; more: number }
+
+export const getAttention = (signal?: AbortSignal) => apiFetch<Attention>("/v1/risk/attention", { signal })
 
 export function getTargetRisk(targetId: string, signal?: AbortSignal) {
   return apiFetch<TargetRisk>(`/v1/targets/${targetId}/risk`, { signal })
