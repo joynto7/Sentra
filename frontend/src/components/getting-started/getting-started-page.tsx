@@ -198,16 +198,12 @@ export function GettingStartedPage() {
           actions: (
             <>
               {canLab && (
-                <span className="flex flex-col items-start gap-1 sm:items-end">
-                  <Button variant="outline" className="h-9 gap-1.5" disabled aria-describedby="lab-later">
+                <Button asChild variant="outline" className="h-9 gap-1.5">
+                  <Link href="/lab">
                     <FlaskConical aria-hidden="true" />
                     Deploy a lab target
-                  </Button>
-                  <span id="lab-later" className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <Lock className="size-3" aria-hidden="true" />
-                    Comes with the Security Lab
-                  </span>
-                </span>
+                  </Link>
+                </Button>
               )}
               {canRegister && (
                 <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
@@ -304,6 +300,11 @@ export function GettingStartedPage() {
             ? `${organization} is set up. Its results grow with every campaign run.`
             : `Set up ${organization} and get your first results in about 15 minutes.`}
         </p>
+        {allDone && (
+          <Button asChild className="mt-3 h-9 hover:bg-primary-hover">
+            <Link href="/dashboard">Open the Risk Dashboard</Link>
+          </Button>
+        )}
       </div>
 
       {failed && (
