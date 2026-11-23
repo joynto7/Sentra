@@ -284,6 +284,13 @@ export function SecurityLabPage() {
         </Alert>
       )}
 
+      {canUse === false && (
+        <p role="note" className="mb-4 rounded-[10px] border bg-card p-4 text-sm text-muted-foreground">
+          You can read everything here. Only Security Analysts deploy and reset lab targets, and start
+          benchmark runs.
+        </p>
+      )}
+
       <Tabs defaultValue="targets">
         <TabsList>
           <TabsTrigger value="targets">Lab targets</TabsTrigger>
