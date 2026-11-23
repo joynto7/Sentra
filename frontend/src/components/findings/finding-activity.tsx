@@ -148,7 +148,7 @@ export function FindingActivity({ code }: { code: string }) {
   return (
     <div>
       <FindingHeader finding={finding} />
-      <FindingTabs code={finding.code} active="activity" />
+      <FindingTabs code={finding.code} active="activity" evidence={finding.evidence_count} />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <section className="min-w-0 space-y-3 rounded-[10px] border bg-card p-5">

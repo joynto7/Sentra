@@ -146,6 +146,10 @@ export type FindingDetection = {
 }
 
 export type FindingDetail = FindingItem & {
+  /** The attempts the reproducibility score counts (FR-6.4, M6): "Reproducibility 4/6". */
+  counted: { attempts: number; successes: number } | null
+  /** UC-6.5, 4a: evidence the retention clean-up of FR-10.5 (M10) deleted, and when. */
+  evidence_deleted: { count: number; on: string | null; days: number | null } | null
   description: string
   atlas: string[]
   /** The triage of FR-6.5 (UC-6.6) */
@@ -258,6 +262,9 @@ export type EvidenceItem = {
   number: number
   /** "attempt", or "judge_verdict": the LLM judge's later answer to the same attempt. */
   kind: string
+  /** Whose evidence it is: this finding, or a duplicate merged into it (FR-6.6, M6), which numbers
+   * its own. A record is the pair of the two. */
+  finding: string
   attempt_no: number
   run: { id: string; code: string }
   recorded_at: string
@@ -374,6 +381,44 @@ export const getFinding = (code: string, signal?: AbortSignal) =>
 /** FR-6.3: the evidence records of a finding, in the order they were recorded. */
 export const listEvidence = (code: string, signal?: AbortSignal) =>
   apiFetch<EvidenceItem[]>(`/v1/findings/${encodeURIComponent(code)}/evidence`, { signal })
+
+/** One attempt of the reproducibility score, as Screen 40 lists it (UC-6.3). */
+export type CountedAttempt = {
+  /** 1, 2, 3 … among all the attempts the score counts */
+  position: number
+  attempt_no: number
+  sent_at: string | null
+  outcome: "met" | "not_met"
+  /** Its evidence belongs to the finding, so the score counts it as reproduced. */
+  success: boolean
+  /** Sent again to measure the finding (UC-6.3 step 1). */
+  repeat: boolean
+  evidence: { finding: string; number: number } | null
+  /** It met for another component of the same target, e.g. F-014. */
+  other_finding: string | null
+}
+
+export type Measurement = {
+  status: "measuring" | "complete" | "incomplete"
+  reason: string
+  /** The repetitions the campaign asked for */
+  wanted: number
+  attempts: number
+  successes: number
+}
+
+/** FR-6.4 (M6) on Screen 40: every attempt the score counts, by campaign run, with each run's measurement. */
+export type Reproducibility = {
+  attempts: number
+  successes: number
+  rate: string | null
+  /** How many of the attempts are listed (at most 500) */
+  shown: number
+  runs: { run: { id: string; code: string }; measurement: Measurement | null; attempts: CountedAttempt[] }[]
+}
+
+export const getReproducibility = (code: string, signal?: AbortSignal) =>
+  apiFetch<Reproducibility>(`/v1/findings/${encodeURIComponent(code)}/reproducibility`, { signal })
 
 /** UC-6.5 steps 4-5: one evidence document, read-only, with its integrity check. */
 export const getEvidence = (code: string, number: number, signal?: AbortSignal) =>
