@@ -20,6 +20,7 @@ from app.modules.m09_reporting.schemas import (
     PreferenceOut,
     UnreadOut,
 )
+from app.modules.m09_reporting.webhook_routes import router as webhook_router
 
 router = APIRouter()
 notifications_router = APIRouter(prefix="/notifications", tags=["M9 Notifications"])
@@ -109,3 +110,4 @@ router.include_router(notifications_router)
 router.include_router(api_key_router)
 router.include_router(report_router)
 router.include_router(gate_router)
+router.include_router(webhook_router)
