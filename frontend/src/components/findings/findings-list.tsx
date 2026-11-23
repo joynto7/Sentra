@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
 import { useUrlState } from "@/hooks/use-url-state"
 import {
   type FindingDetail,
@@ -204,7 +205,23 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
     return value === "asc" || value === "desc" ? value : FIRST_DIRECTION[sort]
   })
   const [page, setPage] = useState(() => Math.max(1, Number(query.get("page")) || 1))
-  const [data, setData] = useState<FindingPage | null>(null)
+  // What the API is asked for: also the key of the answer kept for Back (UX task 3.0), so coming
+  // back shows the list at once and where the reader was in it, and refreshes it behind
+  const request = (() => {
+    const params = new URLSearchParams({ view, page: String(page), page_size: String(PAGE_SIZE), sort, direction })
+    if (search.trim()) params.set("search", search.trim())
+    if (target) params.set("target_id", target)
+    if (severity) params.set("severity", severity)
+    if (category) params.set("category", category)
+    if (status) params.set("status", status)
+    if (runId) params.set("run_id", runId)
+    if (owner) params.set("owner_id", owner)
+    for (const [key, value] of Object.entries(period)) if (value) params.set(key, value)
+    return params.toString()
+  })()
+  const [kept, keep, drop] = useKeptAnswer<FindingPage>(`findings?${request}`)
+  const [data, setData] = useState<FindingPage | null>(kept)
+  useKeptScroll(`findings${targetId ? `:${targetId}` : ""}`, `findings?${request}`, data !== null)
   const [options, setOptions] = useState<FindingFilters | null>(null)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -258,16 +275,7 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
   useEffect(() => {
     const controller = new AbortController()
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ view, page: String(page), page_size: String(PAGE_SIZE), sort, direction })
-      if (search.trim()) params.set("search", search.trim())
-      if (target) params.set("target_id", target)
-      if (severity) params.set("severity", severity)
-      if (category) params.set("category", category)
-      if (status) params.set("status", status)
-      if (runId) params.set("run_id", runId)
-      if (owner) params.set("owner_id", owner)
-      for (const [key, value] of Object.entries(period)) if (value) params.set(key, value)
-      listFindings(params, controller.signal)
+      listFindings(new URLSearchParams(request), controller.signal)
         .then((found) => {
           // A page beyond the last one (an old link, or a list that shrank after a triage) opens
           // the last page instead of an empty table
@@ -276,19 +284,28 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
             return
           }
           setData(found)
+          keep(found)
           setError(false)
           if (selectOnLoad.current && found.items.length) {
             preview(found.items[selectOnLoad.current === "first" ? 0 : found.items.length - 1].code)
           }
           selectOnLoad.current = null
         })
-        .catch(() => !controller.signal.aborted && setError(true))
+        .catch((problem) => {
+          if (controller.signal.aborted) return
+          // A list the reader may no longer read leaves the page and the memory (UX task 3.0)
+          if (refused(problem)) {
+            drop()
+            setData(null)
+          }
+          setError(true)
+        })
     }, 200)
     return () => {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [view, search, target, severity, category, status, runId, owner, period, sort, direction, page, attempt])
+  }, [request, keep, drop, attempt])
 
   // If the triaged finding's row went, the keyboard went with it: it goes to the count above the
   // list instead of the top of the page (WCAG 2.4.3)
@@ -472,7 +489,7 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
           <Alert variant="destructive" role="alert">
             <AlertDescription className="flex items-center justify-between gap-4">
               The findings could not be loaded.
-              <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={() => setAttempt((n) => n + 1)}>
                 Try again
               </Button>
             </AlertDescription>
