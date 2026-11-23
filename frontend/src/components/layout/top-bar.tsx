@@ -3,9 +3,9 @@
 import { Fragment } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CircleHelp } from "lucide-react"
 
 import { usePageCrumbsValue } from "@/components/layout/breadcrumbs"
+import { HelpPanel } from "@/components/layout/help-panel"
 import { SearchBox } from "@/components/layout/search-box"
 import {
   Breadcrumb,
@@ -15,7 +15,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
@@ -86,9 +85,7 @@ export function TopBar({ platform = false }: { platform?: boolean }) {
         {!platform && <SearchBox />}
         <ThemeToggle />
         <NotificationBell />
-        <Button variant="ghost" size="icon" aria-label="Help">
-          <CircleHelp aria-hidden="true" />
-        </Button>
+        <HelpPanel />
       </div>
     </header>
   )
