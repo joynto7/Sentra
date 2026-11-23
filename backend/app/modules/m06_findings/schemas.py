@@ -160,6 +160,11 @@ class FindingPage(BaseModel):
     # The quick views of Screen 38 with the other filters applied: open, assigned,
     # requires_confirmation, closed
     counts: dict[str, int]
+    # Screen 38's severity strip: the view and the filters but the severity, by severity
+    severity_counts: dict[str, int] = Field(default_factory=dict)
+    sort: str = "severity"
+    direction: str = "desc"
+    mine_first: bool = False  # UC-6.4, 2a1: an AI Application Developer's own findings first
     in_run_counts: InRunCounts | None = None
 
 
