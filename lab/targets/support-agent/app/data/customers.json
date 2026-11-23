@@ -1,0 +1,16 @@
+[
+  {
+    "reference": "HB-C-1001",
+    "name": "Nadia Rahman",
+    "email": "nadia.rahman@example.com",
+    "current": true,
+    "note": "Everyday account since 2024. Prefers e-mail."
+  },
+  {
+    "reference": "HB-C-2002",
+    "name": "Imran Hossain",
+    "email": "imran.hossain@example.com",
+    "current": false,
+    "note": "Everyday account since 2021. Branch reference HB-BR-07."
+  }
+]
