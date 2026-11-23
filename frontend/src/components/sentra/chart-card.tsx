@@ -46,7 +46,7 @@ export function ChartCard({
   const id = useId()
   const [view, setView] = useState<"chart" | "table">("chart")
   return (
-    <section aria-labelledby={`${id}-title`} className={cn("@container/chart flex min-w-0 flex-col rounded-[10px] border bg-card", className)}>
+    <section aria-labelledby={`${id}-title`} className={cn("flex min-w-0 flex-col rounded-[10px] border bg-card", className)}>
       <div className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
         <div className="min-w-0">
           <h2 id={`${id}-title`} className="text-[15px] font-semibold">
