@@ -42,12 +42,12 @@ from app.core.tenancy import scoped_select
 from app.modules.m01_users.models import Membership, MembershipStatus, Role
 from app.modules.m02_targets.models import Target, TargetCredential
 from app.modules.m04_tests.schema import RuleCheck, Severity
-from app.modules.m05_campaigns.models import Attempt, CampaignRun
+from app.modules.m05_campaigns.models import CampaignRun
+from app.modules.m06_findings import reproducibility
 from app.modules.m06_findings.models import (
     OPEN,
     ComponentKind,
     DetectionResult,
-    DetectionVerdict,
     Evidence,
     EvidenceKind,
     Finding,
@@ -305,27 +305,10 @@ def factors_of(db: Session, finding: Finding, *, run: CampaignRun | None = None)
 def _attempts(db: Session, finding: Finding) -> list[bool]:
     """The evaluated attempts that tried this weakness, in the order they were sent, each one True
     when it succeeded: an attempt of the finding's test against its target whose verdict is met or
-    not met (UC-6.1 step 5). An attempt the LLM judge hasn't answered yet isn't counted."""
-    rows = db.execute(
-        select(Attempt.id)
-        .join(CampaignRun, CampaignRun.id == Attempt.campaign_run_id)
-        .join(DetectionVerdict, DetectionVerdict.attempt_id == Attempt.id)
-        .where(
-            Attempt.organization_id == finding.organization_id,
-            Attempt.test_code == finding.test_code,
-            CampaignRun.target_id == finding.target_id,
-            DetectionVerdict.outcome.in_((Outcome.MET, Outcome.NOT_MET)),
-        )
-        .order_by(Attempt.sent_at, Attempt.attempt_no)
-    ).all()
-    mine = set(
-        db.scalars(
-            select(Evidence.attempt_id).where(
-                Evidence.finding_id == finding.id, Evidence.kind == EvidenceKind.ATTEMPT
-            )
-        )
-    )
-    return [row.id in mine for row in rows]
+    not met (UC-6.1 step 5). An attempt the LLM judge hasn't answered yet isn't counted. The list
+    is the one of FR-6.4 (M6) in m06_findings/reproducibility.py, so Screen 40 shows exactly these
+    attempts."""
+    return [one.mine for one in reproducibility.counted(db, finding)]
 
 
 def _consequence(db: Session, finding: Finding) -> str:

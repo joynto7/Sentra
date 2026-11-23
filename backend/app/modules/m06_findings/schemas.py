@@ -209,10 +209,27 @@ class FindingDetectionOut(BaseModel):
     methods: list[MethodOut]
 
 
+class CountedOut(BaseModel):
+    """The attempts a finding's reproducibility score counts (FR-6.4, M6): "4/6" in its header."""
+
+    attempts: int
+    successes: int
+
+
+class EvidenceDeletedOut(BaseModel):
+    """UC-6.5, 4a: evidence the retention clean-up of FR-10.5 (M10) has deleted (Screen 40)."""
+
+    count: int
+    on: datetime | None  # when the clean-up that took the last of it ran
+    days: int | None  # the evidence period that clean-up ran with
+
+
 class FindingOut(FindingItem):
     """One finding (Screen 39): FR-6.2's details, its triage (FR-6.5), its runs and how it was
     detected. Its evidence counts the evidence of every duplicate merged into it (FR-6.6)."""
 
+    counted: CountedOut | None  # None until an attempt of its test has been evaluated
+    evidence_deleted: EvidenceDeletedOut | None
     description: str  # the observed behaviour, masked
     atlas: list[str]  # MITRE ATLAS techniques
     # The triage of FR-6.5 (UC-6.6)
@@ -260,6 +277,50 @@ class IntegrityOut(BaseModel):
 class EvidenceOut(EvidenceItem):
     integrity: IntegrityOut
     content: dict | None  # the masked document; target content is plain text only (NFR-3.6)
+
+
+class EvidenceRef(BaseModel):
+    finding: str  # its own finding: this one, or a duplicate merged into it (FR-6.6, M6)
+    number: int
+
+
+class CountedAttemptOut(BaseModel):
+    """One attempt of the score, as the left column of Screen 40 lists it (UC-6.3)."""
+
+    position: int  # 1, 2, 3 … among the attempts the score counts
+    attempt_no: int  # within its campaign run
+    sent_at: datetime | None
+    outcome: str  # the verdict: met or not_met
+    success: bool  # its evidence belongs to the finding, so the score counts it as reproduced
+    repeat: bool  # sent again to measure the finding (UC-6.3 step 1)
+    evidence: EvidenceRef | None  # the evidence that proves it, when it met for this finding
+    other_finding: str | None  # it met for another component of the target, e.g. F-014
+
+
+class MeasurementOut(BaseModel):
+    """One run's measurement (UC-6.3): complete, incomplete with its reason, or still measuring."""
+
+    status: str
+    reason: str
+    wanted: int  # the repetitions the campaign asked for
+    attempts: int
+    successes: int
+
+
+class CountedRunOut(BaseModel):
+    run: RunRef
+    measurement: MeasurementOut | None
+    attempts: list[CountedAttemptOut]
+
+
+class ReproducibilityOut(BaseModel):
+    """FR-6.4 (M6) on Screen 40: every attempt the reproducibility score counts, by campaign run."""
+
+    attempts: int
+    successes: int
+    rate: str | None  # successes / attempts, three decimals
+    shown: int  # how many of the attempts are listed (at most 500)
+    runs: list[CountedRunOut]
 
 
 class CategoryOut(BaseModel):

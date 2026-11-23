@@ -21,6 +21,7 @@ from app.modules.m06_findings.schemas import (
     FindingOut,
     FindingPage,
     HistoryItem,
+    ReproducibilityOut,
     RunDetectionPage,
     TriageIn,
     TriageOptionsOut,
@@ -258,3 +259,18 @@ def get_evidence(
     _within(actor, service.finding_detail(db, actor.organization_id, code))
     data = service.evidence_detail(db, actor.organization_id, code, number)
     return EvidenceOut.model_validate(data)
+
+
+@router.get("/findings/{code}/reproducibility")
+def finding_reproducibility(
+    code: str,
+    actor: api_keys.Actor = Depends(reads_findings),
+    db: Session = Depends(get_db),
+) -> ReproducibilityOut:
+    """FR-6.4 (M6), UC-6.3: the attempts the finding's reproducibility score counts, by campaign
+    run, with each run's measurement (Screen 40). The same members and keys read it as the
+    evidence."""
+    finding = service.finding_row(db, actor.organization_id, code)
+    _within(actor, {"target": {"id": finding.target_id}})
+    data = service.reproducibility_detail(db, actor.organization_id, code)
+    return ReproducibilityOut.model_validate(data)
