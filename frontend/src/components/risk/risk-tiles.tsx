@@ -1,8 +1,9 @@
 import Link from "next/link"
 import { ArrowDown, ArrowUp, Minus } from "lucide-react"
 
-import { SEVERITY_LABEL, SeverityShape, type Severity } from "@/components/sentra/severity-badge"
-import { COUNTED, type SeverityCounts } from "@/lib/risk"
+import { RiskSummaryCard } from "@/components/risk/risk-summary-card"
+import { SeverityBreakdown } from "@/components/risk/severity-breakdown"
+import { type SeverityCounts } from "@/lib/risk"
 import { cn } from "@/lib/utils"
 
 /**
@@ -42,83 +43,6 @@ export function Delta({
       </span>
       <span className="sr-only">{spoken}</span>
     </p>
-  )
-}
-
-const SEVERITY_COLOUR: Record<string, string> = {
-  critical: "var(--severity-critical)",
-  high: "var(--severity-high)",
-  medium: "var(--severity-medium)",
-  low: "var(--severity-low)",
-  informational: "var(--severity-info)",
-}
-
-/**
- * The open findings by severity as one bar with a written legend: the bar is a summary, the legend
- * is the data, so the tile never depends on colour or on width alone (NFR-4.3).
- */
-function SeverityBar({ counts, total, href }: { counts: SeverityCounts; total: number; href: string }) {
-  return (
-    <div className="mt-3">
-      <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        {COUNTED.map((severity) =>
-          (counts[severity] ?? 0) > 0 ? (
-            <span
-              key={severity}
-              className="h-full first:rounded-l-full last:rounded-r-full"
-              style={{ width: `${((counts[severity] ?? 0) / total) * 100}%`, background: SEVERITY_COLOUR[severity] }}
-            />
-          ) : null,
-        )}
-      </div>
-      <ul className="mt-1.5 flex flex-wrap gap-x-1">
-        {COUNTED.map((severity) => (
-          <li key={severity}>
-            <Link
-              href={`${href}&severity=${severity}`}
-              className="inline-flex min-h-6 items-center gap-1 rounded-[5px] px-1 text-[13px] text-text-secondary hover:underline"
-              title={SEVERITY_LABEL[severity as Severity]}
-            >
-              <SeverityShape severity={severity as Severity} />
-              <span className="tabular">{counts[severity] ?? 0}</span>
-              <span className="sr-only">{SEVERITY_LABEL[severity as Severity].toLowerCase()}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-/** One tile: a number that opens the findings behind it, and a line that breaks it down. */
-function Tile({
-  title,
-  count,
-  href,
-  children,
-  className,
-}: {
-  title: string
-  count: number
-  href: string
-  children?: React.ReactNode
-  className?: string
-}) {
-  const id = `tile-${title.toLowerCase().replace(/\s+/g, "-")}`
-  return (
-    <section className={cn("rounded-[10px] border bg-card p-4", className)} aria-labelledby={id}>
-      <h2 id={id} className="text-[13px] font-medium text-muted-foreground">
-        {title}
-      </h2>
-      <Link
-        href={href}
-        className="tabular mt-1 -ml-1 inline-block px-1 text-3xl font-semibold tracking-tight hover:underline"
-        aria-label={`${title}: ${count}`}
-      >
-        {count}
-      </Link>
-      {children}
-    </section>
   )
 }
 
@@ -162,8 +86,8 @@ export function RiskTiles({
     </Link>
   )
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Tile title="Open findings" count={openTotal} href={open}>
+    <div className="grid grid-cols-1 gap-3 @min-[28rem]/dash:grid-cols-2 @min-[56rem]/dash:grid-cols-4">
+      <RiskSummaryCard title="Open findings" count={openTotal} href={open}>
         {opened !== null && (
           <Delta
             change={opened}
@@ -177,12 +101,12 @@ export function RiskTiles({
           />
         )}
         {openTotal > 0 ? (
-          <SeverityBar counts={openBySeverity} total={openTotal} href={open} />
+          <SeverityBreakdown counts={openBySeverity} total={openTotal} href={open} />
         ) : (
           <p className="mt-2 text-[13px] text-muted-foreground">Nothing is open.</p>
         )}
-      </Tile>
-      <Tile title="Awaiting triage" count={awaitingTriage} href={`/findings?view=awaiting_triage${filterQuery}`}>
+      </RiskSummaryCard>
+      <RiskSummaryCard title="Awaiting triage" count={awaitingTriage} href={`/findings?view=awaiting_triage${filterQuery}`}>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[13px]">
           {part("new", byStatus.new ?? 0, `/findings?view=open&status=new${filterQuery}`)}
           <span className="text-muted-foreground" aria-hidden="true">·</span>
@@ -192,8 +116,8 @@ export function RiskTiles({
             `/findings?view=requires_confirmation${filterQuery}`,
           )}
         </p>
-      </Tile>
-      <Tile
+      </RiskSummaryCard>
+      <RiskSummaryCard
         title="Awaiting remediation"
         count={awaitingRemediation}
         href={`/findings?view=awaiting_remediation${filterQuery}`}
@@ -203,8 +127,8 @@ export function RiskTiles({
           <span className="text-muted-foreground" aria-hidden="true">·</span>
           {part("reopened", byStatus.reopened ?? 0, `/findings?view=open&status=reopened${filterQuery}`)}
         </p>
-      </Tile>
-      <Tile title="Fixed and verified" count={fixedAndVerified} href={`${closedInPeriod}&status=fixed_and_verified`}>
+      </RiskSummaryCard>
+      <RiskSummaryCard title="Fixed and verified" count={fixedAndVerified} href={`${closedInPeriod}&status=fixed_and_verified`}>
         <Delta
           change={fixed}
           worseWhen="down"
@@ -218,7 +142,7 @@ export function RiskTiles({
         <p className="mt-1 text-[13px] text-muted-foreground">
           Closed by a retest in the last {periodDays} days.
         </p>
-      </Tile>
+      </RiskSummaryCard>
     </div>
   )
 }
