@@ -93,14 +93,14 @@ def on_approval(remediation: Remediation) -> list[str]:
     if gateway:
         lines.append(
             f"{len(gateway)} {'fix goes' if len(gateway) == 1 else 'fixes go'} into the target's "
-            "next Sentra Shield policy version (FR-8.3)."
+            "next Sentra Shield policy version."
         )
     if application:
         lines.append(
             f"{len(application)} {'fix becomes' if len(application) == 1 else 'fixes become'} a "
-            "task for the application's developer (FR-8.3)."
+            "task for the application's developer."
         )
-    lines.append("A retest starts when every fix of the proposal is in effect (FR-8.4).")
+    lines.append("A retest starts when every fix of the proposal is in effect.")
     return lines
 
 
