@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
 
-import { ApiKeysPage } from "@/components/integrations/api-keys-page"
+import { GatesPage } from "@/components/integrations/gates-page"
 
-export const metadata: Metadata = { title: "API Keys" }
+export const metadata: Metadata = { title: "Security Gates" }
 
 export default function IntegrationsPage() {
-  return <ApiKeysPage />
+  return <GatesPage />
 }

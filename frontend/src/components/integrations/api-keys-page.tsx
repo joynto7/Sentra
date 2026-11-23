@@ -5,6 +5,8 @@ import { TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { CreateKeyDialog } from "@/components/integrations/create-key-dialog"
+import { IntegrationsTabs } from "@/components/integrations/integrations-tabs"
+import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { CopyButton } from "@/components/sentra/copy-button"
@@ -95,6 +97,8 @@ function CreatedDialog({ created, onClose }: { created: ApiKeyCreated | null; on
  */
 export function ApiKeysPage() {
   const canManage = useCan("manage_api_keys_and_webhooks")
+  // The keys are the second tab of Integrations since S-S4-05, so the breadcrumb says which one.
+  usePageCrumbs([{ label: "API Keys" }])
   const [data, setData] = useState<ApiKeyList | null>(null)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -155,6 +159,7 @@ export function ApiKeysPage() {
     return (
       <>
         <PageHeader title="Integrations" />
+        <IntegrationsTabs active="keys" />
         <EmptyState
           title="Only Organization Administrators manage API keys"
           description="Ask an Organization Administrator of your organization to create or revoke a key for your integration."
@@ -174,6 +179,7 @@ export function ApiKeysPage() {
           </Button>
         }
       />
+      <IntegrationsTabs active="keys" />
 
       {error && (
         <Alert variant="destructive" role="alert">
