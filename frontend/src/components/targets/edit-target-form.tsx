@@ -128,7 +128,6 @@ export function EditTargetForm({ id }: { id: string }) {
     return (
       <EmptyState
         title="Target not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/targets">Back to targets</Link>
@@ -359,7 +358,7 @@ export function EditTargetForm({ id }: { id: string }) {
           <Section title="Connection format">
             {editingFormat ? (
               <>
-                <FormatFields value={form.format} onChange={(format) => set({ format })} errors={errors} />
+                <FormatFields value={form.format} onChange={(format) => set({ format })} errors={errors} type={target.type} />
                 <Button
                   type="button"
                   variant="link"

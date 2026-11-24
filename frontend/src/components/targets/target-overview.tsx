@@ -8,24 +8,24 @@ import { toast } from "sonner"
 
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
+import { EndpointChip } from "@/components/targets/endpoint-chip"
+import { GLASS_PILL, GLASS_SURFACE } from "@/components/sentra/glass-card"
 import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
+import { TargetMark } from "@/components/sentra/target-picker"
 import { ArchiveDialog, RestoreButton } from "@/components/targets/archive-dialog"
 import { ConnectionSummary, TestConnectionButton, useConnectionTest } from "@/components/targets/connection-test"
 import { EnvironmentBadge, OwnershipBadge } from "@/components/targets/target-badges"
 import { TargetCoverageSummary, TargetShieldSummary } from "@/components/targets/target-cards"
+import { TargetReadiness } from "@/components/targets/target-readiness"
 import { TargetTabs } from "@/components/targets/target-tabs"
 import { TargetThreatModel } from "@/components/threat-models/target-threat-model"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ApiError } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { RUN_STATUS_LABEL, type RunOverviewItem, listOrganizationRuns } from "@/lib/campaigns"
 import { useCan } from "@/lib/permissions"
 import { type TargetRisk, getTargetRisk, notScoredText } from "@/lib/risk"
@@ -46,14 +46,22 @@ const RUNS_SHOWN = 3
 function Card({
   title,
   action,
+  glass,
   children,
 }: {
   title: string
   action?: React.ReactNode
+  /** The four figures at the top take the colour every card has; the lists below stay plain */
+  glass?: boolean
   children: React.ReactNode
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-[10px] border bg-card p-5">
+    <section
+      className={cn(
+        "flex min-w-0 flex-col gap-3 rounded-2xl border p-5",
+        glass ? cn("shadow-[0_20px_40px_-30px_rgba(43,79,216,0.35)]", GLASS_SURFACE) : "rounded-[10px] bg-card",
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="text-[15px] font-semibold">{title}</h2>
         {action}
@@ -65,10 +73,7 @@ function Card({
 
 /** The target's runs, newest first; the monitor of each one is Screen 36. */
 function recentRuns(targetId: string, signal: AbortSignal): Promise<RunOverviewItem[]> {
-  return listOrganizationRuns(
-    new URLSearchParams({ target_id: targetId, limit: String(RUNS_SHOWN) }),
-    signal,
-  )
+  return listOrganizationRuns(new URLSearchParams({ target_id: targetId, limit: String(RUNS_SHOWN) }), signal)
 }
 
 /**
@@ -98,9 +103,15 @@ export function TargetOverview({ id }: { id: string }) {
       .catch((error) => {
         if (error instanceof ApiError && error.status === 404) setNotFound(true)
       })
-    getTargetRisk(id, controller.signal).then(setRisk).catch(() => undefined)
-    getVerification(id, controller.signal).then(setVerification).catch(() => undefined)
-    recentRuns(id, controller.signal).then(setRuns).catch(() => setRuns([]))
+    getTargetRisk(id, controller.signal)
+      .then(setRisk)
+      .catch(() => undefined)
+    getVerification(id, controller.signal)
+      .then(setVerification)
+      .catch(() => undefined)
+    recentRuns(id, controller.signal)
+      .then(setRuns)
+      .catch(() => setRuns([]))
     return () => controller.abort()
   }, [id])
 
@@ -125,7 +136,6 @@ export function TargetOverview({ id }: { id: string }) {
     return (
       <EmptyState
         title="Target not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/targets">Back to targets</Link>
@@ -151,44 +161,52 @@ export function TargetOverview({ id }: { id: string }) {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 items-start gap-4">
+          <TargetMark name={target.name} className="size-14 text-xl" />
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
-            <Badge variant="outline" className="font-normal">
-              {TYPE_LABEL[target.type]}
-            </Badge>
-            <EnvironmentBadge environment={target.environment} />
-            <OwnershipBadge status={target.status} />
-            {target.is_lab && (
-              <Badge variant="outline" className="font-normal">
-                Sentra lab
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline" className={cn("h-6 font-normal", GLASS_PILL)}>
+                {TYPE_LABEL[target.type]}
               </Badge>
-            )}
+              <EnvironmentBadge
+                environment={target.environment}
+                className={target.environment === "production" ? "rounded-full px-3" : GLASS_PILL}
+              />
+              <OwnershipBadge status={target.status} className={GLASS_PILL} />
+              {target.is_lab && (
+                <Badge variant="outline" className={cn("h-6 font-normal", GLASS_PILL)}>
+                  Sentra lab
+                </Badge>
+              )}
+            </div>
+            <EndpointChip url={target.endpoint_url} />
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Registered by {target.owner?.name ?? "a former member"} on {formatDate(target.created_at)}
+            </p>
           </div>
-          <p className="mt-2 font-mono text-[13px] break-all text-muted-foreground">{target.endpoint_url}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Registered by {target.owner?.name ?? "a former member"} on {formatDate(target.created_at)}
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {archived ? null : verified
-            ? canCampaign && (
-                <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
-                  <Link href={`/campaigns/new?target=${target.id}`}>
-                    <Rocket aria-hidden="true" />
-                    Create campaign
-                  </Link>
-                </Button>
-              )
-            : canVerify && (
-                <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
-                  <Link href={`/targets/${target.id}/verify`}>
-                    <ShieldCheck aria-hidden="true" />
-                    Verify ownership
-                  </Link>
-                </Button>
-              )}
+          {archived
+            ? null
+            : verified
+              ? canCampaign && (
+                  <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
+                    <Link href={`/campaigns/new?target=${target.id}`}>
+                      <Rocket aria-hidden="true" />
+                      Create campaign
+                    </Link>
+                  </Button>
+                )
+              : canVerify && (
+                  <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
+                    <Link href={`/targets/${target.id}/verify`}>
+                      <ShieldCheck aria-hidden="true" />
+                      Verify ownership
+                    </Link>
+                  </Button>
+                )}
           <TestConnectionButton target={target} state={connection} className="h-9" />
           <Button asChild variant="outline" className="h-9 gap-1.5">
             <Link href={`/targets/${target.id}/edit`}>
@@ -201,12 +219,7 @@ export function TargetOverview({ id }: { id: string }) {
             : (canMap || canManage) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9"
-                      aria-label={`More actions for ${target.name}`}
-                    >
+                    <Button variant="ghost" size="icon" className="size-9" aria-label={`More actions for ${target.name}`}>
                       <MoreHorizontal aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -247,9 +260,8 @@ export function TargetOverview({ id }: { id: string }) {
           <p className="mt-1 text-muted-foreground">
             No campaign can run against it and its credentials were deleted
             {target.archived_at ? ` on ${formatDate(target.archived_at)}` : ""}
-            {target.archived_by ? ` by ${target.archived_by.name}` : ""}. Its history, findings and reports stay
-            until their retention period ends. Restoring it brings it back as unverified, with new credentials
-            and a new ownership check.
+            {target.archived_by ? ` by ${target.archived_by.name}` : ""}. Its history, findings and reports stay until their retention
+            period ends. Restoring it brings it back as unverified, with new credentials and a new ownership check.
           </p>
         </div>
       )}
@@ -257,17 +269,24 @@ export function TargetOverview({ id }: { id: string }) {
       <TargetTabs targetId={target.id} active="overview" />
 
       <ArchiveDialog target={target} open={archiving} onOpenChange={setArchiving} onDone={setTarget} />
+      <TargetReadiness
+        target={target}
+        connection={connection}
+        verification={verification}
+        canVerify={canVerify}
+        canCampaign={canCampaign}
+        canManage={canManage}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card title="Risk score">
+        <Card title="Risk score" glass>
           {!risk ? (
             <Skeleton className="h-16 w-full" />
           ) : risk.score === null ? (
             <>
               <p className="text-sm text-muted-foreground">{notScoredText(risk.not_scored_reason)}</p>
               <p className="text-xs text-muted-foreground">
-                A target is scored after its first campaign run, and every score is shown with the date of
-                that run.
+                A target is scored after its first campaign run, and every score is shown with the date of that run.
               </p>
             </>
           ) : (
@@ -278,15 +297,15 @@ export function TargetOverview({ id }: { id: string }) {
               </p>
               {risk.awaiting_confirmation > 0 && (
                 <p className="text-xs text-warning">
-                  {risk.awaiting_confirmation} {risk.awaiting_confirmation === 1 ? "finding awaits" : "findings await"}{" "}
-                  confirmation and {risk.awaiting_confirmation === 1 ? "is" : "are"} not counted yet.
+                  {risk.awaiting_confirmation} {risk.awaiting_confirmation === 1 ? "finding awaits" : "findings await"} confirmation and{" "}
+                  {risk.awaiting_confirmation === 1 ? "is" : "are"} not counted yet.
                 </p>
               )}
             </>
           )}
         </Card>
 
-        <Card title="Open findings">
+        <Card title="Open findings" glass>
           {!risk ? (
             <Skeleton className="h-16 w-full" />
           ) : (
@@ -305,7 +324,7 @@ export function TargetOverview({ id }: { id: string }) {
           )}
         </Card>
 
-        <Card title="Ownership">
+        <Card title="Ownership" glass>
           {verified ? (
             <>
               <p className="text-sm">
@@ -331,7 +350,7 @@ export function TargetOverview({ id }: { id: string }) {
           )}
         </Card>
 
-        <Card title="Sentra Shield">
+        <Card title="Sentra Shield" glass>
           <TargetShieldSummary targetId={target.id} />
         </Card>
       </div>
@@ -379,17 +398,16 @@ export function TargetOverview({ id }: { id: string }) {
                       <TableRow key={run.id}>
                         <TableCell className="font-mono text-[13px]">
                           {run.campaign ? (
-                            <Link
-                              href={`/campaigns/${run.campaign.code}/runs/${run.number}`}
-                              className="text-link hover:underline"
-                            >
+                            <Link href={`/campaigns/${run.campaign.code}/runs/${run.number}`} className="text-link hover:underline">
                               {run.code}
                             </Link>
                           ) : (
                             run.code
                           )}
                         </TableCell>
-                        <TableCell className="text-[13px]">{run.campaign?.name ?? "—"}</TableCell>
+                        <TableCell className="max-w-44 truncate text-[13px]" title={run.campaign?.name ?? undefined}>
+                          {run.campaign?.name ?? "—"}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-normal">
                             {RUN_STATUS_LABEL[run.status] ?? run.status}
@@ -398,9 +416,7 @@ export function TargetOverview({ id }: { id: string }) {
                         <TableCell className="tabular text-[13px]">
                           {run.attempts_sent} of {run.attempt_budget}
                         </TableCell>
-                        <TableCell className="text-[13px]">
-                          {run.ended_at ? formatDate(run.ended_at) : "–"}
-                        </TableCell>
+                        <TableCell className="text-[13px]">{run.ended_at ? formatDate(run.ended_at) : "–"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -327,10 +327,7 @@ export function VerifyOwnership({
           Only an AI Application Developer of your organization can run the check.
         </p>
       )}
-      <p className="mt-3 text-xs text-muted-foreground">
-        Sentra re-checks this token before every campaign run. Nobody, including administrators, can mark a target
-        verified without a successful check.
-      </p>
+      <p className="mt-3 text-xs text-muted-foreground">Re-checked before every run. Nobody can skip the check.</p>
     </section>
   )
 }

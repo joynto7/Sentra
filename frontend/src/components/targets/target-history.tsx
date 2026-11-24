@@ -2,10 +2,22 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useId, useState } from "react"
+import {
+  Archive,
+  CircleDot,
+  Rocket,
+  RotateCcw,
+  Settings2,
+  Shield,
+  ShieldCheck,
+  Waypoints,
+  type LucideIcon,
+} from "lucide-react"
 
 import { SeverityShape } from "@/components/sentra/severity-badge"
 import { SEVERITY_LABEL, type Severity } from "@/components/sentra/severity-badge"
-import { FilterSelect } from "@/components/sentra/filter-select"
+import { TargetMark } from "@/components/sentra/target-picker"
+import { EndpointChip } from "@/components/targets/endpoint-chip"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -13,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { TargetTabs } from "@/components/targets/target-tabs"
 import { BAND_LABEL, COUNTED, type RiskBand } from "@/lib/risk"
+import { cn } from "@/lib/utils"
 import {
   HISTORY_KIND_LABEL,
   HISTORY_PERIODS,
@@ -27,17 +40,9 @@ import {
 } from "@/lib/targets"
 
 /** A card of the page: a section with its own heading, so it can be reached and read as one. */
-function Card({
-  title,
-  action,
-  children,
-}: {
-  title: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) {
+function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="space-y-3 rounded-[10px] border bg-card p-5">
+    <section className="space-y-3 rounded-2xl border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h2 className="min-w-0 text-[14.5px] font-semibold">{title}</h2>
         {action}
@@ -70,114 +75,155 @@ const BANDS: { band: RiskBand; from: number }[] = [
   { band: "low", from: 1 },
 ]
 
-/** UC-2.7 step 3: how the risk score and the open findings developed after each campaign run. */
+/** UC-2.7 step 3: how the risk score and the open findings developed after each campaign run. Each point is a button: pointing at it or focusing it reads it out. */
 function ScoreChart({ scores }: { scores: HistoryScore[] }) {
   const titleId = useId()
+  const [at, setAt] = useState<number | null>(null)
   const columns = Math.max(scores.length, 2)
   const step = (WIDTH - PAD_LEFT - PAD_RIGHT) / Math.max(1, columns - 1)
   const x = (index: number) => PAD_LEFT + index * step
   const y = (score: number) => LINE_TOP + (1 - score / 100) * (LINE_BOTTOM - LINE_TOP)
   const tallest = Math.max(1, ...scores.map((one) => one.open_total))
   const barWidth = Math.min(26, step * 0.5)
+  const picked = at !== null ? scores[at] : null
+  const length = scores.reduce(
+    (sum, one, index) => (index === 0 ? 0 : sum + Math.hypot(x(index) - x(index - 1), y(one.score) - y(scores[index - 1].score))),
+    0,
+  )
   return (
-    <svg
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className="h-64 w-full"
-      role="img"
-      aria-labelledby={titleId}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <title id={titleId}>
-        {`The risk score after each calculation: ${scores
-          .map((one) => `${formatDate(one.at)} ${one.score} ${BAND_LABEL[one.band as RiskBand]}`)
-          .join(", ")}. The table below holds the same figures.`}
-      </title>
-      <defs>
-        <pattern id="sentra-hatch" width="6" height="6" patternUnits="userSpaceOnUse">
-          <rect width="6" height="6" fill="var(--muted)" />
-          <path d="M0 6 L6 0" stroke="var(--foreground)" strokeWidth="1.6" />
-        </pattern>
-        <pattern id="sentra-dots" width="6" height="6" patternUnits="userSpaceOnUse">
-          <rect width="6" height="6" fill="var(--muted)" />
-          <circle cx="3" cy="3" r="1.4" fill="var(--foreground)" />
-        </pattern>
-      </defs>
-      {BANDS.map((band) => (
-        <g key={band.band}>
-          <line
-            x1={PAD_LEFT}
-            x2={WIDTH - PAD_RIGHT}
-            y1={y(band.from)}
-            y2={y(band.from)}
-            stroke="var(--border)"
-            strokeDasharray="2 4"
-          />
-          <text x={WIDTH - PAD_RIGHT + 6} y={y(band.from) + 4} className="fill-muted-foreground text-[11px]">
-            {BAND_LABEL[band.band]} {band.from}
-          </text>
-        </g>
-      ))}
-      <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={y(0)} y2={y(0)} stroke="var(--border)" />
-      <text x={4} y={y(100) + 4} className="fill-muted-foreground text-[11px]">
-        100
-      </text>
-      <text x={14} y={y(0) + 4} className="fill-muted-foreground text-[11px]">
-        0
-      </text>
-      <polyline
-        points={scores.map((one, index) => `${x(index)},${y(one.score)}`).join(" ")}
-        fill="none"
-        stroke="var(--foreground)"
-        strokeWidth={1.75}
-        strokeLinejoin="round"
-      />
-      {scores.map((one, index) => (
-        <g key={`${one.at}-line`}>
-          <circle cx={x(index)} cy={y(one.score)} r={3} fill="var(--foreground)" />
-          <text
-            x={x(index)}
-            y={y(one.score) - 8}
-            textAnchor="middle"
-            className="fill-foreground text-[11px] font-medium"
-          >
-            {one.score}
-          </text>
-        </g>
-      ))}
-      {scores.map((one, index) => {
-        let bottom = BARS_BOTTOM
-        return (
-          <g key={`${one.at}-bars`}>
-            {COUNTED.map((severity) => {
-              const count = one.open_by_severity[severity] ?? 0
-              if (!count) return null
-              const height = (count / tallest) * (BARS_BOTTOM - BARS_TOP)
-              bottom -= height
-              return (
-                <rect
-                  key={severity}
-                  x={x(index) - barWidth / 2}
-                  y={bottom}
-                  width={barWidth}
-                  height={height}
-                  fill={FILLS[severity]}
-                  stroke="var(--border)"
-                />
-              )
-            })}
-            <text
-              x={x(index)}
-              y={BARS_BOTTOM + 14}
-              textAnchor="middle"
-              className="fill-muted-foreground text-[11px]"
-            >
-              {one.open_total}
+    <div className="relative">
+      <style>{`@keyframes th-draw { from { stroke-dashoffset: var(--len) } to { stroke-dashoffset: 0 } } @keyframes th-rise { from { opacity: 0; transform: scaleY(.2) } to { opacity: 1; transform: scaleY(1) } } @media (prefers-reduced-motion: reduce) { .th-chart * { animation: none !important } }`}</style>
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="th-chart h-auto w-full" role="img" aria-labelledby={titleId}>
+        <title id={titleId}>
+          {`The risk score after each calculation: ${scores
+            .map((one) => `${formatDate(one.at)} ${one.score} ${BAND_LABEL[one.band as RiskBand]}`)
+            .join(", ")}. The table below holds the same figures.`}
+        </title>
+        <defs>
+          <pattern id="sentra-hatch" width="6" height="6" patternUnits="userSpaceOnUse">
+            <rect width="6" height="6" fill="var(--muted)" />
+            <path d="M0 6 L6 0" stroke="var(--foreground)" strokeWidth="1.6" />
+          </pattern>
+          <pattern id="sentra-dots" width="6" height="6" patternUnits="userSpaceOnUse">
+            <rect width="6" height="6" fill="var(--muted)" />
+            <circle cx="3" cy="3" r="1.4" fill="var(--foreground)" />
+          </pattern>
+        </defs>
+        {BANDS.map((band) => (
+          <g key={band.band}>
+            <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={y(band.from)} y2={y(band.from)} stroke="var(--border)" strokeDasharray="2 4" />
+            <text x={WIDTH - PAD_RIGHT + 6} y={y(band.from) + 4} className="fill-muted-foreground text-[11px]">
+              {BAND_LABEL[band.band]} {band.from}
             </text>
           </g>
-        )
-      })}
-      <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={BARS_BOTTOM} y2={BARS_BOTTOM} stroke="var(--border)" />
-    </svg>
+        ))}
+        <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={y(0)} y2={y(0)} stroke="var(--border)" />
+        <text x={4} y={y(100) + 4} className="fill-muted-foreground text-[11px]">
+          100
+        </text>
+        <text x={14} y={y(0) + 4} className="fill-muted-foreground text-[11px]">
+          0
+        </text>
+        {at !== null && (
+          <line x1={x(at)} x2={x(at)} y1={LINE_TOP} y2={BARS_BOTTOM} stroke="var(--primary)" strokeOpacity="0.35" strokeWidth={2} />
+        )}
+        <polyline
+          points={scores.map((one, index) => `${x(index)},${y(one.score)}`).join(" ")}
+          fill="none"
+          stroke="var(--foreground)"
+          strokeWidth={1.75}
+          strokeLinejoin="round"
+          strokeDasharray={length}
+          style={{ ["--len" as string]: length, animation: "th-draw 1s .1s ease-out both" }}
+        />
+        {scores.map((one, index) => (
+          <g key={`${one.at}-line`}>
+            <circle
+              cx={x(index)}
+              cy={y(one.score)}
+              r={at === index ? 5.5 : 3}
+              fill={at === index ? "var(--primary)" : "var(--foreground)"}
+              style={{ transition: "r .15s" }}
+            />
+            <text x={x(index)} y={y(one.score) - 10} textAnchor="middle" className="fill-foreground text-[11px] font-medium">
+              {one.score}
+            </text>
+          </g>
+        ))}
+        {scores.map((one, index) => {
+          let bottom = BARS_BOTTOM
+          return (
+            <g
+              key={`${one.at}-bars`}
+              style={{ transformBox: "fill-box", transformOrigin: "bottom", animation: `th-rise .6s ${0.3 + index * 0.08}s ease-out both` }}
+              opacity={at === null || at === index ? 1 : 0.45}
+            >
+              {COUNTED.map((severity) => {
+                const count = one.open_by_severity[severity] ?? 0
+                if (!count) return null
+                const height = (count / tallest) * (BARS_BOTTOM - BARS_TOP)
+                bottom -= height
+                return (
+                  <rect
+                    key={severity}
+                    x={x(index) - barWidth / 2}
+                    y={bottom}
+                    width={barWidth}
+                    height={height}
+                    fill={FILLS[severity]}
+                    stroke="var(--border)"
+                  />
+                )
+              })}
+              <text x={x(index)} y={BARS_BOTTOM + 14} textAnchor="middle" className="fill-muted-foreground text-[11px]">
+                {one.open_total}
+              </text>
+            </g>
+          )
+        })}
+        <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={BARS_BOTTOM} y2={BARS_BOTTOM} stroke="var(--border)" />
+      </svg>
+
+      {/* One button on every point: pointing at it or focusing it reads the calculation out */}
+      {scores.map((one, index) => (
+        <button
+          key={`${one.at}-pick`}
+          type="button"
+          aria-label={`${formatDateTime(one.at)}: risk score ${one.score}, ${BAND_LABEL[one.band as RiskBand]}, ${one.open_total} open findings`}
+          aria-pressed={at === index}
+          onMouseEnter={() => setAt(index)}
+          onMouseLeave={() => setAt(null)}
+          onFocus={() => setAt(index)}
+          onBlur={() => setAt(null)}
+          className="absolute size-7 -translate-x-1/2 -translate-y-1/2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ left: `${(x(index) / WIDTH) * 100}%`, top: `${(y(one.score) / HEIGHT) * 100}%` }}
+        />
+      ))}
+      {picked && at !== null && (
+        <div
+          role="status"
+          className="pointer-events-none absolute z-10 w-52 -translate-x-1/2 rounded-xl border bg-card p-3 text-[13px] shadow-lg"
+          style={{
+            left: `${Math.min(86, Math.max(14, (x(at) / WIDTH) * 100))}%`,
+            top: `${Math.max(2, (y(picked.score) / HEIGHT) * 100 + 8)}%`,
+          }}
+        >
+          <p className="text-xs text-muted-foreground">{formatDateTime(picked.at)}</p>
+          <p className="mt-0.5 font-semibold">
+            <span className="tabular text-lg">{picked.score}</span> {BAND_LABEL[picked.band as RiskBand]}
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-secondary">
+            <span className="tabular font-medium text-foreground">{picked.open_total} open</span>
+            {COUNTED.filter((severity) => (picked.open_by_severity[severity] ?? 0) > 0).map((severity) => (
+              <span key={severity} className="inline-flex items-center gap-1">
+                <SeverityShape severity={severity as Severity} />
+                <span className="tabular">{picked.open_by_severity[severity]}</span>
+              </span>
+            ))}
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -239,27 +285,50 @@ function Legend() {
   )
 }
 
+const KIND_ICON: Record<string, LucideIcon> = {
+  registration: Archive,
+  verification: ShieldCheck,
+  configuration: Settings2,
+  profile: Waypoints,
+  campaign_run: Rocket,
+  retest: RotateCcw,
+  shield_policy: Shield,
+}
+
 /** One entry of the timeline (UC-2.7 step 2), with the campaign run it belongs to (step 5). */
-function Event({ event }: { event: HistoryEvent }) {
+function Event({ event, index }: { event: HistoryEvent; index: number }) {
   const run = event.run
+  const Icon = KIND_ICON[event.kind] ?? CircleDot
   return (
-    <li className="flex flex-col gap-1 border-b py-3 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4">
-      <time dateTime={event.at} className="tabular w-44 shrink-0 text-[13px] text-muted-foreground">
-        {formatDateTime(event.at)}
-      </time>
-      <span className="w-28 shrink-0 text-xs text-muted-foreground">{HISTORY_KIND_LABEL[event.kind]}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px]">{event.summary}</p>
+    <li
+      className="group relative flex gap-3 pb-5 last:pb-0"
+      style={{ animation: `th-in .45s ${Math.min(index, 12) * 0.05}s ease-out both` }}
+    >
+      <span aria-hidden="true" className="absolute top-9 bottom-0 left-[17px] w-0.5 bg-border group-last:hidden" />
+      <span
+        aria-hidden="true"
+        className="relative z-10 grid size-9 shrink-0 place-items-center rounded-full border-2 border-[#dbe3fb] bg-[#eaeefd] text-[#1f2f80] dark:border-white/15 dark:bg-[#27406f] dark:text-[#d8e4ff]"
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1 rounded-xl border bg-card px-3.5 py-2.5 transition-shadow hover:shadow-md">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-text-secondary">{HISTORY_KIND_LABEL[event.kind]}</span>
+          <time dateTime={event.at} className="tabular text-xs text-muted-foreground">
+            {formatDateTime(event.at)}
+          </time>
+        </div>
+        <p className="mt-1 text-[13px]">{event.summary}</p>
         <p className="text-xs text-muted-foreground">
           {event.by_sentra ? "Sentra" : event.actor}
           {event.details_deleted && " · the details were deleted at the end of their retention period"}
         </p>
+        {run?.campaign && (
+          <Button asChild variant="outline" size="sm" className="mt-2 h-7 rounded-full px-3 text-xs">
+            <Link href={`/campaigns/${run.campaign}/runs/${run.number}`}>View run</Link>
+          </Button>
+        )}
       </div>
-      {run?.campaign && (
-        <Button asChild variant="ghost" size="sm" className="h-8 self-start">
-          <Link href={`/campaigns/${run.campaign}/runs/${run.number}`}>View run</Link>
-        </Button>
-      )}
     </li>
   )
 }
@@ -318,11 +387,14 @@ export function TargetHistory({ id }: { id: string }) {
   }
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          What has happened to this target, and how its risk developed
-        </p>
+      <style>{`@keyframes th-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } } @media (prefers-reduced-motion: reduce) { li { animation: none !important } }`}</style>
+      <div className="flex items-start gap-4">
+        <TargetMark name={target.name} className="size-14 text-xl" />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">{target.name}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">What has happened to this target, and how its risk developed</p>
+          <EndpointChip url={target.endpoint_url} />
+        </div>
       </div>
       <TargetTabs targetId={target.id} active="history" />
       <Card
@@ -333,14 +405,10 @@ export function TargetHistory({ id }: { id: string }) {
           </Button>
         }
       >
-        <p className="text-xs text-muted-foreground">
-          {HISTORY_PERIODS.find((one) => String(one.days) === period)?.label}
-        </p>
+        <p className="text-xs text-muted-foreground">{HISTORY_PERIODS.find((one) => String(one.days) === period)?.label}</p>
         <div className="min-w-0">
           {history.scores.length === 0 ? (
-            <p className="text-[13px] text-muted-foreground">
-              No risk score yet. The first campaign run of this target calculates one.
-            </p>
+            <p className="text-[13px] text-muted-foreground">No risk score yet. The first campaign run of this target calculates one.</p>
           ) : asTable ? (
             <ScoreTable scores={history.scores} />
           ) : (
@@ -352,20 +420,47 @@ export function TargetHistory({ id }: { id: string }) {
         </div>
       </Card>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <FilterSelect
-          label="Period"
-          value={period}
-          onChange={setPeriod}
-          options={HISTORY_PERIODS.map((one) => ({ value: String(one.days), label: one.label }))}
-        />
-        <FilterSelect
-          label="Event type"
-          value={kind}
-          onChange={setKind}
-          allLabel="All events"
-          options={history.kinds.map((one) => ({ value: one, label: HISTORY_KIND_LABEL[one] }))}
-        />
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div role="group" aria-label="Period" className="flex flex-wrap gap-1.5">
+          {HISTORY_PERIODS.map((one) => (
+            <button
+              key={one.days}
+              type="button"
+              aria-pressed={String(one.days) === period}
+              onClick={() => setPeriod(String(one.days))}
+              className={cn(
+                "h-8 rounded-full border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                String(one.days) === period
+                  ? "border-transparent bg-primary text-primary-foreground"
+                  : "bg-card text-text-secondary hover:text-foreground",
+              )}
+            >
+              {one.label}
+            </button>
+          ))}
+        </div>
+        <div role="group" aria-label="Event type" className="flex flex-wrap gap-1.5">
+          {["", ...history.kinds].map((one) => {
+            const Icon = one ? (KIND_ICON[one] ?? CircleDot) : null
+            return (
+              <button
+                key={one || "all"}
+                type="button"
+                aria-pressed={one === kind}
+                onClick={() => setKind(one)}
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  one === kind
+                    ? "border-primary bg-primary/10 font-medium text-foreground"
+                    : "bg-card text-text-secondary hover:text-foreground",
+                )}
+              >
+                {Icon && <Icon className="size-3.5" aria-hidden="true" />}
+                {one ? HISTORY_KIND_LABEL[one as keyof typeof HISTORY_KIND_LABEL] : "All events"}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {history.events.length === 0 ? (
@@ -373,9 +468,7 @@ export function TargetHistory({ id }: { id: string }) {
           <div className="py-6 text-center">
             <p className="text-sm font-medium">Nothing in this period</p>
             <p className="mt-1 text-[13px] text-muted-foreground">
-              {history.has_runs
-                ? "Choose a longer period or another event type."
-                : "No campaign has run against this target yet."}
+              {history.has_runs ? "Choose a longer period or another event type." : "No campaign has run against this target yet."}
             </p>
             {!history.has_runs && (
               <Button asChild size="sm" className="mt-4">
@@ -386,9 +479,9 @@ export function TargetHistory({ id }: { id: string }) {
         </Card>
       ) : (
         <Card title="History">
-          <ul className="flex flex-col">
+          <ul className="flex flex-col" key={`${period}-${kind}`}>
             {history.events.map((event, index) => (
-              <Event key={`${event.at}-${index}`} event={event} />
+              <Event key={`${event.at}-${index}`} event={event} index={index} />
             ))}
           </ul>
         </Card>

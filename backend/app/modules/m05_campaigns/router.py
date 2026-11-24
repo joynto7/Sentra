@@ -236,7 +236,7 @@ def decide_approval(
 ) -> ApprovalView:
     """UC-5.2 steps 3 and 4, or 3a: the Security Manager approves or rejects the scope. A
     rejection needs a reason, and nobody decides on a campaign they created themselves."""
-    approval.decide(db, membership, code, data.approve, data.reason)
+    approval.decide(db, membership, code, data.approve, data.reason, data.reviewed)
     return ApprovalView.model_validate(approval.view(db, membership, code))
 
 

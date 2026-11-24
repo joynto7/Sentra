@@ -4,7 +4,7 @@ import { FormField } from "@/components/auth/form-field"
 import { TemplateEditor } from "@/components/targets/template-editor"
 import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import type { RequestFormat } from "@/lib/targets"
+import { type RequestFormat, TYPE_LABEL, type TargetType } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
 export type FormatValue = {
@@ -32,10 +32,13 @@ export function FormatFields({
   value,
   onChange,
   errors,
+  type,
 }: {
   value: FormatValue
   onChange: (value: FormatValue) => void
   errors: Record<string, string>
+  /** The kind of application, for help that fits it */
+  type?: TargetType | ""
 }) {
   const set = (patch: Partial<FormatValue>) => onChange({ ...value, ...patch })
   return (
@@ -113,7 +116,11 @@ export function FormatFields({
             />
             {!errors.tool_calls_path && (
               <p id="tool_calls_path-help" className="text-xs text-muted-foreground">
-                Lets Sentra inspect which tools the agent calls.
+                {type === "tool_using_agent"
+                  ? "Lets Sentra inspect which tools the agent calls. Recommended for a tool-using agent."
+                  : type
+                    ? `Only a tool-using agent calls tools, so a ${TYPE_LABEL[type].toLowerCase()} usually needs none. Leave it empty.`
+                    : "Lets Sentra inspect which tools an agent calls."}
               </p>
             )}
           </FormField>

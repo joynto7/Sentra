@@ -6,10 +6,8 @@ import { useSearchParams } from "next/navigation"
 import {
   ChevronLeft,
   ChevronRight,
-  Clock,
   FlaskConical,
   Lock,
-  type LucideIcon,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -17,31 +15,27 @@ import {
   RotateCcw,
   Search,
   ShieldCheck,
-  TriangleAlert,
-  Unplug,
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { GLASS_ROUND } from "@/components/sentra/glass-card"
+import { ViewSwitch, type View } from "@/components/sentra/view-switch"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { RiskScore, SeverityCountsStrip } from "@/components/sentra/risk-score"
 import { SortHeader, type SortDirection } from "@/components/sentra/sort-header"
+import { ShieldStatus } from "@/components/targets/shield-status"
+import { TargetCard } from "@/components/targets/target-card"
 import { EnvironmentBadge, OwnershipBadge } from "@/components/targets/target-badges"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useSession } from "@/components/session-provider"
 import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
 import { useUrlState } from "@/hooks/use-url-state"
 import { useCan } from "@/lib/permissions"
@@ -50,7 +44,6 @@ import { initials } from "@/lib/session"
 import {
   ENVIRONMENT_LABEL,
   SHIELD_LABEL,
-  type ShieldState,
   TYPE_LABEL,
   type Target,
   type TargetList,
@@ -66,7 +59,11 @@ type Tab = "active" | "archived"
 type SortKey = "name" | "risk" | "last_run"
 const SORT_KEYS: SortKey[] = ["name", "risk", "last_run"]
 // A column's first direction when it is chosen: names A to Z, the highest risk and the latest run first
-const FIRST_DIRECTION: Record<SortKey, SortDirection> = { name: "asc", risk: "desc", last_run: "desc" }
+const FIRST_DIRECTION: Record<SortKey, SortDirection> = {
+  name: "asc",
+  risk: "desc",
+  last_run: "desc",
+}
 
 // Which columns show at which width of the table's own frame (a container query), so that the
 // targets' names keep room: all ten from 1,120 px (a window of 1,440 px), Last campaign run and
@@ -78,31 +75,6 @@ const SHOW = {
   state: "hidden @min-[44rem]/targets:table-cell",
 }
 
-const SHIELD_ICON: Record<ShieldState, LucideIcon> = {
-  active: ShieldCheck,
-  not_reporting: TriangleAlert,
-  not_in_path: TriangleAlert,
-  pending: Clock,
-  not_connected: Unplug,
-}
-
-/** Screen 16's Sentra Shield column: icon and words, and a problem in the warning colour too. */
-function ShieldStatus({ shield }: { shield: TargetListItem["shield"] }) {
-  const Icon = SHIELD_ICON[shield.status]
-  const problem = shield.status === "not_reporting" || shield.status === "not_in_path"
-  return (
-    <span
-      className={cn(
-        "inline-flex items-start gap-1.5 text-[13px]",
-        problem ? "font-medium text-warning" : shield.status === "active" ? "text-foreground" : "text-muted-foreground",
-      )}
-    >
-      <Icon className={cn("mt-0.5 size-3.5 shrink-0", shield.status === "active" && "text-success")} aria-hidden="true" />
-      {shield.label}
-    </span>
-  )
-}
-
 /** "Register target" and "Deploy a lab target" in the page header, for the roles that may. */
 function HeaderActions({ register }: { register: React.ReactNode }) {
   const canLab = useCan("use_security_lab")
@@ -110,7 +82,11 @@ function HeaderActions({ register }: { register: React.ReactNode }) {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
       {canLab && (
-        <Button asChild variant="ghost" className="h-9 gap-1.5 text-link hover:text-link">
+        <Button
+          asChild
+          variant="outline"
+          className="h-9 gap-1.5 border-primary/40 bg-primary/10 font-medium text-link shadow-[0_6px_16px_-10px_rgba(43,79,216,0.7)] hover:border-primary hover:bg-primary/15 hover:text-link"
+        >
           <Link href="/lab">
             <FlaskConical aria-hidden="true" />
             Deploy a lab target
@@ -131,7 +107,6 @@ export function TargetsList() {
 }
 
 function ListFromAddress({ onOutside }: { onOutside: () => void }) {
-  const organization = useSession().organization
   const canManage = useCan("manage_targets")
   const canCampaign = useCan("manage_campaigns") // "Create campaign" on a target (UC-5.1 trigger)
   const canVerify = useCan("verify_targets") // the inline "Verify ownership" of an unverified target
@@ -151,9 +126,17 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
     return value === "asc" || value === "desc" ? value : FIRST_DIRECTION[sort]
   })
   const [page, setPage] = useState(() => Math.max(1, Number(query.get("page")) || 1))
+  // One card for each target (the first look), or the table: in the address, so a reload and a shared link keep it
+  const [view, setView] = useState<View>(query.get("view") === "list" ? "list" : "cards")
   // What the API is asked for: also the key of the answer kept for Back (UX task 3.0)
   const request = (() => {
-    const params = new URLSearchParams({ tab, page: String(page), page_size: String(PAGE_SIZE), sort, direction })
+    const params = new URLSearchParams({
+      tab,
+      page: String(page),
+      page_size: String(PAGE_SIZE),
+      sort,
+      direction,
+    })
     if (search.trim()) params.set("search", search.trim())
     if (type) params.set("type", type)
     if (environment) params.set("environment", environment)
@@ -187,8 +170,15 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
       sort,
       direction,
       page: String(page),
+      view,
     },
-    { tab: "active", sort: "risk", direction: FIRST_DIRECTION[sort], page: "1" },
+    {
+      tab: "active",
+      sort: "risk",
+      direction: FIRST_DIRECTION[sort],
+      page: "1",
+      view: "cards",
+    },
     onOutside,
   )
 
@@ -306,11 +296,118 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
     )
   }
 
+  /** The "more" menu of a target, in a row of the table and in the corner of a card. */
+  function actionsMenu(target: TargetListItem, round = false) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Actions for ${target.name}`}
+            className={
+              round
+                ? "size-8 rounded-full bg-white/70 hover:bg-white dark:bg-white/10 dark:hover:bg-white/20"
+                : undefined
+            }
+          >
+            <MoreHorizontal aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild>
+            <Link href={`/targets/${target.id}/edit`}>
+              <Pencil aria-hidden="true" />
+              {canManage ? "Edit" : "View settings"}
+            </Link>
+          </DropdownMenuItem>
+          {canCampaign && target.status === "verified" && (
+            <DropdownMenuItem asChild>
+              <Link href={`/campaigns/new?target=${target.id}`}>
+                <Rocket aria-hidden="true" />
+                Create campaign
+              </Link>
+            </DropdownMenuItem>
+          )}
+          {canManage && target.status === "archived" && (
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault()
+                void restore(target)
+              }}
+            >
+              <RotateCcw aria-hidden="true" />
+              Restore target
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
+  /** The round button at the foot of a card: the one thing most worth doing next with this target. */
+  function quickAction(target: TargetListItem) {
+    const round = GLASS_ROUND
+    if (target.status === "verified" && canCampaign) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              href={`/campaigns/new?target=${target.id}`}
+              className={round}
+              aria-label={`Create campaign for ${target.name}`}
+            >
+              <Rocket className="size-5" aria-hidden="true" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>Create campaign</TooltipContent>
+        </Tooltip>
+      )
+    }
+    if (target.status === "unverified" && canVerify) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              href={`/targets/${target.id}/verify`}
+              className={round}
+              aria-label={`Verify ownership of ${target.name}`}
+            >
+              <ShieldCheck className="size-5" aria-hidden="true" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>Verify ownership</TooltipContent>
+        </Tooltip>
+      )
+    }
+    if (target.status === "archived" && canManage) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className={round}
+              aria-label={`Restore ${target.name}`}
+              onClick={() => void restore(target)}
+            >
+              <RotateCcw className="size-5" aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Restore target</TooltipContent>
+        </Tooltip>
+      )
+    }
+    return null
+  }
+
   const filters = (
     <div className="flex flex-wrap items-center gap-2 border-b p-3">
       <label className="relative block w-full sm:w-72">
         <span className="sr-only">Search targets</span>
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Search
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
         <input
           type="search"
           value={search}
@@ -329,7 +426,10 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
           setType(v)
           setPage(1)
         }}
-        options={Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label }))}
+        options={Object.entries(TYPE_LABEL).map(([value, label]) => ({
+          value,
+          label,
+        }))}
       />
       <FilterSelect
         label="Environment"
@@ -338,7 +438,10 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
           setEnvironment(v)
           setPage(1)
         }}
-        options={Object.entries(ENVIRONMENT_LABEL).map(([value, label]) => ({ value, label }))}
+        options={Object.entries(ENVIRONMENT_LABEL).map(([value, label]) => ({
+          value,
+          label,
+        }))}
       />
       {tab === "active" && (
         <FilterSelect
@@ -361,11 +464,37 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
           setShield(v)
           setPage(1)
         }}
-        options={Object.entries(SHIELD_LABEL).map(([value, label]) => ({ value, label }))}
+        options={Object.entries(SHIELD_LABEL).map(([value, label]) => ({
+          value,
+          label,
+        }))}
       />
+      {view === "cards" && (
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Sort
+          <select
+            value={`${sort}:${direction}`}
+            onChange={(e) => {
+              const [key, dir] = e.target.value.split(":")
+              setSort(key as SortKey)
+              setDirection(dir as SortDirection)
+              setPage(1)
+            }}
+            className="h-9 rounded-[7px] border border-input bg-card px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <option value="risk:desc">Risk score, highest first</option>
+            <option value="risk:asc">Risk score, lowest first</option>
+            <option value="name:asc">Name, A to Z</option>
+            <option value="name:desc">Name, Z to A</option>
+            <option value="last_run:desc">Last run, latest first</option>
+            <option value="last_run:asc">Last run, oldest first</option>
+          </select>
+        </label>
+      )}
       <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
         {data ? `${data.total} ${data.total === 1 ? "target" : "targets"}` : ""}
       </span>
+      <ViewSwitch value={view} onChange={setView} />
     </div>
   )
 
@@ -383,7 +512,15 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
               {denied
                 ? "You can no longer see the targets of this organization. Ask an Organization Administrator for access."
                 : "The targets could not be loaded."}
-              <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={() => { setDenied(false); setAttempt((n) => n + 1) }}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 text-foreground"
+                onClick={() => {
+                  setDenied(false)
+                  setAttempt((n) => n + 1)
+                }}
+              >
                 Try again
               </Button>
             </AlertDescription>
@@ -396,7 +533,12 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
           <Alert variant="destructive" role="alert">
             <AlertDescription className="flex items-center justify-between gap-4">
               The risk scores could not be loaded.
-              <Button variant="outline" size="sm" className="h-9 text-foreground" onClick={() => setAttempt((n) => n + 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 text-foreground"
+                onClick={() => setAttempt((n) => n + 1)}
+              >
                 Try again
               </Button>
             </AlertDescription>
@@ -417,7 +559,7 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
           {filtered ? (
             <EmptyState
               title="No targets match these filters"
-              description="Remove some filters or change the search."
+              description="Change the filters."
               action={
                 <Button variant="outline" className="h-9" onClick={clearFilters}>
                   Clear filters
@@ -425,14 +567,12 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
               }
             />
           ) : tab === "archived" ? (
-            <EmptyState title="No archived targets" description="Targets that are no longer tested appear here." />
+            <EmptyState title="No archived targets" description="Archived targets appear here." />
           ) : (
             <EmptyState
               title="No targets yet"
               description={
-                canManage
-                  ? "Register an AI application you own, or deploy a lab target to practise."
-                  : "An AI Application Developer of your organization registers the applications to test."
+                canManage ? "Register an application you own." : "An AI Application Developer registers targets."
               }
               action={register}
             />
@@ -444,188 +584,173 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
         <>
           {/* Fixed widths on the header's cells, each measured on its longest content; the
               target's name takes what is left, and a hidden header cell takes its column along */}
-          <Table className="table-fixed">
-            <TableHeader className="bg-muted">
-              <TableRow>
-                <SortHeader column="name" label="Target" {...sortProps} />
-                <TableHead scope="col" className={cn("w-[116px] text-xs", SHOW.wide)}>
-                  Type
-                </TableHead>
-                <TableHead scope="col" className={cn("w-[112px] text-xs", SHOW.wide)}>
-                  Environment
-                </TableHead>
-                <TableHead scope="col" className={cn("w-[112px] text-xs", SHOW.state)}>
-                  Ownership
-                </TableHead>
-                <SortHeader column="risk" label="Risk score" className="w-[112px]" {...sortProps} />
-                <TableHead scope="col" className="w-[160px] text-xs">
-                  Open findings
-                </TableHead>
-                <SortHeader
-                  column="last_run"
-                  label="Last campaign run"
-                  className={cn("w-[104px] whitespace-normal", SHOW.run)}
-                  {...sortProps}
-                />
-                <TableHead scope="col" className={cn("w-[136px] text-xs", SHOW.state)}>
-                  Sentra Shield
-                </TableHead>
-                <TableHead scope="col" className={cn("w-[56px] text-xs", SHOW.run)}>
-                  Owner
-                </TableHead>
-                {hasActions && (
-                  <TableHead className="w-12 text-xs">
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {view === "cards" ? (
+            <ul className="grid gap-4 bg-muted/40 p-4 @min-[44rem]/targets:grid-cols-2 @min-[64rem]/targets:grid-cols-3 @min-[88rem]/targets:grid-cols-4">
               {data.items.map((target) => {
                 const row = risk?.[target.id]
-                const lastRun = row?.last_run_at ? formatDate(row.last_run_at) : "No run yet"
                 return (
-                  <TableRow key={target.id}>
-                    <TableCell className="py-2.5 whitespace-normal">
-                      <Link
-                        href={`/targets/${target.id}`}
-                        className="inline-block min-h-6 text-[13px] leading-6 font-medium text-link hover:underline"
-                      >
-                        {target.name}
-                      </Link>
-                      <div className="truncate font-mono text-xs text-muted-foreground" title={target.endpoint_host}>
-                        {target.endpoint_host}
-                      </div>
-                      {/* What the hidden columns say, each while its column is hidden */}
-                      <div className="text-xs text-muted-foreground @min-[70rem]/targets:hidden">
-                        {TYPE_LABEL[target.type]} · {ENVIRONMENT_LABEL[target.environment]}
-                        <span className="@min-[56rem]/targets:hidden"> · Last run: {lastRun}</span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 @min-[44rem]/targets:hidden">
-                        <OwnershipBadge status={target.status} />
-                        <ShieldStatus shield={target.shield} />
-                      </div>
-                    </TableCell>
-                    <TableCell className={SHOW.wide}>
-                      <span className="text-[13px]">{TYPE_LABEL[target.type]}</span>
-                    </TableCell>
-                    <TableCell className={SHOW.wide}>
-                      <EnvironmentBadge environment={target.environment} />
-                    </TableCell>
-                    <TableCell className={SHOW.state}>
-                      <OwnershipBadge status={target.status} />
-                    </TableCell>
-                    {riskFailed ? (
-                      // The scores are unknown: say so, and let nothing call this target "Not scored"
-                      <>
-                        <TableCell colSpan={3} className={cn("whitespace-normal", SHOW.run)}>
-                          <span className="text-[13px] text-muted-foreground">Risk score unavailable</span>
-                        </TableCell>
-                        <TableCell colSpan={2} className="whitespace-normal @min-[56rem]/targets:hidden">
-                          <span className="text-[13px] text-muted-foreground">Risk score unavailable</span>
-                        </TableCell>
-                      </>
-                    ) : !risk ? (
-                      <>
-                        <TableCell>
-                          <Skeleton className="h-8 w-20" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-5 w-28" />
-                        </TableCell>
-                        <TableCell className={SHOW.run}>
-                          <Skeleton className="h-5 w-14" />
-                        </TableCell>
-                      </>
-                    ) : row && row.score !== null ? (
-                      <>
-                        <TableCell>
-                          <RiskScore score={row.score} band={row.band ?? "none"} className="min-w-0" />
-                        </TableCell>
-                        <TableCell>
-                          <SeverityCountsStrip counts={row.open_by_severity} className="gap-2" />
-                        </TableCell>
-                        <TableCell className={cn("text-[13px]", SHOW.run)}>{lastRun}</TableCell>
-                      </>
-                    ) : (
-                      // Not tested yet: one cell across the score, the findings and the last run
-                      // (Screen 16), or across the first two while the last run's column is hidden
-                      <>
-                        <TableCell colSpan={3} className={cn("whitespace-normal", SHOW.run)}>
-                          {notScored(target, row)}
-                        </TableCell>
-                        <TableCell colSpan={2} className="whitespace-normal @min-[56rem]/targets:hidden">
-                          {notScored(target, row)}
-                        </TableCell>
-                      </>
-                    )}
-                    <TableCell className={cn("whitespace-normal", SHOW.state)}>
-                      <ShieldStatus shield={target.shield} />
-                    </TableCell>
-                    <TableCell className={SHOW.run}>
-                      {target.owner && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Avatar tabIndex={0} className="size-8">
-                              <AvatarFallback className="text-xs font-medium">{initials(target.owner.name)}</AvatarFallback>
-                              <span className="sr-only">Registered by {target.owner.name}</span>
-                            </Avatar>
-                          </TooltipTrigger>
-                          <TooltipContent>Registered by {target.owner.name}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                    {hasActions && (
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`Actions for ${target.name}`}>
-                              <MoreHorizontal aria-hidden="true" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link href={`/targets/${target.id}/edit`}>
-                                <Pencil aria-hidden="true" />
-                                {canManage ? "Edit" : "View settings"}
-                              </Link>
-                            </DropdownMenuItem>
-                            {canCampaign && target.status === "verified" && (
-                              <DropdownMenuItem asChild>
-                                <Link href={`/campaigns/new?target=${target.id}`}>
-                                  <Rocket aria-hidden="true" />
-                                  Create campaign
-                                </Link>
-                              </DropdownMenuItem>
-                            )}
-                            {canManage && target.status === "archived" && (
-                              <DropdownMenuItem
-                                onSelect={(event) => {
-                                  event.preventDefault()
-                                  void restore(target)
-                                }}
-                              >
-                                <RotateCcw aria-hidden="true" />
-                                Restore target
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    )}
-                  </TableRow>
+                  <li key={target.id} className="min-w-0">
+                    <TargetCard
+                      target={target}
+                      row={row}
+                      risk={riskFailed ? "failed" : !risk ? "loading" : "ready"}
+                      notScored={notScored(target, row)}
+                      menu={hasActions ? actionsMenu(target, true) : undefined}
+                      quick={quickAction(target)}
+                    />
+                  </li>
                 )
               })}
-            </TableBody>
-          </Table>
+            </ul>
+          ) : (
+            <Table className="table-fixed">
+              <TableHeader className="bg-muted">
+                <TableRow>
+                  <SortHeader column="name" label="Target" {...sortProps} />
+                  <TableHead scope="col" className={cn("w-[116px] text-xs", SHOW.wide)}>
+                    Type
+                  </TableHead>
+                  <TableHead scope="col" className={cn("w-[112px] text-xs", SHOW.wide)}>
+                    Environment
+                  </TableHead>
+                  <TableHead scope="col" className={cn("w-[112px] text-xs", SHOW.state)}>
+                    Ownership
+                  </TableHead>
+                  <SortHeader column="risk" label="Risk score" className="w-[112px]" {...sortProps} />
+                  <TableHead scope="col" className="w-[160px] text-xs">
+                    Open findings
+                  </TableHead>
+                  <SortHeader
+                    column="last_run"
+                    label="Last campaign run"
+                    className={cn("w-[104px] whitespace-normal", SHOW.run)}
+                    {...sortProps}
+                  />
+                  <TableHead scope="col" className={cn("w-[136px] text-xs", SHOW.state)}>
+                    Sentra Shield
+                  </TableHead>
+                  <TableHead scope="col" className={cn("w-[56px] text-xs", SHOW.run)}>
+                    Owner
+                  </TableHead>
+                  {hasActions && (
+                    <TableHead className="w-12 text-xs">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.items.map((target) => {
+                  const row = risk?.[target.id]
+                  const lastRun = row?.last_run_at ? formatDate(row.last_run_at) : "No run yet"
+                  return (
+                    <TableRow key={target.id}>
+                      <TableCell className="py-2.5 whitespace-normal">
+                        <Link
+                          href={`/targets/${target.id}`}
+                          className="inline-block min-h-6 text-[13px] leading-6 font-medium text-link hover:underline"
+                        >
+                          {target.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className={SHOW.wide}>
+                        <span className="text-[13px]">{TYPE_LABEL[target.type]}</span>
+                      </TableCell>
+                      <TableCell className={SHOW.wide}>
+                        <EnvironmentBadge environment={target.environment} />
+                      </TableCell>
+                      <TableCell className={SHOW.state}>
+                        <OwnershipBadge status={target.status} />
+                      </TableCell>
+                      {riskFailed ? (
+                        // The scores are unknown: say so, and let nothing call this target "Not scored"
+                        <>
+                          <TableCell colSpan={3} className={cn("whitespace-normal", SHOW.run)}>
+                            <span className="text-[13px] text-muted-foreground">Risk score unavailable</span>
+                          </TableCell>
+                          <TableCell colSpan={2} className="whitespace-normal @min-[56rem]/targets:hidden">
+                            <span className="text-[13px] text-muted-foreground">Risk score unavailable</span>
+                          </TableCell>
+                        </>
+                      ) : !risk ? (
+                        <>
+                          <TableCell>
+                            <Skeleton className="h-8 w-20" />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton className="h-5 w-28" />
+                          </TableCell>
+                          <TableCell className={SHOW.run}>
+                            <Skeleton className="h-5 w-14" />
+                          </TableCell>
+                        </>
+                      ) : row && row.score !== null ? (
+                        <>
+                          <TableCell>
+                            <RiskScore score={row.score} band={row.band ?? "none"} className="min-w-0" />
+                          </TableCell>
+                          <TableCell>
+                            <SeverityCountsStrip counts={row.open_by_severity} className="gap-2" />
+                          </TableCell>
+                          <TableCell className={cn("text-[13px]", SHOW.run)}>{lastRun}</TableCell>
+                        </>
+                      ) : (
+                        // Not tested yet: one cell across the score, the findings and the last run
+                        // (Screen 16), or across the first two while the last run's column is hidden
+                        <>
+                          <TableCell colSpan={3} className={cn("whitespace-normal", SHOW.run)}>
+                            {notScored(target, row)}
+                          </TableCell>
+                          <TableCell colSpan={2} className="whitespace-normal @min-[56rem]/targets:hidden">
+                            {notScored(target, row)}
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell className={cn("whitespace-normal", SHOW.state)}>
+                        <ShieldStatus shield={target.shield} />
+                      </TableCell>
+                      <TableCell className={SHOW.run}>
+                        {target.owner && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Avatar tabIndex={0} className="size-8">
+                                <AvatarFallback className="text-xs font-medium">
+                                  {initials(target.owner.name)}
+                                </AvatarFallback>
+                                <span className="sr-only">Registered by {target.owner.name}</span>
+                              </Avatar>
+                            </TooltipTrigger>
+                            <TooltipContent>Registered by {target.owner.name}</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                      {hasActions && <TableCell className="text-right">{actionsMenu(target)}</TableCell>}
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
           <nav aria-label="Pages" className="flex items-center justify-end gap-3 border-t px-4 py-2.5 text-sm">
             <span className="tabular text-muted-foreground">
               Page {data.page} of {pages}
             </span>
-            <Button variant="outline" size="icon" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Previous page"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
               <ChevronLeft aria-hidden="true" />
             </Button>
-            <Button variant="outline" size="icon" aria-label="Next page" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Next page"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+            >
               <ChevronRight aria-hidden="true" />
             </Button>
           </nav>
@@ -638,7 +763,7 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
     <>
       <PageHeader
         title="Targets"
-        description={`AI applications ${organization?.name ?? "your organization"} is allowed to test.`}
+        description="Applications you may test."
         action={<HeaderActions register={register} />}
       />
 
@@ -661,7 +786,11 @@ function ListFromAddress({ onOutside }: { onOutside: () => void }) {
           ))}
         </TabsList>
         {(["active", "archived"] as const).map((value) => (
-          <TabsContent key={value} value={value} className="rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          <TabsContent
+            key={value}
+            value={value}
+            className="rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
             {panel}
           </TabsContent>
         ))}

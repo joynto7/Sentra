@@ -412,3 +412,52 @@ def test_without_a_manager_the_administrators_hear_of_the_request(halcyon):
     told = notifications(halcyon.db, "tom@example.com", REQUESTED)
     assert len(told) == 1
     assert "no Security Manager" in told[0]
+
+
+# ------------------------------------------------------- a decision is about the scope read
+
+
+def test_the_manager_decides_on_the_scope_that_was_read(halcyon):
+    create(halcyon)
+    log_in(halcyon.client, "nadia@example.com")
+    read = approval_of(halcyon)["scope_digest"]
+
+    # the analyst changes the schedule while the campaign waits
+    log_in(halcyon.client, "arif@example.com")
+    saved = halcyon.client.put(
+        f"{URL}/C-001/schedule",
+        json={"kind": "recurring", "frequency": "weekly", "at_time": "03:30", "weekday": 2},
+    )
+    assert saved.status_code == 200
+    log_in(halcyon.client, "nadia@example.com")
+
+    refused = halcyon.client.post(
+        f"{URL}/C-001/approval/decision", json={"approve": True, "reviewed": read}
+    )
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "scope_changed"
+    assert status_of(halcyon) == ApprovalStatus.AWAITING_APPROVAL  # nothing was decided
+
+    fresh = approval_of(halcyon)["scope_digest"]
+    assert fresh != read
+    ok = halcyon.client.post(
+        f"{URL}/C-001/approval/decision", json={"approve": True, "reviewed": fresh}
+    )
+    assert ok.status_code == 200
+    assert status_of(halcyon) == ApprovalStatus.APPROVED
+
+
+def test_a_decision_that_names_no_scope_is_still_accepted(halcyon):
+    create(halcyon)
+    log_in(halcyon.client, "nadia@example.com")
+
+    assert (
+        decide(halcyon, approve=True).status_code == 200
+    )  # API clients that send no digest keep working
+
+
+def test_the_fingerprint_does_not_change_while_the_scope_does_not(halcyon):
+    create(halcyon)
+    log_in(halcyon.client, "nadia@example.com")
+
+    assert approval_of(halcyon)["scope_digest"] == approval_of(halcyon)["scope_digest"]

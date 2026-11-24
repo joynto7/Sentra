@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { Activity, Plus, Search, TriangleAlert } from "lucide-react"
+import { Activity, Ban, CalendarClock, CircleDot, Clock, Hourglass, Plus, Rocket, Search, TriangleAlert, type LucideIcon } from "lucide-react"
 
 import { ApprovalBadge } from "@/components/campaigns/approval-view"
 import { RunsTable } from "@/components/campaigns/runs-table"
 import { EmptyState } from "@/components/layout/empty-state"
 import { FilterSelect } from "@/components/sentra/filter-select"
+import { GLASS_BUTTON, GlassCard } from "@/components/sentra/glass-card"
+import { ViewSwitch, useStoredView } from "@/components/sentra/view-switch"
 import { SortHeader, type SortDirection } from "@/components/sentra/sort-header"
 import { EnvironmentBadge } from "@/components/targets/target-badges"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -264,6 +266,145 @@ function ScheduleText({ campaign }: { campaign: CampaignRow }) {
   return <>{SCHEDULE_LABEL[scheduleOf(campaign)]}</>
 }
 
+const STATE_LOOK: Record<State, { icon: LucideIcon; tone: string }> = {
+  running: { icon: Activity, tone: "border-primary/40 text-primary" },
+  queued: { icon: Clock, tone: "border-primary/40 text-primary" },
+  paused: { icon: TriangleAlert, tone: "border-warning/50 text-warning" },
+  awaiting_approval: { icon: Hourglass, tone: "border-warning/50 text-warning" },
+  rejected: { icon: Ban, tone: "border-destructive/50 text-destructive" },
+  scheduled: { icon: CalendarClock, tone: "border-[#c9d4f7] text-text-secondary" },
+  ready: { icon: Rocket, tone: "border-[#c9d4f7] text-text-secondary" },
+  idle: { icon: CircleDot, tone: "border-[#c9d4f7] text-text-secondary" },
+}
+
+/** The attempts a run has sent, as a ring: it fills when the card appears, and the number is written beside it. */
+function RunRing({ run }: { run: RunItem }) {
+  const percent = Math.min(100, Math.round((run.attempts_sent / (run.attempt_budget || 1)) * 100))
+  const paused = run.status === "paused"
+  const radius = 22
+  const length = 2 * Math.PI * radius
+  const [shown, setShown] = useState(0)
+  useEffect(() => {
+    const id = window.setTimeout(() => setShown(percent), 60)
+    return () => window.clearTimeout(id)
+  }, [percent])
+  return (
+    <div className="flex items-center gap-3">
+      <svg viewBox="0 0 56 56" className="size-14 shrink-0 -rotate-90" role="img" aria-label={`${formatCount(run.attempts_sent)} of ${formatCount(run.attempt_budget)} attempts sent`}>
+        <circle cx="28" cy="28" r={radius} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="6" />
+        <circle
+          cx="28" cy="28" r={radius} fill="none" strokeWidth="6" strokeLinecap="round"
+          stroke={paused ? "var(--warning)" : "var(--primary)"}
+          strokeDasharray={length}
+          strokeDashoffset={length * (1 - Math.max(shown, 2) / 100)}
+          style={{ transition: "stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1)" }}
+        />
+      </svg>
+      <div className="min-w-0">
+        <p className="tabular text-xl leading-6 font-semibold">{percent} %</p>
+        <p className="tabular text-xs text-foreground/65">
+          {formatCount(run.attempts_sent)} of {formatCount(run.attempt_budget)} attempts
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A campaign as a card: where it stands now, what it tests and when it runs, and, while a run goes on, its
+ * progress as a ring with the way to its monitor.
+ */
+function CampaignCard({ campaign, state, showTarget }: { campaign: CampaignRow; state: State; showTarget: boolean }) {
+  const look = STATE_LOOK[state]
+  const Icon = look.icon
+  const run = campaign.last_run
+  const going = Boolean(run && RUNNING_STATUSES.includes(run.status))
+  return (
+    <GlassCard label={`${campaign.code}: ${campaign.name}, ${STATE_LABEL[state]}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn("inline-flex h-7 items-center gap-1.5 rounded-full border bg-white px-2.5 text-xs font-medium dark:bg-white/10", look.tone)}>
+          {state === "running" ? (
+            <span className="relative flex size-2" aria-hidden="true">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60 motion-reduce:animate-none" />
+              <span className="relative inline-flex size-2 rounded-full bg-primary" />
+            </span>
+          ) : (
+            <Icon className="size-3.5" aria-hidden="true" />
+          )}
+          {STATE_LABEL[state]}
+        </span>
+        <span className="font-mono text-[13px] text-foreground/65">{campaign.code}</span>
+      </div>
+
+      <h3 className="mt-3 text-lg leading-6 font-medium">
+        <Link href={`/campaigns/${campaign.code}`} className="rounded-md outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+          {campaign.name}
+        </Link>
+      </h3>
+      {showTarget && campaign.target && (
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-foreground/65">
+          {campaign.target.name}
+          <EnvironmentBadge environment={campaign.target.environment as Environment} className={campaign.target.environment === "production" ? "rounded-full px-2.5" : "rounded-full border-[#e1e7fb] bg-white px-2.5 dark:border-transparent dark:bg-white/10"} />
+        </p>
+      )}
+
+      <ul className="mt-3 flex flex-wrap gap-1.5 text-xs text-foreground/70">
+        <li className="rounded-full border border-[#e1e7fb] bg-white px-2.5 py-1 dark:border-transparent dark:bg-white/10">
+          {campaign.suite_count} {campaign.suite_count === 1 ? "suite" : "suites"}
+        </li>
+        <li className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#e1e7fb] bg-white px-2.5 py-1 dark:border-transparent dark:bg-white/10">
+          <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">
+            <ScheduleText campaign={campaign} />
+          </span>
+        </li>
+        {campaign.approval_status !== "not_required" && (
+          <li>
+            <Approval campaign={campaign} />
+          </li>
+        )}
+      </ul>
+
+      <div className="mt-3 rounded-xl bg-white/70 p-3 dark:bg-white/5">
+        {going && run ? (
+          <RunRing run={run} />
+        ) : (
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span>
+              <span className="block text-xs text-foreground/60">Last run</span>
+              {run ? (
+                <Link href={`/campaigns/${campaign.code}/runs/${run.number}`} className="text-link hover:underline">
+                  {RUN_STATUS_LABEL[run.status]} {run.ended_at ? formatDate(run.ended_at) : ""}
+                </Link>
+              ) : (
+                <span className="text-foreground/65">Not run yet</span>
+              )}
+            </span>
+            {nextRunTime(campaign) !== null && (
+              <span className="text-right">
+                <span className="block text-xs text-foreground/60">Next</span>
+                <span className="tabular">{formatDateTime(campaign.schedule!.next_run_at!)}</span>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto flex items-center gap-2 pt-4">
+        {going && run ? (
+          <Link href={`/campaigns/${campaign.code}/runs/${run.number}`} className={GLASS_BUTTON} aria-label={`Open the monitor of ${run.code}`}>
+            Open monitor
+          </Link>
+        ) : (
+          <Link href={`/campaigns/${campaign.code}`} className={GLASS_BUTTON}>
+            Open campaign
+          </Link>
+        )}
+      </div>
+    </GlassCard>
+  )
+}
+
 /** Screen 33, the campaigns of the organization: the entry to UC-5.1 to UC-5.7. */
 export function CampaignsList({ targetId }: { targetId?: string } = {}) {
   // When the address changes without the list (the menu's link, Back or Forward), the list starts
@@ -277,6 +418,7 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
   // The list starts as its address says: a reload, Back, or a link somebody shared
   const query = useSearchParams()
   const [tab, setTab] = useState(query.get("tab") === "runs" ? "runs" : "campaigns")
+  const [layout, setLayout] = useStoredView("campaigns") // one card for each campaign (the first look), or the table
   const [search, setSearch] = useState("")
   const [target, setTarget] = useState(targetId ? "" : (query.get("target") ?? ""))
   const [status, setStatus] = useState(query.get("status") ?? "")
@@ -393,8 +535,8 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
         title={targetId ? "No campaign for this target yet" : "No campaigns yet"}
         description={
           canCreate
-            ? "A campaign tests one verified target with the test suites you choose, within the limits you set."
-            : "A Security Analyst creates the campaigns of your organization."
+            ? "Tests run on one verified target."
+            : "A Security Analyst creates campaigns."
         }
         action={
           canCreate ? (
@@ -480,16 +622,37 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
           onChange={setSchedule}
           options={Object.entries(SCHEDULE_LABEL).map(([value, label]) => ({ value, label }))}
         />
+        {layout === "cards" && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            Sort
+            <select
+              value={`${sort}:${direction}`}
+              onChange={(event) => {
+                const [key, way] = event.target.value.split(":")
+                setSort(key as SortKey)
+                setDirection(way as SortDirection)
+              }}
+              className="h-9 rounded-[7px] border border-input bg-card px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <option value="last_run:desc">Last run, latest first</option>
+              <option value="next_run:asc">Next run, soonest first</option>
+              <option value="campaign:desc">Newest campaign</option>
+              <option value="campaign:asc">Oldest campaign</option>
+              <option value="target:asc">Target, A to Z</option>
+            </select>
+          </label>
+        )}
         <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
           {shown.length} of {campaigns.length} campaigns
         </span>
+        <ViewSwitch value={layout} onChange={setLayout} />
       </div>
 
       {shown.length === 0 ? (
         <div className="p-4">
           <EmptyState
             title="No campaigns match these filters"
-            description="Remove some filters or change the search."
+            description="Change the filters."
             action={
               <Button variant="outline" className="h-9" onClick={clearFilters}>
                 Clear filters
@@ -497,6 +660,14 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
             }
           />
         </div>
+      ) : layout === "cards" ? (
+        <ul className="grid gap-4 bg-muted/40 p-4 @2xl/campaigns:grid-cols-2 @5xl/campaigns:grid-cols-3">
+          {shown.map((campaign) => (
+            <li key={campaign.code} className="min-w-0">
+              <CampaignCard campaign={campaign} state={states.get(campaign.code)!} showTarget={!targetId} />
+            </li>
+          ))}
+        </ul>
       ) : (
         // Fixed widths on the header's cells, each measured on its longest content; the campaign's
         // name takes what is left, and a hidden header cell takes its column along
@@ -532,25 +703,6 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
                     {campaign.name}
                   </Link>
                   <div className="font-mono text-xs text-muted-foreground">{campaign.code}</div>
-                  {/* What the hidden columns say, each while its column is hidden */}
-                  {!targetId && campaign.target && (
-                    <div className="text-xs text-muted-foreground @min-[70rem]/campaigns:hidden">
-                      {campaign.target.name}
-                    </div>
-                  )}
-                  <div className="tabular text-xs text-muted-foreground @min-[40rem]/campaigns:hidden">
-                    {campaign.suite_count} test {campaign.suite_count === 1 ? "suite" : "suites"}
-                  </div>
-                  <div className="text-xs text-muted-foreground @min-[52rem]/campaigns:hidden">
-                    <ScheduleText campaign={campaign} />
-                    {nextRunTime(campaign) !== null && <> · Next run {formatDateTime(campaign.schedule!.next_run_at!)}</>}
-                    {campaign.schedule?.status === "paused" && <> · Schedule paused</>}
-                  </div>
-                  {campaign.created_by && (
-                    <div className="text-xs text-muted-foreground @min-[70rem]/campaigns:hidden">
-                      Created by {campaign.created_by}
-                    </div>
-                  )}
                 </TableCell>
                 {!targetId && (
                   <TableCell className={cn("whitespace-normal", SHOW.wide)}>
@@ -586,29 +738,38 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
   return (
     <>
       {chips.some(([, , number]) => number > 0) && (
-        <ul className="mb-4 flex flex-wrap gap-2" aria-label="Campaigns by state">
-          {chips
-            .filter(([, , number]) => number > 0)
-            .map(([value, label, number]) => (
+        <ul className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Campaigns by state">
+          {chips.map(([value, label, number]) => {
+            const look = STATE_LOOK[value]
+            const Icon = look.icon
+            const on = status === value
+            return (
               <li key={value}>
                 <button
                   type="button"
-                  aria-pressed={status === value}
+                  aria-pressed={on}
+                  disabled={number === 0}
                   onClick={() => {
-                    setStatus(status === value ? "" : value)
+                    setStatus(on ? "" : value)
                     setTab("campaigns")
                   }}
                   className={cn(
-                    "tabular inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                    status === value && "border-primary bg-primary/10 text-link",
+                    "flex h-full w-full items-center gap-3 rounded-2xl border bg-card p-4 text-left outline-none transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:hover:translate-y-0",
+                    on ? "border-primary shadow-[0_0_0_1px_var(--primary)]" : "hover:border-border-strong",
                   )}
                 >
-                  {value === "running" && <Activity className="size-3.5 text-primary" aria-hidden="true" />}
-                  {value === "paused" && <TriangleAlert className="size-3.5 text-warning" aria-hidden="true" />}
-                  {number} {label}
+                  <span className={cn("relative grid size-10 shrink-0 place-items-center rounded-xl bg-muted", value === "running" && number > 0 && "bg-primary/10 text-primary", value === "paused" && number > 0 && "bg-warning/10 text-warning")}>
+                    <Icon className="size-5" aria-hidden="true" />
+                    {value === "running" && number > 0 && <span className="absolute -top-0.5 -right-0.5 size-2.5 animate-ping rounded-full bg-primary motion-reduce:animate-none" />}
+                  </span>
+                  <span>
+                    <span className="tabular block text-2xl leading-7 font-semibold">{number}</span>
+                    <span className="block text-xs text-muted-foreground">{label}</span>
+                  </span>
                 </button>
               </li>
-            ))}
+            )
+          })}
         </ul>
       )}
 
@@ -659,7 +820,7 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
               <div className="p-4">
                 <EmptyState
                   title="No campaign run yet"
-                  description="A run sends a campaign's tests to its target. You can follow it live and stop it at any time."
+                  description="Runs appear here."
                 />
               </div>
             ) : (
