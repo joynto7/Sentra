@@ -1,122 +1,116 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
-import { AtlasId, OwaspId } from "@/components/sentra/framework-ids"
-import { CategoryChart } from "@/components/risk/breakdown-charts"
-import { CategoryTable } from "@/components/risk/category-table"
+import { buildApps } from "@/components/risk/coverage-model"
 import { CoveragePanel } from "@/components/risk/coverage-panel"
-import { DEFAULT_DAYS } from "@/components/risk/dashboard-filters"
+import { CoverageRadar, type Filter } from "@/components/risk/coverage-radar"
+import { CoverageStory } from "@/components/risk/coverage-story"
+import { TriageBoard } from "@/components/risk/triage-board"
 import { PageHeader } from "@/components/layout/page-header"
-import { FilterSelect } from "@/components/sentra/filter-select"
+import { CoverageGuide } from "@/components/risk/metric-guide"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  COVERAGE_SYMBOL,
-  type Coverage,
-  type CoverageCell,
-  type CoverageStatus,
-  type RiskDashboard,
-  getCoverage,
-  getRiskDashboard,
-} from "@/lib/risk"
+import { type Coverage, getCoverage } from "@/lib/risk"
 import { ATLAS_VERSION } from "@/lib/frameworks"
-import { formatDate } from "@/lib/targets"
-import { cn } from "@/lib/utils"
 
 const FRAMEWORKS = [
   { value: "owasp", label: "OWASP Top 10 for LLM Applications 2025" },
   { value: "atlas", label: `MITRE ATLAS ${ATLAS_VERSION}` },
 ] as const
 
-/** What a cell says beside its symbol: short, and never only a colour (NFR-4.3). */
-function cellText(cell: CoverageCell): string {
-  if (cell.status === "tested" && cell.run) return formatDate(cell.run.ended_at).replace(/ \d{4}$/, "")
-  if (cell.status === "stale") return "Stale"
-  if (cell.status === "gap") return "Gap"
-  if (cell.status === "not_testable") return "Not verified"
-  if (cell.status === "out_of_scope") return "Out of scope"
-  return "Not applicable"
-}
-
-const TINT: Partial<Record<CoverageStatus, string>> = {
-  gap: "text-warning",
-  stale: "text-warning",
-  tested: "text-success",
-}
-
 /**
  * Screen 43, Framework Coverage (UC-7.4): which OWASP categories and MITRE ATLAS techniques have
- * been tested for each target, where the gaps are, and what lies outside Sentra's tests. Every
- * cell carries its own text, so the matrix can be read without colour, and selecting one opens
- * the panel with the threats, the suites and the way to accept the gap.
+ * been tested for each target, where the gaps are, and what lies outside Sentra's tests. The radar
+ * puts every application in the ring its open findings and gaps earn it; its drawer lists the
+ * categories as text, and selecting one opens the panel with the threats, the suites and the way
+ * to accept the gap. The board below sorts the categories by urgency and visibility.
  */
 export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: string } = {}) {
   const [framework, setFramework] = useState<"owasp" | "atlas">("owasp")
-  const [target, setTarget] = useState(initialTarget)
   const [data, setData] = useState<Coverage | null>(null)
-  const [options, setOptions] = useState<{ id: string; name: string }[]>([])
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [selected, setSelected] = useState<{ code: string; targetId: string } | null>(null)
-  // The open findings by OWASP category, which the dashboard's own numbers give
-  const [findings, setFindings] = useState<RiskDashboard | null>(null)
-  const [findingsError, setFindingsError] = useState(false)
+  // The application the radar's drawer shows, and the one the triage board is narrowed to
+  const [chosen, setChosen] = useState(initialTarget)
+  const [laneTarget, setLaneTarget] = useState(initialTarget)
+  const [vector, setVector] = useState("")
+  // The radar's chips, kept here so that the guide can press one for the reader
+  const [filter, setFilter] = useState<Filter>("all")
 
   useEffect(() => {
     const controller = new AbortController()
-    const params = new URLSearchParams({ framework })
-    if (target) params.set("target_id", target)
-    getCoverage(params, controller.signal)
+    // The whole fleet: the radar shows every application, and the lanes narrow it themselves.
+    getCoverage(new URLSearchParams({ framework }), controller.signal)
       .then((found) => {
         setData(found)
         setError(false)
-        if (!target) setOptions(found.targets.map((one) => ({ id: one.id, name: one.name })))
       })
       .catch(() => !controller.signal.aborted && setError(true))
     return () => controller.abort()
-  }, [framework, target, attempt])
-
-  useEffect(() => {
-    if (framework !== "owasp") return
-    const controller = new AbortController()
-    const params = new URLSearchParams({ days: DEFAULT_DAYS })
-    if (target) params.set("target_id", target)
-    getRiskDashboard(params, controller.signal)
-      .then((found) => {
-        setFindings(found)
-        setFindingsError(false)
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return
-        setFindings(null)
-        setFindingsError(true)
-      })
-    return () => controller.abort()
-  }, [framework, target, attempt])
+  }, [framework, attempt])
 
   const again = useCallback(() => setAttempt((n) => n + 1), [])
+  const apps = useMemo(() => (data ? buildApps(data) : []), [data])
+  // The radar opens its drawer on the application picked, and closes it when it is picked again.
+  const shown = apps.some((app) => app.id === chosen) ? chosen : ""
+
+  /** The four steps of the story, done on this page. Each answers with what it did. */
+  function tryStep(step: number): string | null {
+    const verified = apps.filter((app) => app.verified)
+    // The riskiest application: the most open findings in the red centre first
+    const riskiest = [...verified].sort((a, b) => (b.ring === "critical" ? 1 : 0) - (a.ring === "critical" ? 1 : 0) || b.open - a.open)[0]
+    if (!riskiest) return null
+    const toRadar = () => document.getElementById("coverage-radar")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    const code = riskiest.rows.find((row) => row.standing.kind === "open")?.code ?? riskiest.rows[0]?.code
+    if (step === 0) {
+      setFramework("owasp")
+      setFilter("critical")
+      toRadar()
+      const lit = apps.filter((app) => app.ring === "critical").length
+      return `Critical only is on: ${lit} of ${apps.length} applications stay lit.`
+    }
+    if (step === 1) {
+      setFilter("all")
+      setChosen(riskiest.id)
+      toRadar()
+      return `${riskiest.name} is selected. Its categories are listed beside the radar.`
+    }
+    if (step === 2) {
+      if (!code) return null
+      setChosen(riskiest.id)
+      setSelected({ code, targetId: riskiest.id })
+      return `The panel of ${code} is open: its threats, its test suites and the way to accept a gap.`
+    }
+    if (!code) return null
+    setSelected(null)
+    setChosen(riskiest.id)
+    setLaneTarget(riskiest.id)
+    setVector(code)
+    window.setTimeout(() => document.getElementById("board")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50)
+    return `The board shows ${riskiest.name} and ${code} is chosen. “Show these findings” under it opens the list.`
+  }
 
   return (
     <>
-      <PageHeader
-        title="Framework Coverage"
-        description="Which OWASP and MITRE ATLAS categories have been tested, based on the campaign runs that actually ran."
-      />
+      <PageHeader title="Framework Coverage" description="OWASP and MITRE ATLAS categories tested." />
 
-      <Tabs value={framework} onValueChange={(value) => setFramework(value as "owasp" | "atlas")}>
+      {data && apps.length > 0 && <CoverageStory className="mb-4" onTry={tryStep} />}
+
+      <CoverageGuide />
+
+      <Tabs
+        value={framework}
+        onValueChange={(value) => {
+          setFramework(value as "owasp" | "atlas")
+          setVector("")
+        }}
+      >
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <FilterSelect
-            label="Target"
-            value={target}
-            onChange={setTarget}
-            options={options.map((one) => ({ value: one.id, label: one.name }))}
-            allLabel={`All targets${options.length ? ` (${options.length})` : ""}`}
-          />
-          <TabsList>
+          <TabsList className="h-auto max-w-full flex-wrap justify-start">
             {FRAMEWORKS.map((one) => (
               <TabsTrigger key={one.value} value={one.value}>
                 {one.label}
@@ -126,149 +120,58 @@ export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: stri
         </div>
         <TabsContent
           value={framework}
-          className="mt-0 rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="mt-0 space-y-4 rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
+          {error && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription className="flex items-center justify-between gap-4">
+                The coverage could not be loaded.
+                <Button variant="outline" size="sm" onClick={again}>
+                  Try again
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
 
-      {error && (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription className="flex items-center justify-between gap-4">
-            The coverage could not be loaded.
-            <Button variant="outline" size="sm" onClick={again}>
-              Try again
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+          {!data && !error && (
+            <div className="space-y-2" role="status" aria-label="Loading the coverage">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-96 w-full" />
+            </div>
+          )}
 
-      {!data && !error && (
-        <div className="space-y-2" role="status" aria-label="Loading the coverage">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-72 w-full" />
-        </div>
-      )}
+          {data && apps.length === 0 && (
+            <p className="rounded-[10px] border bg-card p-4 text-sm text-text-secondary">
+              No target is registered yet, so there is nothing to cover.
+            </p>
+          )}
 
-      {data && (
-        <section aria-labelledby="coverage" className="min-w-0 rounded-[10px] border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
-            <h2 id="coverage" className="text-[15px] font-semibold">
-              {framework === "owasp"
-                ? "OWASP Top 10 for LLM Applications (2025)"
-                : `MITRE ATLAS ${ATLAS_VERSION} techniques`}
-            </h2>
-            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-text-secondary">
-              {data.legend
-                // A stale result is a gap of its own kind and shares its name, so it is named once.
-                .filter((one, index, all) => all.findIndex((other) => other.label === one.label) === index)
-                .filter(
-                  (one) =>
-                    one.status !== "not_testable" ||
-                    data.targets.some((one) => one.target_status !== "verified"),
-                )
-                .map((one) => (
-                  <li key={one.status}>
-                    <span aria-hidden="true">{COVERAGE_SYMBOL[one.status]} </span>
-                    {one.label}
-                    {one.status === "gap" && " — never tested, or not since the target changed"}
-                    {one.status === "not_applicable" && " — no test of the library applies"}
-                    {one.status === "not_testable" && " — the target's ownership isn't verified"}
-                  </li>
-                ))}
-            </ul>
-          </div>
-          <Table
-            container={{
-              tabIndex: 0,
-              role: "group",
-              "aria-label": "Framework coverage",
-              className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-            }}
-          >
-            <TableHeader className="bg-muted">
-              <TableRow>
-                <TableHead scope="col" className="text-xs">
-                  {framework === "owasp" ? "Category" : "Technique"}
-                </TableHead>
-                {data.targets.map((one) => (
-                  <TableHead key={one.id} scope="col" className="text-xs">
-                    {one.name}
-                  </TableHead>
-                ))}
-                <TableHead scope="col" className="text-xs">
-                  Open findings
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.rows.map((row) => (
-                <TableRow key={row.code} className={cn(!row.in_scope && "text-muted-foreground")}>
-                  <TableCell className="align-top">
-                    <span className="text-[13px] font-medium">
-                      {framework === "owasp" ? <OwaspId code={row.code} /> : <AtlasId code={row.code} />}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">{row.name ?? "—"}</span>
-                    {!row.in_scope && (
-                      <span className="block text-xs text-muted-foreground">
-                        Out of scope — not part of application testing
-                      </span>
-                    )}
-                  </TableCell>
-                  {row.cells.map((cell) => (
-                    <TableCell key={cell.target_id} className="align-top">
-                      <button
-                        type="button"
-                        onClick={() => setSelected({ code: row.code, targetId: cell.target_id })}
-                        className={cn(
-                          "min-h-6 rounded-[5px] px-1 py-1 text-left text-[13px] hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                          TINT[cell.status],
-                        )}
-                        aria-label={`${row.code} for ${cell.target_name}: ${cell.label}`}
-                        title={cell.reason || undefined}
-                      >
-                        <span aria-hidden="true">{COVERAGE_SYMBOL[cell.status]} </span>
-                        {cellText(cell)}
-                        {cell.open_findings > 0 && (
-                          <span className="tabular block text-xs text-muted-foreground">
-                            {cell.open_findings} open
-                          </span>
-                        )}
-                      </button>
-                    </TableCell>
-                  ))}
-                  <TableCell className="tabular align-top text-[13px]">{row.open_total}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <p className="border-t p-3 text-[13px] text-muted-foreground">
-            A category counts as tested when the target answered an attempt of a test of that category in a
-            campaign run that ended — never because a campaign planned it.
-          </p>
-        </section>
-      )}
-
-      {framework === "owasp" && findingsError && (
-        <Alert variant="destructive" role="alert" className="mt-3">
-          <AlertDescription className="flex items-center justify-between gap-4">
-            The open findings by category could not be loaded.
-            <Button variant="outline" size="sm" onClick={again}>
-              Try again
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {framework === "owasp" && findings && (
-        <div className="mt-3 grid gap-3 xl:grid-cols-12">
-          <CategoryTable className="xl:col-span-7" rows={findings.by_category} targetQuery={target ? `&target_id=${target}` : ""} />
-          <CategoryChart
-            key={target}
-            className="xl:col-span-5"
-            data={findings}
-            targetQuery={target ? `&target_id=${target}` : ""}
-          />
-        </div>
-      )}
-
+          {data && apps.length > 0 && (
+            <>
+              <CoverageRadar
+                apps={apps}
+                selected={shown}
+                filter={filter}
+                onFilter={setFilter}
+                onSelect={setChosen}
+                onOpenCategory={(code, targetId) => setSelected({ code, targetId })}
+                onFocusLanes={(id) => {
+                  setLaneTarget(id)
+                  document.getElementById("board")?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }}
+              />
+              <TriageBoard
+                data={data}
+                framework={framework}
+                apps={apps}
+                target={laneTarget}
+                vector={vector}
+                onTarget={setLaneTarget}
+                onVector={setVector}
+              />
+              <p className="text-[13px] text-muted-foreground">Tested means an attempt ran in an ended campaign run.</p>
+            </>
+          )}
         </TabsContent>
       </Tabs>
 

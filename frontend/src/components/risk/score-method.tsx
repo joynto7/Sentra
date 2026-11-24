@@ -134,11 +134,7 @@ export function ScoreMethod() {
               <h3 id="method-bands" className="text-[15px] font-semibold">
                 4. The target&apos;s score follows its worst finding
               </h3>
-              <p className="mt-2 text-text-secondary">
-                The highest severity among the findings that count sets the band; every further finding at that
-                severity moves the score up inside the band, never out of it. A finding that still requires
-                confirmation is shown beside the score and not counted.
-              </p>
+              <p className="mt-2 text-text-secondary">The highest severity sets the band; more findings move the score within it.</p>
               <ul className="mt-2 space-y-1">
                 {method.bands.map((band) => (
                   <li key={band.band} className="flex gap-2">

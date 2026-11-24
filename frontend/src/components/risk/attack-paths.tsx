@@ -11,8 +11,8 @@ import { DismissPathDialog } from "@/components/risk/dismiss-path-dialog"
 import { PathMap } from "@/components/risk/path-map"
 import { PathSteps } from "@/components/risk/path-steps"
 import { usePathWalk } from "@/components/risk/use-path-walk"
-import { FilterSelect } from "@/components/sentra/filter-select"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
+import { type PickerTarget, TargetPicker } from "@/components/sentra/target-picker"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -90,25 +90,23 @@ function PathCard({
           </span>
         )}
       </div>
-      <ol
-        aria-label={`Route of ${path.code}`}
-        className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px] text-text-secondary"
-      >
-        {path.steps.map((one, index) => (
-          <li key={one.number} className="flex items-center gap-1">
-            {index > 0 && <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" />}
-            <span className="rounded-[5px] bg-muted px-1.5 py-0.5">{one.component.label}</span>
-          </li>
-        ))}
-      </ol>
-      <p className="mt-2 text-sm text-text-secondary">{path.description}</p>
+      {!expanded && (
+        <ol
+          aria-label={`Route of ${path.code}`}
+          className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px] text-text-secondary"
+        >
+          {path.steps.map((one, index) => (
+            <li key={one.number} className="flex items-center gap-1">
+              {index > 0 && <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" />}
+              <span className="rounded-[5px] bg-muted px-1.5 py-0.5">{one.component.name}</span>
+            </li>
+          ))}
+        </ol>
+      )}
       {expanded && (
-        <>
-          <p className="mt-1 text-sm">{path.impact}</p>
-          <div className="mt-3 border-t pt-3">
-            <PathSteps path={path} step={step ?? null} onStep={onStep} />
-          </div>
-        </>
+        <div className="mt-3 border-t pt-3">
+          <PathSteps path={path} step={step ?? null} onStep={onStep} />
+        </div>
       )}
       {path.reason ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2">
@@ -145,7 +143,7 @@ function PathCard({
 export function AttackPaths({ target: preselected }: { target?: string }) {
   const canTriage = useCan("triage_findings")
   const canMap = useCan("map_target_profiles")
-  const [targets, setTargets] = useState<{ id: string; name: string; open: number }[]>([])
+  const [targets, setTargets] = useState<PickerTarget[]>([])
   const [targetId, setTargetId] = useState(preselected ?? "")
   const [answer, setData] = useState<Paths | null>(null)
   const [view, setView] = useState<"graph" | "list">("graph")
@@ -163,6 +161,10 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
         const rows = dashboard.targets.map((row) => ({
           id: row.id,
           name: row.name,
+          type: row.type,
+          environment: row.environment,
+          score: row.score,
+          band: row.band,
           open: row.open_total,
         }))
         setTargets(rows)
@@ -284,22 +286,18 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
     <>
       <PageHeader
         title="Attack Paths"
-        description="How single weaknesses of a target combine into a larger impact, along the components its Target Profile records."
+        description="How weaknesses combine into a larger impact."
       />
 
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <FilterSelect
-          label="Target"
+        <TargetPicker
+          targets={targets}
           value={targetId}
           onChange={(value) => {
             setTargetId(value)
             setSelected(null)
           }}
-          options={targets.map((one) => ({
-            value: one.id,
-            label: `${one.name}${one.open ? ` · ${one.open} open` : ""}`,
-          }))}
-          allLabel={null}
         />
         <ToggleGroup
           type="single"
@@ -337,7 +335,7 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
             description={
               canMap
                 ? data.blocker.message
-                : "The graph is drawn from the target's profile, and this target has none yet. An AI Application Developer or a Security Analyst maps it."
+                : "This target has no profile yet."
             }
             action={
               canMap ? (
@@ -388,11 +386,7 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
               onReset={walk.reset}
             />
             <p className="text-xs text-muted-foreground">
-              {current
-                ? `${current.code} is drawn as the bright curve. Choose a step or a component to follow it, or play the walkthrough.`
-                : "Choose a path to follow it through the components."}{" "}
-              A component with a dashed ring is the current step. The List view holds the same paths as
-              text.
+              {current ? `Arrows flow from the entry point to ${current.code}'s impact.` : "Choose a path to follow it."}
             </p>
           </div>
           <section aria-labelledby="paths" className="min-w-0">

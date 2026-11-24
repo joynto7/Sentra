@@ -59,10 +59,7 @@ export function DismissPathDialog({
             <DialogDescription>{path?.description}</DialogDescription>
           </DialogHeader>
           <div className="mt-4 space-y-3">
-            <p className="text-sm text-text-secondary">
-              The path disappears from this view and from the reports. Its findings stay as they are, and
-              if a new finding appears on the way, the path is shown again.
-            </p>
+            <p className="text-sm text-text-secondary">Hidden from this view and reports. It returns if a new finding appears on it.</p>
             <ReasonField
               id="dismiss-path-reason"
               value={reason}

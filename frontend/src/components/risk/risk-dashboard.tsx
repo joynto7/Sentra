@@ -7,6 +7,7 @@ import { RefreshCw } from "lucide-react"
 
 import { StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
+import { MetricGuide } from "@/components/risk/metric-guide"
 import { ReportDialog } from "@/components/reports/report-dialog"
 import { SeverityChart, StatusChart } from "@/components/risk/breakdown-charts"
 import { CriticalFindings } from "@/components/risk/critical-findings"
@@ -86,7 +87,6 @@ function ByStatus({
       <ul className="mt-1">{OPEN_STATUSES.map((status) => row(status, "open"))}</ul>
       <h3 className="mt-3 text-[13px] font-medium text-muted-foreground">Closed in the last {periodDays} days</h3>
       <ul className="mt-1">{CLOSED_STATUSES.map((status) => row(status, "closed"))}</ul>
-      <p className="mt-3 text-xs text-muted-foreground">Bars share one scale of 0 to {most} findings.</p>
     </section>
   )
 }
@@ -241,6 +241,13 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
         onReset={reset}
       />
 
+      <MetricGuide
+        scope={target ? (options.find((one) => one.id === target)?.name ?? "one target") : `all targets${options.length ? ` (${options.length})` : ""}`}
+        period={(PERIODS.find((one) => one.value === days)?.label ?? `last ${days} days`).toLowerCase()}
+        category={category || null}
+        checked={checkedAt ? clock(checkedAt) : null}
+      />
+
       {error && (
         <Alert variant="destructive" role="alert">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-4">
@@ -292,7 +299,7 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
           {data.last_run_at === null && firstRun && (
             <EmptyState
               title="The first campaign run is going on"
-              description={`${firstRun.name}: ${firstRun.live_run?.code}. Its findings, severities and risk scores appear here as soon as it has ended.`}
+              description={`${firstRun.name}: ${firstRun.live_run?.code}.`}
               action={
                 <Button asChild className="h-9 hover:bg-primary-hover">
                   <Link href={`/campaigns/${firstRun.live_run?.campaign}/runs/${firstRun.live_run?.number}`}>
@@ -308,10 +315,10 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
               title="No campaign results yet"
               description={
                 canRegister
-                  ? "Register a target and verify that you own it; a Security Analyst then runs a campaign against it. Its findings, severities and risk scores appear here as soon as the first run has ended."
+                  ? "Register and verify a target, then run a campaign."
                   : canRun
-                    ? "Run a campaign against a verified target. Its findings, severities and risk scores appear here as soon as the first run has ended."
-                    : "Findings, severities and risk scores appear here after the first campaign run. An AI Application Developer registers and verifies a target, and a Security Analyst runs the campaign."
+                    ? "Run a campaign on a verified target."
+                    : "Results appear after the first campaign run."
               }
               action={
                 canRegister || canRun || canLab ? (
@@ -362,7 +369,7 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
                 <Posture className="@min-[58rem]/dash:col-span-6" data={data} targetQuery={targetQuery} />
                 <Flow className="@min-[58rem]/dash:col-span-6" data={data} filterQuery={filterQuery} />
               </div>
-              <Heatmap key={`${target}|${days}|${category}`} data={data} />
+              <Heatmap key={`heatmap|${target}|${days}|${category}`} data={data} />
               {/* The working area: the most serious findings, and what needs this person now */}
               <div className="grid items-start gap-3 @min-[58rem]/dash:grid-cols-12">
                 <CriticalFindings
@@ -385,7 +392,7 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
               </div>
               {/* New filters start the readouts afresh */}
               <TrendCharts
-                key={`${target}|${days}|${category}`}
+                key={`trends|${target}|${days}|${category}`}
                 trends={data.trends}
                 periodDays={data.period_days}
                 filterQuery={filterQuery}
