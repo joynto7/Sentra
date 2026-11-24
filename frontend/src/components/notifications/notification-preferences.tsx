@@ -8,27 +8,41 @@ import { type Preference, getPreferences, savePreferences } from "@/lib/notifica
 
 /**
  * Screen 08, card "Notifications": which events reach the user in the application and by e-mail
- * (FR-9.3, UC-1.11 step 2). Each switch is saved at once; account security alerts stay on.
+ * (FR-9.3, UC-1.11 step 2). Each switch is saved when you change it and shows its new position only after Sentra has saved it; account security alerts stay on.
  */
 export function NotificationPreferences() {
   const [preferences, setPreferences] = useState<Preference[] | null>(null)
   const [status, setStatus] = useState("")
+  const [failed, setFailed] = useState<string | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     getPreferences()
-      .then(setPreferences)
-      .catch(() => setStatus("Your notification settings could not be loaded."))
-  }, [])
+      .then((found) => {
+        setPreferences(found)
+        setFailed(null)
+      })
+      .catch(() => setFailed("Your notification settings could not be loaded."))
+  }, [attempt])
 
+  // A switch changes only after the server has answered: while it is saving the switch keeps its
+  // old position and is disabled, so what is shown is what is kept.
   async function change(preference: Preference, channel: "in_app" | "email", on: boolean) {
-    const next = { ...preference, [channel]: on }
-    setPreferences((current) => current?.map((p) => (p.event === preference.event ? next : p)) ?? current)
+    const key = `${preference.event}:${channel}`
+    const what = `${preference.label}, ${channel === "email" ? "e-mail" : "in-app"}`
+    setPending(key)
+    setStatus(`Saving ${what}…`)
+    setFailed(null)
     try {
+      const next = { ...preference, [channel]: on }
       setPreferences(await savePreferences([{ event: next.event, in_app: next.in_app, email: next.email }]))
-      setStatus(`Saved: ${preference.label}, ${channel === "email" ? "e-mail" : "in-app"} ${on ? "on" : "off"}.`)
+      setStatus(`Saved: ${what} ${on ? "on" : "off"}.`)
     } catch {
-      setPreferences((current) => current?.map((p) => (p.event === preference.event ? preference : p)) ?? current)
-      setStatus("The change could not be saved. Try again.")
+      setStatus("")
+      setFailed(`${what} was not changed, because it could not be saved. It is still ${preference[channel] ? "on" : "off"}. Try again.`)
+    } finally {
+      setPending(null)
     }
   }
 
@@ -38,10 +52,21 @@ export function NotificationPreferences() {
         <h2 id="notifications-heading" className="text-[15px] font-semibold">
           Notifications
         </h2>
-        <p className="text-xs text-muted-foreground" role="status">
+        <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
           {status}
         </p>
       </div>
+      {failed && (
+        <p role="alert" className="flex flex-wrap items-center gap-3 text-[13px] text-destructive">
+          {failed}
+          {!preferences && (
+            <button type="button" className="rounded text-link underline underline-offset-2" onClick={() => setAttempt((n) => n + 1)}>
+              Try again
+            </button>
+          )}
+        </p>
+      )}
+      {!preferences && !failed && <p className="text-[13px] text-muted-foreground" role="status">Loading your notification settings…</p>}
       {preferences && (
         <table className="w-full text-sm">
           <thead>
@@ -75,7 +100,8 @@ export function NotificationPreferences() {
                   <td key={channel} className="py-2.5 text-center">
                     <Switch
                       checked={preference[channel]}
-                      disabled={preference.locked}
+                      disabled={preference.locked || pending !== null}
+                      aria-busy={pending === `${preference.event}:${channel}`}
                       aria-label={`${preference.label}: ${channel === "email" ? "e-mail" : "in-app"}`}
                       onCheckedChange={(on) => change(preference, channel, on)}
                     />

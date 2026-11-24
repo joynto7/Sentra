@@ -1,5 +1,6 @@
 import Link from "next/link"
 
+import { IntegrationsGuide } from "@/components/integrations/integrations-guide"
 import { cn } from "@/lib/utils"
 
 export type IntegrationsTab = "gates" | "keys" | "webhooks"
@@ -19,6 +20,7 @@ const SHARED = "flex h-10 items-center border-b-2 px-0.5 text-sm whitespace-nowr
  */
 export function IntegrationsTabs({ active }: { active: IntegrationsTab }) {
   return (
+    <>
     <nav aria-label="Integrations" className="mb-5 overflow-x-auto border-b">
       <ul className="flex gap-6">
         {TABS.map((tab) => (
@@ -40,5 +42,7 @@ export function IntegrationsTabs({ active }: { active: IntegrationsTab }) {
         ))}
       </ul>
     </nav>
+    <IntegrationsGuide active={active} />
+    </>
   )
 }

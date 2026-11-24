@@ -5,6 +5,8 @@ import { CircleAlert, CircleCheck, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { AddWebhookDialog } from "@/components/integrations/add-webhook-dialog"
+import { clearIntegrationDraft } from "@/components/integrations/integration-drafts"
+import { useIntegrationDraftKey } from "@/components/integrations/use-integration-draft"
 import { IntegrationsTabs } from "@/components/integrations/integrations-tabs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
@@ -87,6 +89,7 @@ export function WebhooksPage() {
   const [loaded, setLoaded] = useState<{ id: string; rows: WebhookDelivery[] } | null>(null)
   const [openedId, setOpenedId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const draftKey = useIntegrationDraftKey("webhook")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [secret, setSecret] = useState<{ value: string; name: string } | null>(null)
   const [tested, setTested] = useState<{ ok: boolean; message: string } | null>(null)
@@ -124,7 +127,7 @@ export function WebhooksPage() {
         <IntegrationsTabs active="webhooks" />
         <EmptyState
           title="Only Organization Administrators manage webhooks"
-          description="Ask an Organization Administrator of your organization to send Sentra's events to your system."
+          description="Ask an Organization Administrator."
         />
       </>
     )
@@ -148,6 +151,7 @@ export function WebhooksPage() {
     setErrors({})
     try {
       const made = await addWebhook(details)
+      clearIntegrationDraft(draftKey) // the webhook exists now, so the draft of it does not
       setAdding(false)
       setSecret({ value: made.secret, name: made.webhook.name })
       setChosen(made.webhook.id)
@@ -221,7 +225,7 @@ export function WebhooksPage() {
     <>
       <PageHeader
         title="Webhooks"
-        description="Sentra's events in your own systems — ticketing, chat or monitoring."
+        description="Send events to your systems."
         action={
           <Button className="h-9 hover:bg-primary-hover" onClick={() => setAdding(true)}>
             Add webhook
@@ -230,10 +234,7 @@ export function WebhooksPage() {
       />
       <IntegrationsTabs active="webhooks" />
 
-      <p className="mb-5 text-[13px] text-text-secondary">
-        Webhooks carry a summary and a link, never evidence or secrets. Every delivery is signed
-        with HMAC-SHA256, so your system can check that it came from Sentra.
-      </p>
+      <p className="mb-5 text-[13px] text-text-secondary">Webhooks carry a summary and a link, signed with HMAC-SHA256.</p>
 
       {failed && (
         <Alert variant="destructive" role="alert">
@@ -256,7 +257,7 @@ export function WebhooksPage() {
       {data && data.webhooks.length === 0 && (
         <EmptyState
           title="No webhook yet"
-          description="Send the events you care about to a ticketing, chat or monitoring system. Sentra signs every delivery, and your system confirms a test event before anything else is sent."
+          description="Send events to ticketing, chat or monitoring."
           action={
             <Button className="h-9 hover:bg-primary-hover" onClick={() => setAdding(true)}>
               Add webhook
@@ -416,10 +417,7 @@ export function WebhooksPage() {
                     <Skeleton className="h-24 w-full" />
                   </div>
                 ) : deliveries.length === 0 ? (
-                  <p className="p-4 text-[13px] text-text-secondary">
-                    Nothing has been sent yet. A delivery appears here as soon as one of the chosen
-                    events happens.
-                  </p>
+                  <p className="p-4 text-[13px] text-text-secondary">Nothing sent yet.</p>
                 ) : (
                   <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <ul className="divide-y border-b md:border-r md:border-b-0" role="list">
@@ -465,9 +463,7 @@ export function WebhooksPage() {
                           </pre>
                         </>
                       ) : (
-                        <p className="text-[13px] text-text-secondary">
-                          Choose a delivery to see what was sent.
-                        </p>
+                        <p className="text-[13px] text-text-secondary">Choose a delivery.</p>
                       )}
                     </div>
                   </div>

@@ -1,42 +1,29 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
+import { GateCard } from "@/components/integrations/gate-card"
 import { GateView } from "@/components/integrations/gate-view"
 import { IntegrationsTabs } from "@/components/integrations/integrations-tabs"
-import { Verdict } from "@/components/integrations/gate-runs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { SeverityBadge, type Severity } from "@/components/sentra/severity-badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fieldErrors } from "@/lib/api"
-import { APPROVAL_WORDS, type GateList, createGate, listGates } from "@/lib/gates"
+import { APPROVAL_WORDS, type Gate, type GateList, changeGate, createGate, listGates } from "@/lib/gates"
 import { useCan } from "@/lib/permissions"
-import { ENVIRONMENT_LABEL, formatDate } from "@/lib/targets"
+import { ENVIRONMENT_LABEL } from "@/lib/targets"
+import { cn } from "@/lib/utils"
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"]
 
@@ -76,6 +63,11 @@ function CreateGateDialog({
         description: "Add its command to the pipeline, with a key that may run it.",
       })
       onCreated(made.code)
+      // The next opening starts from the defaults, not from this gate
+      setName("")
+      setCampaign("")
+      setFailOn(["critical", "high"])
+      setReopened(true)
       onOpenChange(false)
     } catch (error) {
       const named = fieldErrors(error)
@@ -92,8 +84,7 @@ function CreateGateDialog({
         <DialogHeader>
           <DialogTitle>Create a security gate</DialogTitle>
           <DialogDescription>
-            A gate runs one of your campaigns whenever a pipeline asks for it, and compares what it
-            finds with the last release it accepted.
+            A gate runs one of your campaigns whenever a pipeline asks for it, and compares what it finds with the last release it accepted.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,9 +109,7 @@ function CreateGateDialog({
           <div>
             <Label htmlFor="gate-campaign">Campaign it runs</Label>
             {campaigns.length === 0 ? (
-              <p className="mt-1.5 text-[13px] text-muted-foreground">
-                Every campaign already has a gate. Make a campaign for this release first.
-              </p>
+              <p className="mt-1.5 text-[13px] text-muted-foreground">Every campaign has a gate. Make a campaign first.</p>
             ) : (
               <Select value={campaign} onValueChange={setCampaign}>
                 <SelectTrigger id="gate-campaign" className="mt-1.5 h-9 w-full">
@@ -143,11 +132,10 @@ function CreateGateDialog({
             {chosen ? (
               <div className="mt-2 space-y-2">
                 <p className="text-[13px] text-text-secondary">
-                  Each gate run sends {chosen.suite_count}{" "}
-                  {chosen.suite_count === 1 ? "test suite" : "test suites"} against{" "}
+                  Each gate run sends {chosen.suite_count} {chosen.suite_count === 1 ? "test suite" : "test suites"} against{" "}
                   {chosen.target_name} ({ENVIRONMENT_LABEL[chosen.target_environment]}), at most{" "}
-                  <span className="tabular">{chosen.attempt_budget}</span> attempts. Scope
-                  approval: {APPROVAL_WORDS[chosen.approval_status].toLowerCase()}.
+                  <span className="tabular">{chosen.attempt_budget}</span> attempts. Scope approval:{" "}
+                  {APPROVAL_WORDS[chosen.approval_status].toLowerCase()}.
                 </p>
                 {chosen.target_environment === "production" && (
                   <p
@@ -155,8 +143,8 @@ function CreateGateDialog({
                     className="flex items-start gap-2 rounded-[10px] border border-warning/40 bg-warning/5 p-3 text-[13px] text-warning"
                   >
                     <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                    This campaign tests the production environment. A release gate belongs on a
-                    staging target, so that a weakness is found before the release reaches users.
+                    This campaign tests the production environment. A release gate belongs on a staging target, so that a weakness is found
+                    before the release reaches users.
                   </p>
                 )}
                 {chosen.approval_status === "awaiting_approval" && (
@@ -165,16 +153,12 @@ function CreateGateDialog({
                     className="flex items-start gap-2 rounded-[10px] border border-warning/40 bg-warning/5 p-3 text-[13px] text-warning"
                   >
                     <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                    Its scope is still waiting for a Security Manager. The gate can be created now,
-                    but a pipeline can only run it once the scope is approved.
+                    Its scope is still waiting for a Security Manager. The gate can be created now, but a pipeline can only run it once the
+                    scope is approved.
                   </p>
                 )}
               </div>
-            ) : (
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Its test suites, its attempt budget and its approval are the gate&apos;s as well.
-              </p>
-            )}
+            ) : null}
           </div>
 
           <fieldset>
@@ -184,11 +168,7 @@ function CreateGateDialog({
                 <label key={severity} className="flex items-center gap-2 text-[13px]">
                   <Checkbox
                     checked={failOn.includes(severity)}
-                    onCheckedChange={(on) =>
-                      setFailOn((old) =>
-                        on ? [...old, severity] : old.filter((one) => one !== severity),
-                      )
-                    }
+                    onCheckedChange={(on) => setFailOn((old) => (on ? [...old, severity] : old.filter((one) => one !== severity)))}
                   />
                   <SeverityBadge severity={severity} />
                 </label>
@@ -200,10 +180,25 @@ function CreateGateDialog({
               </p>
             )}
             <label className="mt-3 flex items-center gap-2 text-[13px]">
-              <Checkbox checked={reopened} onCheckedChange={(on) => setReopened(Boolean(on))} />
-              A finding that was fixed and came back fails the release as well
+              <Checkbox checked={reopened} onCheckedChange={(on) => setReopened(Boolean(on))} />A finding that was fixed and came back fails
+              the release as well
             </label>
           </fieldset>
+
+          <section aria-label="What creating will do" aria-live="polite" className="rounded-[8px] border bg-muted/40 p-3 text-[13px]">
+            <h3 className="font-medium">What creating will do</h3>
+            <ul className="mt-1 list-disc space-y-1 pl-4 text-text-secondary">
+              <li>
+                Creates the gate{name.trim() ? ` “${name.trim()}”` : ""}. It runs nothing now: it runs the campaign only when a pipeline
+                asks, with an API key that may run security gates.
+              </li>
+              <li>
+                {failOn.length || reopened
+                  ? `A release fails on a new ${failOn.length ? failOn.join(", ") : "—"} finding${reopened ? ", or on a fixed finding that came back" : ""}.`
+                  : "No condition is chosen, so this gate would never fail a release."}
+              </li>
+            </ul>
+          </section>
 
           {problem && (
             <Alert variant="destructive">
@@ -214,7 +209,7 @@ function CreateGateDialog({
 
         {!busy && (!name.trim() || !campaign) && (
           <p id="gate-missing" className="text-[13px] text-muted-foreground">
-            Give the gate a name and choose its campaign, then you can create it.
+            Add a name and a campaign.
           </p>
         )}
         <DialogFooter>
@@ -246,6 +241,8 @@ export function GatesPage() {
   const [error, setError] = useState(false)
   const [creating, setCreating] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [show, setShow] = useState<"all" | "failing" | "passing" | "paused">("all")
+  const [busy, setBusy] = useState<string | null>(null)
 
   const load = useCallback((signal?: AbortSignal) => {
     listGates(signal)
@@ -261,6 +258,25 @@ export function GatesPage() {
     load(controller.signal)
     return () => controller.abort()
   }, [load, attempt])
+
+  const rows = data?.rows ?? []
+  const paused = rows.filter((gate) => gate.status === "paused")
+  const failing = rows.filter((gate) => gate.runs[0]?.verdict === "failed")
+  const passing = rows.filter((gate) => gate.runs[0]?.verdict === "passed")
+  const shown = show === "failing" ? failing : show === "passing" ? passing : show === "paused" ? paused : rows
+
+  async function toggle(gate: Gate) {
+    setBusy(gate.code)
+    try {
+      await changeGate(gate.code, { status: gate.status === "paused" ? "active" : "paused" })
+      toast.success(gate.status === "paused" ? `${gate.name} is active again.` : `${gate.name} is paused.`)
+      load()
+    } catch (problem) {
+      toast.error(problem instanceof Error ? problem.message : "The gate could not be changed.")
+    } finally {
+      setBusy(null)
+    }
+  }
 
   if (error) {
     return (
@@ -295,7 +311,7 @@ export function GatesPage() {
     <div>
       <PageHeader
         title="Security gates"
-        description="An automatic check every release of an application has to pass before it goes out."
+        description="Release checks."
         action={
           canManage ? (
             <Button className="h-9 hover:bg-primary-hover" onClick={() => setCreating(true)}>
@@ -309,11 +325,7 @@ export function GatesPage() {
       {data.rows.length === 0 ? (
         <EmptyState
           title="No security gate yet"
-          description={
-            canManage
-              ? "A gate runs one of your campaigns from a pipeline and blocks a release that brings new weaknesses."
-              : "A Security Analyst sets up the gates. Once one exists, you can see here what it decided about each release."
-          }
+          description={canManage ? "A gate blocks releases that add weaknesses." : "A Security Analyst sets up gates."}
           action={
             canManage ? (
               <Button className="h-9 hover:bg-primary-hover" onClick={() => setCreating(true)}>
@@ -323,47 +335,44 @@ export function GatesPage() {
           }
         />
       ) : (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {data.rows.map((gate) => {
-            const last = gate.runs[0]
-            return (
-              <li key={gate.code} className="rounded-[10px] border bg-card p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    {/* py-1 keeps this link at 24 px, the smallest target WCAG 2.2 asks for
-                        where the exception for a link inside a sentence does not apply. */}
-                    <Link
-                      href={`/integrations/gates/${gate.code}`}
-                      className="inline-block py-1 text-[15px] font-semibold text-link underline underline-offset-2"
-                    >
-                      {gate.name}
-                    </Link>
-                    <p className="text-[13px] text-muted-foreground">
-                      {gate.target_name} · {gate.campaign_code} · {gate.code}
-                    </p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {gate.status === "active" ? "Active" : "Paused"}
-                  </span>
-                </div>
-                <p className="mt-3 text-[13px]">{gate.policy_words}</p>
-                <p className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3 text-[13px]">
-                  {last ? (
-                    <>
-                      <Verdict run={last} />
-                      <span className="text-muted-foreground">
-                        {last.build_ref ?? `${gate.code} #${last.number}`} ·{" "}
-                        {formatDate(last.started_at)}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">No release checked yet</span>
+        <>
+          <ul className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { id: "all", label: "Gates", value: data.rows.length, note: "In all" },
+              { id: "failing", label: "Last release failed", value: failing.length, note: "Needs a look" },
+              { id: "passing", label: "Last release passed", value: passing.length, note: "Safe to ship" },
+              { id: "paused", label: "Paused", value: paused.length, note: "Not checking" },
+            ].map((tile) => (
+              <li key={tile.id}>
+                <button
+                  type="button"
+                  aria-pressed={show === tile.id}
+                  onClick={() => setShow(tile.id as typeof show)}
+                  className={cn(
+                    "flex h-full w-full flex-col rounded-2xl border bg-card p-4 text-left outline-none transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring",
+                    show === tile.id ? "border-primary shadow-[0_0_0_1px_var(--primary)]" : "hover:border-border-strong",
                   )}
-                </p>
+                >
+                  <span className="text-xs text-muted-foreground">{tile.label}</span>
+                  <span className="tabular mt-1 text-3xl leading-none font-semibold">{tile.value}</span>
+                  <span className="mt-2 text-xs text-muted-foreground">{tile.note}</span>
+                </button>
               </li>
-            )
-          })}
-        </ul>
+            ))}
+          </ul>
+          <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {shown.map((gate) => (
+              <li key={gate.code} className="min-w-0">
+                <GateCard gate={gate} canManage={canManage} busy={busy === gate.code} onToggle={() => void toggle(gate)} />
+              </li>
+            ))}
+            {shown.length === 0 && (
+              <li className="col-span-full rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                No gate in this group.
+              </li>
+            )}
+          </ul>
+        </>
       )}
 
       <CreateGateDialog
