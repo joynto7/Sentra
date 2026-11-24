@@ -54,7 +54,9 @@ def _indirect_prompt_injection_from_a_sent_document(request: Request) -> Answer 
 # summary) makes the agent return the document's whole body instead of the capped summary
 # (`documents.summary()`, which normally keeps the September statement's trailing reference line
 # out of a plain summary). A plain summary request stays capped.
-_VERBATIM = re.compile(r"\b(verbatim|word for word|exact wording|full text|in full|entire text)\b", re.I)
+_VERBATIM = re.compile(
+    r"\b(verbatim|word for word|exact wording|full text|in full|entire text)\b", re.I
+)
 
 
 @weakness("DOC-02")
