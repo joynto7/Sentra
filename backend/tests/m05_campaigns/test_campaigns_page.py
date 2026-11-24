@@ -25,7 +25,9 @@ def test_a_campaign_names_who_approved_it_and_its_newest_run(halcyon, monkeypatc
     # Unlike test_scope_approval.py's own tests, this one looks past the launch, at the run it
     # started: the ownership recheck of UC-5.4 step 1 must pass, as it does for a real target.
     monkeypatch.setattr(verification, "_check", confirmed)
-    create(halcyon)
+    # window_start/window_end are cleared: the default (02:00-05:00 Asia/Dhaka) would leave this
+    # run waiting for its window outside those hours, which is not what this test is about.
+    create(halcyon, window_start=None, window_end=None, time_zone="UTC")
     create(halcyon, name="Weekly regression")
     log_in(halcyon.client, "nadia@example.com")
     assert decide(halcyon, approve=True).status_code == 200
