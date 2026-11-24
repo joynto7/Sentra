@@ -5,6 +5,8 @@ import { TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { CreateKeyDialog } from "@/components/integrations/create-key-dialog"
+import { clearIntegrationDraft } from "@/components/integrations/integration-drafts"
+import { useIntegrationDraftKey } from "@/components/integrations/use-integration-draft"
 import { IntegrationsTabs } from "@/components/integrations/integrations-tabs"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
@@ -76,10 +78,7 @@ function CreatedDialog({ created, onClose }: { created: ApiKeyCreated | null; on
             {created?.key}
           </p>
           <CopyButton text={created?.key ?? ""} label="Copy key" description="Copy the API key" />
-          <p className="text-sm text-text-secondary">
-            Store it in the secret store of the integration, for example the secrets of your
-            pipeline. Sentra will never show it again.
-          </p>
+          <p className="text-sm text-text-secondary">Store it in your secret store. It is never shown again.</p>
         </div>
         <DialogFooter className="mt-6">
           <Button className="hover:bg-primary-hover" onClick={onClose}>
@@ -103,6 +102,7 @@ export function ApiKeysPage() {
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [creating, setCreating] = useState(false)
+  const draftKey = useIntegrationDraftKey("api-key")
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<{ field?: string; message: string } | undefined>()
   const [created, setCreated] = useState<ApiKeyCreated | null>(null)
@@ -128,6 +128,7 @@ export function ApiKeysPage() {
       await confirmPassword(password) // NFR-3.5, right before the key is made
       const key = await createApiKey(data)
       setCreated(key)
+      clearIntegrationDraft(draftKey) // the key exists now, so the draft of it does not
       setCreating(false)
       reload()
     } catch (problem) {
@@ -162,7 +163,7 @@ export function ApiKeysPage() {
         <IntegrationsTabs active="keys" />
         <EmptyState
           title="Only Organization Administrators manage API keys"
-          description="Ask an Organization Administrator of your organization to create or revoke a key for your integration."
+          description="Ask an Organization Administrator."
         />
       </>
     )
@@ -172,7 +173,7 @@ export function ApiKeysPage() {
     <>
       <PageHeader
         title="API Keys"
-        description="Keys for pipelines and tools that use the Sentra REST API."
+        description="For pipelines and tools."
         action={
           <Button className="h-9 hover:bg-primary-hover" onClick={() => setCreating(true)}>
             Create API key
@@ -202,7 +203,7 @@ export function ApiKeysPage() {
       {data && data.rows.length === 0 && (
         <EmptyState
           title="No API key yet"
-          description="Create a key for a pipeline or a tool that uses the Sentra REST API. It is shown once, and you choose what it may do."
+          description="A key is shown only once."
           action={
             <Button className="h-9 hover:bg-primary-hover" onClick={() => setCreating(true)}>
               Create API key
@@ -317,10 +318,7 @@ export function ApiKeysPage() {
               ))}
             </TableBody>
           </Table>
-          <p className="border-t p-3 text-[13px] text-muted-foreground">
-            Keys can never manage members, roles or other keys. A revoked key is refused at once and
-            stays listed here.
-          </p>
+          <p className="border-t p-3 text-[13px] text-muted-foreground">Keys cannot manage members, roles or keys. A revoked key stops at once.</p>
         </section>
       )}
 

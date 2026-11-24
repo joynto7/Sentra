@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Notifications" }
 export default function AllNotificationsPage() {
   return (
     <>
-      <PageHeader title="Notifications" description="Everything Sentra told you about, newest first." />
+      <PageHeader title="Notifications" />
       <NotificationsPage />
     </>
   )

@@ -77,7 +77,6 @@ export function GateView({ code }: { code: string }) {
     return (
       <EmptyState
         title="Security gate not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/integrations">Back to the security gates</Link>
@@ -101,7 +100,7 @@ export function GateView({ code }: { code: string }) {
     <div>
       <PageHeader
         title={gate.name}
-        description={`Every release of ${gate.target_name} is checked against this gate before it goes out.`}
+        description={gate.target_name}
         action={
           canManage ? (
             <Button
@@ -243,10 +242,7 @@ export function GateView({ code }: { code: string }) {
               </Link>
               .
             </p>
-            <p className="mt-2 text-[13px]">
-              The gate never passes without a completed run: a run that was stopped or cut short
-              ends the step with an error, and the release stops.
-            </p>
+            <p className="mt-2 text-[13px]">The gate fails if a run is stopped or cut short.</p>
           </section>
         </div>
 
@@ -257,11 +253,7 @@ export function GateView({ code }: { code: string }) {
           <h2 id="releases" className="text-[15px] font-semibold">
             Releases ({gate.runs.length})
           </h2>
-          <p className="text-[13px] text-muted-foreground">
-            What this gate decided about each build, newest first. A finding an analyst closes as a
-            false positive stops counting, so the pipeline can run again without a change to the
-            policy.
-          </p>
+          <p className="text-[13px] text-muted-foreground">What the gate decided, newest first.</p>
           <GateRuns runs={gate.runs} release={release} />
         </section>
       </div>

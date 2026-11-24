@@ -109,10 +109,7 @@ export function GateRuns({ runs, release }: { runs: GateRun[]; release?: number 
 
   if (runs.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No release has been checked yet. The first completed run becomes the baseline that the next
-        one is compared with.
-      </p>
+      <p className="text-sm text-muted-foreground">No release checked yet.</p>
     )
   }
 

@@ -48,6 +48,7 @@ import {
   scopeOptions,
 } from "@/lib/reports"
 import { PERIODS } from "@/lib/risk"
+import { atWithZone, describeReportPlan } from "@/components/reports/report-plan"
 import { cn } from "@/lib/utils"
 
 /** What a page hands over when the dialog is opened from it (UC-9.1, 1a1): the risk dashboard
@@ -62,6 +63,8 @@ export type DashboardScope = {
   from?: string
   /** The kind of report the page asks for; without one the dialog starts at executive. */
   type?: ReportType
+  /** The format of the report being used again; without one the dialog starts at PDF. */
+  format?: ReportFormat
 }
 
 const TYPES: ReportType[] = ["executive", "technical"]
@@ -138,7 +141,7 @@ function ReportForm({
   const presetTarget = preset?.target_id ?? null
   const [type, setType] = useState<ReportType>(schedule?.type ?? preset?.type ?? "executive")
   const [scope, setScope] = useState<ReportScope>(schedule?.scope ?? "organization")
-  const [format, setFormat] = useState<ReportFormat>(schedule?.format ?? "pdf")
+  const [format, setFormat] = useState<ReportFormat>(schedule?.format ?? preset?.format ?? "pdf")
   const [period, setPeriod] = useState(
     String(schedule?.period_days ?? preset?.period_days ?? DEFAULT_PERIOD),
   )
@@ -303,6 +306,38 @@ function ReportForm({
     .filter(Boolean)
     .join(" · ")
 
+  const scopeLabel = editing
+    ? (schedule?.target ?? "All targets")
+    : usePreset && preset
+      ? preset.label
+      : scope === "organization"
+        ? "All targets"
+        : scope === "target"
+          ? (options?.targets.find((one) => one.id === targetId)?.name ?? "one target (not chosen yet)")
+          : (options?.campaign_runs.find((one) => one.id === runId)?.code ?? "one campaign run (not chosen yet)")
+  const periodLabel =
+    type === "executive"
+      ? editing
+        ? schedule?.period_days
+          ? `last ${schedule.period_days} days`
+          : null
+        : (PERIODS.find((one) => one.value === (usePreset && preset ? String(preset.period_days) : period))?.label ?? `last ${period} days`)
+      : null
+  const plan = describeReportPlan({
+    editing,
+    scheduled,
+    type: editing ? (schedule?.type ?? type) : type,
+    scope: scopeLabel,
+    period: periodLabel,
+    format: editing ? (schedule?.format ?? format) : format,
+    name,
+    frequency,
+    recipients: chosen.map((one) => one.name),
+    unconfirmed: editing ? null : unconfirmed,
+    now: new Date(),
+    at: atWithZone,
+  })
+
   return (
     <form onSubmit={submit} noValidate>
       <DialogHeader>
@@ -361,6 +396,12 @@ function ReportForm({
 
             <div>
               <h3 className="mb-2 text-sm font-medium">Scope</h3>
+              {!(preset && usePreset) && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Starts with all targets, the last 90 days and PDF; change any of them. Only targets and runs you may read in{" "}
+                  {organization} can be chosen.
+                </p>
+              )}
               {preset && usePreset ? (
                 <p className="flex flex-wrap items-center gap-2 rounded-[8px] border bg-muted/40 p-3 text-[13px]">
                   Using {preset.from ?? "the dashboard filters"}: {preset.label}
@@ -398,6 +439,15 @@ function ReportForm({
                       </Label>
                     )}
                   </RadioGroup>
+                  {type === "executive" ? (
+                    <p className="text-xs text-muted-foreground">
+                      One campaign run can be reported only in a technical report.
+                    </p>
+                  ) : scheduled ? (
+                    <p className="text-xs text-muted-foreground">
+                      A schedule repeats, so it covers a target or all targets, never one finished campaign run.
+                    </p>
+                  ) : null}
                   {(scope === "target" || scope === "campaign_run") && (
                     <Select value={targetId} onValueChange={setTargetId}>
                       <SelectTrigger className="w-full" aria-label="Target">
@@ -609,6 +659,15 @@ function ReportForm({
             </fieldset>
           </div>
         )}
+
+        <section aria-label={plan.heading} aria-live="polite" className="rounded-[8px] border bg-muted/40 p-3 text-[13px]">
+          <h3 className="font-medium">{plan.heading}</h3>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-text-secondary">
+            {plan.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </section>
 
         {problem && (
           <p role="alert" className="text-sm text-destructive">
