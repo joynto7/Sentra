@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *):not(:is(.landing-light, .landing-light *)));
 
 @theme inline {
   --color-background: var(--background);
@@ -13,6 +13,13 @@
   --color-primary-hover: var(--primary-hover);
   --color-text-secondary: var(--text-secondary);
   --color-link: var(--link);
+  --color-lp-wash: var(--lp-wash);
+  --color-lp-line: var(--lp-line);
+  --color-lp-ink: var(--lp-ink);
+  --color-lp-muted: var(--lp-muted);
+  --color-lp-navy: var(--lp-navy);
+  --color-lp-navy-2: var(--lp-navy-2);
+  --color-lp-sky: var(--lp-sky);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-confirm: var(--confirm);
@@ -130,6 +137,106 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #1a2136;
   --sidebar-ring: #2b4fd8;
+}
+
+/* The public page is white and blue for everybody: inside it every token has its light value, and the
+   dark: variants stay off even when the reader's theme is dark (components/landing). */
+.landing-light {
+  color-scheme: light;
+  /* Sentra design tokens (UI plan, Screen 00). Light theme is the default. */
+  --background: #f4f5f7;          /* page */
+  --foreground: #101828;          /* text */
+  --card: #ffffff;                /* panels */
+  --card-foreground: #101828;
+  --popover: #ffffff;
+  --popover-foreground: #101828;
+  --primary: #2b4fd8;             /* Sentra cobalt */
+  --primary-hover: #2141c0;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f8fa;
+  --secondary-foreground: #344054;
+  --muted: #f7f8fa;               /* sunken areas, table headers */
+  --muted-foreground: #596273;    /* muted text */
+  --text-secondary: #344054;
+  --accent: #ebeffd;              /* cobalt tint */
+  --accent-foreground: #2443c4;
+  --link: #2443c4;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #0f7a55;
+  --warning: #8a5a00;
+  --confirm: #7a47c9;             /* "requires confirmation" */
+  --border: #e3e6eb;
+  --border-strong: #d0d5dd;
+  --input: #868e9e;               /* at least 3:1 on panels and the page, WCAG 1.4.11 */
+  --ring: #2b4fd8;
+  --radius: 0.625rem;             /* 10 px cards */
+
+  --severity-critical: #b42318;
+  --severity-critical-text: #9f1c12;
+  --severity-critical-bg: #feeceb;
+  --severity-high: #e0610e;
+  --severity-high-text: #a3440a;
+  --severity-high-bg: #fef0e6;
+  --severity-medium: #e3a008;
+  --severity-medium-text: #7a5300;
+  --severity-medium-bg: #fef7e1;
+  --severity-low: #667085;
+  --severity-low-text: #475467;
+  --severity-low-bg: #eef0f4;
+  --severity-info: #7c8698;       /* the ring is the whole mark, so at least 3:1 */
+
+  --chart-1: #2b4fd8;
+  --chart-2: #0f7a55;
+  --chart-3: #e3a008;
+  --chart-4: #7a47c9;
+  --chart-5: #667085;
+
+  --sidebar: #0e1322;
+  --sidebar-foreground: #c3cad8;
+  --sidebar-label: #8c96aa;
+  --sidebar-primary: #2b4fd8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a2136;      /* hover */
+  --sidebar-active: #242d48;      /* active item */
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a2136;
+  --sidebar-ring: #2b4fd8;
+
+  /* The public page's own palette (design approved 15 Nov 2026): a pale blue wash under white cards,
+     deep navy bands, one cobalt accent. Pairs checked for WCAG 2.2 AA in the task note. */
+  --lp-wash: #f3f6fe;             /* page wash; cobalt on it is 6.0:1 */
+  --lp-line: #dfe5f6;             /* card and divider lines */
+  --lp-ink: #0b1220;              /* headings and body */
+  --lp-muted: #5b6478;            /* supporting text; 5.5:1 on the wash */
+  --lp-navy: #0b1b3f;             /* dark bands */
+  --lp-navy-2: #10244f;           /* cards on a dark band */
+  --lp-sky: #8fa7ff;              /* eyebrow and marks on navy */
+}
+
+/* The hero cards float: up and down with a slight sway and tilt, each card on its own path. Only played
+   under motion-safe (the page respects "reduce motion"). */
+@keyframes lp-float-a {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25% { transform: translate3d(5px, -9px, 0) rotate(0.35deg); }
+  50% { transform: translate3d(0, -16px, 0) rotate(0deg); }
+  75% { transform: translate3d(-5px, -8px, 0) rotate(-0.35deg); }
+}
+@keyframes lp-float-b {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  30% { transform: translate3d(-6px, -10px, 0) rotate(-0.4deg); }
+  55% { transform: translate3d(0, -18px, 0) rotate(0deg); }
+  80% { transform: translate3d(6px, -7px, 0) rotate(0.4deg); }
+}
+
+/* The typing caret in the hero cards; only played under motion-safe and gone when the typing ends */
+@keyframes lp-flow {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--gap, 24px)); }
+}
+@keyframes lp-caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .dark {
