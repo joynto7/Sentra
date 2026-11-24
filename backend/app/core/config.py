@@ -108,6 +108,17 @@ class Settings(BaseSettings):
     # monthly LLM cost limit is reached) tries again after these delays in seconds; after the last
     # one the attempt is marked as not evaluated by the judge.
     detection_judge_retry_delays: list[int] = [60, 300, 900]
+    # The adaptive testing agent (FR-5.5; UC-5.5 step 6). It refines one test at most this many
+    # times in a row, and may use at most this share of a run's attempt budget, so a run can never
+    # spend everything on refinements. Its instructions are app/workers/agent/instructions.py.
+    agent_max_refinements_per_test: int = 3
+    agent_budget_share: float = 0.3
+    # Three more limits that stop the agent for the rest of a run (FR-5.7): its refinements in
+    # all, what its requests cost in US dollars, and how many requests in a row may fail (an
+    # answer that can't be used, or a proposal outside the scope).
+    agent_max_refinements_per_run: int = 50
+    agent_cost_cap_usd: float = 2.0
+    agent_max_failures_in_a_row: int = 4
     # Sentra's own clock (FR-5.3, app/workers/scheduler.py): how often it looks for work that is
     # due. A campaign scheduled for 02:00 therefore starts within a minute of 02:00.
     scheduler_tick_seconds: int = 60

@@ -12,6 +12,7 @@ from app.modules.m01_users.permissions import Action, require
 from app.modules.m05_campaigns import approval, runs, scheduling, service
 from app.modules.m05_campaigns.models import ENDED, AttemptStatus, RunStatus
 from app.modules.m05_campaigns.schemas import (
+    AgentOut,
     ApprovalDecisionIn,
     ApprovalView,
     AttemptOut,
@@ -21,6 +22,7 @@ from app.modules.m05_campaigns.schemas import (
     CampaignRowOut,
     EstimateIn,
     EstimateOut,
+    RefinementOut,
     RunDetail,
     RunListItem,
     RunOverviewItem,
@@ -342,3 +344,34 @@ def stop_run(
     """UC-5.7, 1a and 1b: no further attempt is sent (FR-5.6)."""
     runs.stop(db, membership, code, number, data.reason if data else "")
     return _detail(db, membership, code, number)
+
+
+@router.get("/{code}/runs/{number}/agent")
+def run_agent(
+    code: str,
+    number: int,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> AgentOut:
+    """UC-5.5 step 5 and FR-5.5: what the adaptive testing agent did in this run — every
+    refinement with its reason, the ones that were discarded as out of scope (3a1), and why it
+    stopped if it did (2a1). Screens 36 and 37 read it; every member may."""
+    _, run = runs.run_row(db, membership.organization_id, code, number)
+    found = runs.agent_trail(db, run)
+    return AgentOut(
+        **{**found, "items": [RefinementOut.model_validate(row) for row in found["items"]]}
+    )
+
+
+@router.post("/{code}/runs/{number}/agent/stop")
+def stop_run_agent(
+    code: str,
+    number: int,
+    data: StopIn | None = None,
+    membership: Membership = Depends(can_stop),
+    db: Session = Depends(get_db),
+) -> AgentOut:
+    """FR-5.5: the analyst (or a developer, as for UC-5.7 1b) stops the adaptive testing agent in
+    this run. The run goes on with its planned tests."""
+    runs.stop_agent(db, membership, code, number, data.reason if data else "")
+    return run_agent(code, number, membership, db)

@@ -382,6 +382,48 @@ class UsageLimitWarning(UUIDPrimaryKey, OrganizationScoped, Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RefinementState(StrEnum):
+    """What came of one request to the adaptive testing agent (FR-5.5, UC-5.5)."""
+
+    SENT = "sent"  # it became an attempt (step 4)
+    DISCARDED = "discarded"  # it fell outside the approved scope (3a1)
+    REFUSED = "refused"  # the model gave nothing usable
+    STOPPED = "stopped"  # the agent stopped for this run (2a1); one row, then no more
+
+
+class AgentRefinement(UUIDPrimaryKey, OrganizationScoped, Base):
+    """One request to the adaptive testing agent and what became of it (FR-5.5, UC-5.5 step 5).
+
+    Every refinement is a row, whether it was sent or discarded, so that the agent's behaviour
+    can be reviewed afterwards — that is what quality requirement 5 means by "recorded with its
+    reason". The attempt it produced carries the same reason in `attempts.refinement_reason`, so
+    the live monitor shows it without reading this table.
+    """
+
+    __tablename__ = "agent_refinements"
+    __table_args__ = (Index("ix_agent_refinements_run", "campaign_run_id", "created_at"),)
+
+    campaign_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaign_runs.id", ondelete="CASCADE")
+    )
+    # The attempt whose reply was refined, and the attempt that came of it
+    after_attempt_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("attempts.id", ondelete="SET NULL")
+    )
+    attempt_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("attempts.id", ondelete="SET NULL")
+    )
+    test_code: Mapped[str] = mapped_column(String(40), default="")
+    state: Mapped[str] = mapped_column(String(15))
+    # The agent's own short explanation (step 5), or why nothing was sent (2a1, 3a1)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    # Which instructions produced it (FR-4.5), and what the request cost
+    instructions_version: Mapped[str | None] = mapped_column(String(20))
+    model: Mapped[str | None] = mapped_column(String(200))
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal(0))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ApprovalAction(StrEnum):
     """What happened in a campaign's approval, for the timeline of Screen 35 (UC-5.2 step 2)."""
 
