@@ -89,16 +89,24 @@ function Runs({ version, runs }: { version: number; runs: RunRef[] }) {
   )
 }
 
-function VersionRow({ version, current, active }: { version: VersionSummary; current: boolean; active: boolean }) {
+function VersionRow({ version, newest, latestApproved, active }: { version: VersionSummary; newest: number | null; latestApproved: number | null; active: boolean }) {
+  // Three different things that "current" used to hide: the version campaigns are based on, a newer draft that is not
+  // approved, and an older version that a later one has replaced.
+  const inUse = version.status === "approved" && version.version === latestApproved
+  const waiting = version.status === "draft" && version.version === newest
   return (
     <li className={cn("border-t px-4 py-3 text-sm first:border-t-0", active && "bg-accent/40")}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="tabular font-semibold">v{version.version}</span>
         <VersionStatus version={version} />
-        {current ? (
-          <span className={cn(CHIP, "border-border-strong text-text-secondary")}>Current</span>
+        {inUse ? (
+          <span className={cn(CHIP, "border-success/50 text-success")}>New campaigns use this</span>
+        ) : waiting ? (
+          <span className={cn(CHIP, "border-warning/50 text-warning")}>Newest, not approved</span>
         ) : (
-          <span className={cn(CHIP, "border-border text-muted-foreground")}>Read-only</span>
+          <span className={cn(CHIP, "border-border text-muted-foreground")}>
+            {latestApproved !== null && version.version < latestApproved ? `Superseded by v${latestApproved}` : "Read-only"}
+          </span>
         )}
         {version.ai_generated && version.status === "draft" && <AiGeneratedLabel />}
       </div>
@@ -267,7 +275,8 @@ export function VersionsPage({
               <VersionRow
                 key={version.version}
                 version={version}
-                current={newest?.version === version.version}
+                newest={newest?.version ?? null}
+                latestApproved={versions.find((one) => one.status === "approved")?.version ?? null}
                 active={version.version === base || version.version === compare}
               />
             ))}

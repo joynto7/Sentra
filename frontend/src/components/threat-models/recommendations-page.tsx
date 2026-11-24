@@ -297,10 +297,7 @@ export function RecommendationsPage({ targetId }: { targetId: string }) {
             <h2 id="suites-heading" className="text-[15px] font-semibold">
               Test suites
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Ordered by the highest risk they address. Sentra ticks the smallest set that covers every threat it
-              can; change it as you see fit.
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">Highest risk first. Change the selection as you see fit.</p>
           </div>
 
           {recommended.length === 0 ? (

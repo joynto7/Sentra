@@ -11,6 +11,7 @@ import { FindingTabs } from "@/components/findings/finding-tabs"
 import { PageHeader } from "@/components/layout/page-header"
 import { ApprovalPanel } from "@/components/remediation/approval-panel"
 import { RetestChip, StatusChip } from "@/components/remediation/badges"
+import { RemediationStages } from "@/components/remediation/remediation-stages"
 import { CommentThread } from "@/components/remediation/comment-thread"
 import { FixCard } from "@/components/remediation/fix-card"
 import { ProposalEditor } from "@/components/remediation/fix-editor"
@@ -302,6 +303,8 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
         </>
       )}
 
+      <RemediationStages page={data} onAsk={canRequest && !data.blocker && !running ? ask : undefined} />
+
       {data.blocker && (
         <Alert role="status" className="mb-4">
           <AlertDescription>{data.blocker}</AlertDescription>
@@ -328,11 +331,11 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
           title={running ? "Sentra is writing the proposal" : "No proposal yet"}
           description={
             running
-              ? "It reads the finding, its evidence and the Target Profile, and the version appears here as soon as it is written."
+              ? "The proposal appears here when ready."
               : (data.blocker ??
                 (canRequest
-                  ? "Ask Sentra for a proposal: it reads the finding, its evidence and the Target Profile and recommends how to fix it."
-                  : "Sentra writes a proposal when an AI Application Developer or a Security Analyst asks for one. It reads the finding, its evidence and the Target Profile and recommends how to fix it."))
+                  ? "Ask Sentra for a proposal."
+                  : "A developer or analyst asks for one."))
           }
           action={
             canRequest && !data.blocker && !running ? (
@@ -458,6 +461,7 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
             />
           </div>
 
+          <div id="approval-panel" className="scroll-mt-24 min-w-0">
           <ApprovalPanel
             code={code}
             page={data}
@@ -468,6 +472,7 @@ export function RemediationView({ code, inFinding = false }: { code: string; inF
               reload()
             }}
           />
+          </div>
         </div>
       )}
     </>

@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, CircleAlert, CircleCheck, FilePen, RefreshCw, Sparkles, Target } from "lucide-react"
+import { AlertTriangle, CircleAlert, CircleCheck, FilePen, RefreshCw, Sparkles, Target, Layers } from "lucide-react"
 import { toast } from "sonner"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
-import { AiGeneratedLabel, CHIP, VersionStatus } from "@/components/threat-models/badges"
+import { GLASS_BUTTON, GlassCard } from "@/components/sentra/glass-card"
+import { ViewSwitch, useStoredView } from "@/components/sentra/view-switch"
+import { AiGeneratedLabel, VersionStatus } from "@/components/threat-models/badges"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -21,7 +23,6 @@ import {
   generateThreatModel,
   jobActive,
   listThreatModels,
-  plural,
   shortDate,
 } from "@/lib/threat-models"
 import { cn } from "@/lib/utils"
@@ -35,33 +36,129 @@ function order(rows: ThreatModelRow[]) {
   return [...rows].sort((a, b) => rank(a) - rank(b) || a.target.name.localeCompare(b.target.name))
 }
 
-function Summary({ list }: { list: ThreatModelList }) {
-  const drafts = list.drafts_to_review
+type Show = "all" | "drafts" | "approved" | "none"
+
+/** Four tiles that also filter: all targets, the drafts that wait for a person, the approved, the ones with no model. */
+function Summary({ list, show, onShow }: { list: ThreatModelList; show: Show; onShow: (show: Show) => void }) {
+  const tiles: { id: Show; label: string; value: number; icon: typeof FilePen; tone: string }[] = [
+    { id: "all", label: "Targets", value: list.rows.length, icon: Layers, tone: "" },
+    { id: "drafts", label: "Await review", value: list.drafts_to_review, icon: FilePen, tone: list.drafts_to_review ? "bg-warning/10 text-warning" : "" },
+    { id: "approved", label: "Approved", value: list.approved, icon: CircleCheck, tone: "bg-success/10 text-success" },
+    { id: "none", label: "No threat model", value: list.without_threat_model, icon: Target, tone: "" },
+  ]
   return (
-    <ul className="mb-4 flex flex-wrap gap-2" aria-label="Summary">
-      <li
-        className={cn(
-          CHIP,
-          "h-7 px-2.5",
-          drafts ? "border-warning/60 bg-warning/10 text-warning" : "border-border text-muted-foreground",
-        )}
-      >
-        <FilePen className="size-3.5" aria-hidden="true" />
-        {drafts ? `${plural(drafts, "draft awaits", "drafts await")} review` : "No draft awaits review"}
-      </li>
-      <li className={cn(CHIP, "h-7 border-success/40 px-2.5 text-success")}>
-        <CircleCheck className="size-3.5" aria-hidden="true" />
-        {list.approved} approved
-      </li>
-      <li className={cn(CHIP, "h-7 border-border px-2.5 text-text-secondary")}>
-        <Target className="size-3.5" aria-hidden="true" />
-        {plural(list.without_threat_model, "target", "targets")} without a threat model
-      </li>
+    <ul className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Summary">
+      {tiles.map((tile) => {
+        const Icon = tile.icon
+        const on = show === tile.id
+        return (
+          <li key={tile.id}>
+            <button
+              type="button"
+              aria-pressed={on}
+              onClick={() => onShow(on && tile.id !== "all" ? "all" : tile.id)}
+              className={cn(
+                "flex h-full w-full items-center gap-3 rounded-2xl border bg-card p-4 text-left outline-none transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring",
+                on ? "border-primary shadow-[0_0_0_1px_var(--primary)]" : "hover:border-border-strong",
+              )}
+            >
+              <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl bg-muted", tile.tone)}>
+                <Icon className="size-5" aria-hidden="true" />
+              </span>
+              <span>
+                <span className="tabular block text-2xl leading-7 font-semibold">{tile.value}</span>
+                <span className="block text-xs text-muted-foreground">{tile.label}</span>
+              </span>
+            </button>
+          </li>
+        )
+      })}
     </ul>
   )
 }
 
-function StatusCell({ row }: { row: ThreatModelRow }) {
+/** One target as a card: its state and version, what it holds, and the one thing to do next. */
+function ModelCard({
+  row,
+  canManage,
+  onGenerate,
+  pending,
+}: {
+  row: ThreatModelRow
+  canManage: boolean | undefined
+  onGenerate: (row: ThreatModelRow) => void
+  pending: boolean
+}) {
+  const latest = row.latest
+  const draft = latest?.status === "draft"
+  const review = Boolean(draft && canManage)
+  return (
+    <GlassCard label={`${row.target.name}: ${latest ? (draft ? "draft" : "approved") : "no threat model"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <StatusCell row={row} compact />
+        {latest && <span className="tabular font-mono text-[13px] text-foreground/65">v{latest.version}</span>}
+      </div>
+
+      <h3 className="mt-3 text-lg leading-6 font-medium">
+        {latest ? (
+          <Link href={`/threat-models/${row.target.id}`} className="rounded-md outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+            {row.target.name}
+          </Link>
+        ) : (
+          row.target.name
+        )}
+      </h3>
+      <p className="text-sm text-foreground/65">{TYPE_LABEL[row.target.type]}</p>
+
+      {latest && (
+        <div className="mt-4 flex items-stretch divide-x divide-foreground/10 rounded-xl bg-white/70 py-2.5 text-center dark:bg-white/5">
+          <div className="flex-1 px-2">
+            <p className="tabular text-xl leading-7 font-semibold">{latest.threat_count}</p>
+            <p className="text-xs text-foreground/65">Threats</p>
+          </div>
+          <div className="flex-1 px-2">
+            <p className={cn("tabular flex items-center justify-center gap-1 text-xl leading-7 font-semibold", (row.without_test ?? 0) > 0 && "text-warning")}>
+              {(row.without_test ?? 0) > 0 && <AlertTriangle className="size-4" aria-hidden="true" />}
+              {row.without_test ?? 0}
+            </p>
+            <p className="text-xs text-foreground/65">Without a test</p>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-auto flex items-center gap-2 pt-4">
+        {latest ? (
+          review ? (
+            <Button asChild className="h-10 flex-1 rounded-full hover:bg-primary-hover">
+              <Link href={`/threat-models/${row.target.id}`} aria-label={`Review the threat model of ${row.target.name}`}>
+                Review
+              </Link>
+            </Button>
+          ) : (
+            <Link href={`/threat-models/${row.target.id}`} className={GLASS_BUTTON} aria-label={`Open the threat model of ${row.target.name}`}>
+              Open
+            </Link>
+          )
+        ) : row.blocker ? (
+          <span className="flex h-10 flex-1 items-center justify-center rounded-full border-2 border-dashed border-[#dbe3fb] px-3 text-center text-xs text-foreground/60 dark:border-white/15">
+            {row.blocker_code === "not_verified" ? "Verify ownership first" : "Review the target profile first"}
+          </span>
+        ) : jobActive(row.job) ? null : !canManage ? (
+          <span className="flex h-10 flex-1 items-center justify-center rounded-full border-2 border-dashed border-[#dbe3fb] px-3 text-center text-xs text-foreground/60 dark:border-white/15">
+            A Security Analyst generates it
+          </span>
+        ) : (
+          <Button variant="outline" className="h-10 flex-1 gap-2 rounded-full bg-white/70 dark:bg-white/5" onClick={() => onGenerate(row)} disabled={pending}>
+            <Sparkles aria-hidden="true" />
+            Generate<span className="sr-only"> the threat model of {row.target.name}</span>
+          </Button>
+        )}
+      </div>
+    </GlassCard>
+  )
+}
+
+function StatusCell({ row, compact }: { row: ThreatModelRow; compact?: boolean }) {
   if (jobActive(row.job)) {
     return (
       <span className="inline-flex items-center gap-1.5 text-sm text-text-secondary">
@@ -83,12 +180,12 @@ function StatusCell({ row }: { row: ThreatModelRow }) {
   }
   if (!row.latest) return <span className="text-sm text-muted-foreground">No threat model</span>
   return (
-    <span className="flex flex-col items-start gap-1">
+    <span className={cn("flex items-start gap-1", compact ? "flex-wrap items-center gap-1.5" : "flex-col")}>
       <VersionStatus version={row.latest} />
       {row.latest.status === "draft" && row.latest.ai_generated && (
         <>
           <AiGeneratedLabel />
-          <span className="text-xs text-muted-foreground">Not reviewed</span>
+          {!compact && <span className="text-xs text-muted-foreground">Not reviewed</span>}
         </>
       )}
     </span>
@@ -141,6 +238,8 @@ export function ThreatModelsPage() {
   const [list, setList] = useState<ThreatModelList | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
+  const [layout, setLayout] = useStoredView("threat-models") // one card for each target (the first look), or the table
+  const [show, setShow] = useState<Show>("all")
 
   async function load() {
     try {
@@ -190,11 +289,15 @@ export function ThreatModelsPage() {
     }
   }
 
+  const shownRows = order(list?.rows ?? []).filter((row) =>
+    show === "all" ? true : show === "drafts" ? row.latest?.status === "draft" : show === "approved" ? row.latest?.status === "approved" : !row.latest,
+  )
+
   return (
     <div className="mx-auto w-full max-w-[1200px]">
       <PageHeader
         title="Threat Models"
-        description="What could go wrong in each target, mapped to OWASP and MITRE ATLAS."
+        description="What could go wrong in each target."
       />
       {error && (
         <Alert variant="destructive" className="mb-4">
@@ -218,8 +321,8 @@ export function ThreatModelsPage() {
           title="No targets yet"
           description={
             canRegister
-              ? "A threat model is made for each registered target once its ownership is verified and its profile is reviewed."
-              : "A threat model is made for each registered target once its ownership is verified and its profile is reviewed. An AI Application Developer registers the targets."
+              ? "Verify a target and review its profile first."
+              : "An AI Application Developer registers targets."
           }
           action={
             canRegister ? (
@@ -232,10 +335,26 @@ export function ThreatModelsPage() {
       )}
       {list && list.rows.length > 0 && (
         <>
-          <Summary list={list} />
+          <Summary list={list} show={show} onShow={setShow} />
           <p className="sr-only" aria-live="polite">
             {generating ? "A threat model is being generated." : ""}
           </p>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="tabular text-sm text-muted-foreground" aria-live="polite">
+              {shownRows.length} of {list.rows.length} {list.rows.length === 1 ? "target" : "targets"}
+            </p>
+            <ViewSwitch value={layout} onChange={setLayout} />
+          </div>
+          {layout === "cards" ? (
+            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {shownRows.map((row) => (
+                <li key={row.target.id} className="min-w-0">
+                  <ModelCard row={row} canManage={canManage} onGenerate={onGenerate} pending={pending === row.target.id} />
+                </li>
+              ))}
+              {shownRows.length === 0 && <li className="col-span-full rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No target in this group.</li>}
+            </ul>
+          ) : (
           <div className="overflow-x-auto rounded-[10px] border bg-card">
             <Table className="min-w-[880px] [&_th]:whitespace-normal">
               <caption className="sr-only">Threat models by target, drafts that await review first</caption>
@@ -265,7 +384,7 @@ export function ThreatModelsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order(list.rows).map((row) => {
+                {shownRows.map((row) => {
                   const latest = row.latest
                   const draft = latest?.status === "draft"
                   return (
@@ -322,6 +441,7 @@ export function ThreatModelsPage() {
               </TableBody>
             </Table>
           </div>
+          )}
         </>
       )}
     </div>

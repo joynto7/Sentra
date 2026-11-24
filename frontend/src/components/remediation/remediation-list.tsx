@@ -3,34 +3,40 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { Sparkles } from "lucide-react"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
-import { FixChip, RetestChip, StatusChip } from "@/components/remediation/badges"
+import { StatusChip } from "@/components/remediation/badges"
+import { RemediationCard } from "@/components/remediation/remediation-card"
+import { Progress } from "@/components/remediation/remediation-progress"
 import { type RemediationTab, RemediationTabs } from "@/components/remediation/remediation-tabs"
+import { ViewSwitch, useStoredView } from "@/components/sentra/view-switch"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
-import { AiGeneratedLabel } from "@/components/threat-models/badges"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { refused, useKeptAnswer, useKeptScroll } from "@/hooks/use-kept-list"
 import { type RemediationList as List, type RemediationRow, listRemediations } from "@/lib/remediation"
-import { formatDate } from "@/lib/targets"
 
-/** What the row says about the proposal of a finding, or why it has none yet. */
+/** What the row says about the proposal of a finding: its state and one line of facts, or why it has none yet. */
 function Proposal({ row }: { row: RemediationRow }) {
   if (row.latest) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-medium">Version {row.latest.version}</span>
+      <div className="space-y-1.5">
         <StatusChip status={row.latest.status} />
-        {row.latest.ai_generated && <AiGeneratedLabel />}
-        {row.latest.origin === "revised" && (
-          <span className="text-xs text-muted-foreground">
-            revision of version {row.latest.based_on_version}
+        <p className="tabular flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <span>
+            Version {row.latest.version} · {row.latest.fix_count} {row.latest.fix_count === 1 ? "fix" : "fixes"}
           </span>
-        )}
+          {row.latest.ai_generated && (
+            <span className="inline-flex items-center gap-1 text-confirm">
+              <Sparkles className="size-3" aria-hidden="true" />
+              AI-generated
+            </span>
+          )}
+        </p>
       </div>
     )
   }
@@ -39,36 +45,6 @@ function Proposal({ row }: { row: RemediationRow }) {
   }
   if (row.blocker) return <span className="text-[13px] text-muted-foreground">{row.blocker}</span>
   return <span className="text-[13px] text-muted-foreground">No proposal yet</span>
-}
-
-/**
- * How far the fix has come after the approval (UC-8.5, UC-8.6): the changes the developer still
- * has to make, and what the retest said. Each one is a link to the page that can do something
- * about it, so Screen 45 stays the entry to the whole of M8.
- */
-function Progress({ row }: { row: RemediationRow }) {
-  if (!row.latest) return <span className="text-[13px] text-muted-foreground">—</span>
-  return (
-    <div className="space-y-1">
-      {row.open_changes > 0 && (
-        <Link href="/remediation/changes" className="block py-0.5 text-[13px] text-link hover:underline">
-          {row.open_changes} application {row.open_changes === 1 ? "change" : "changes"} open
-        </Link>
-      )}
-      {row.retest && (
-        <Link
-          href={`/remediation/${row.finding.code}/retest`}
-          className="inline-flex py-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          aria-label={`Retest ${row.retest.number} of ${row.finding.code}: ${row.retest.verdict_label ?? row.retest.status_label}`}
-        >
-          <RetestChip retest={row.retest} />
-        </Link>
-      )}
-      {row.open_changes === 0 && !row.retest && (
-        <span className="text-[13px] text-muted-foreground">—</span>
-      )}
-    </div>
-  )
 }
 
 const EMPTY: Record<RemediationTab, { title: string; description: string }> = {
@@ -106,6 +82,7 @@ export function RemediationList() {
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
   useKeptScroll("remediation", `remediation?show=${tab}`, data !== null)
+  const [view, setView] = useStoredView("remediation")
 
   useEffect(() => {
     const controller = new AbortController()
@@ -139,10 +116,7 @@ export function RemediationList() {
 
   return (
     <>
-      <PageHeader
-        title="Remediation"
-        description="Fixes for confirmed findings, from proposal to verified. Sentra proposes them; a person reviews every one before anything changes."
-      />
+      <PageHeader title="Remediation" description="Fixes for confirmed findings." />
       <RemediationTabs
         active={tab}
         counts={
@@ -199,123 +173,99 @@ export function RemediationList() {
                   ? "Being retested"
                   : "Confirmed findings"}
             </h2>
-            <p className="tabular text-sm text-muted-foreground">
-              {tab === "all" ? (
-                <>
-                  {data.drafts} {data.drafts === 1 ? "proposal awaits" : "proposals await"} a person
-                  · {data.without_proposal} without a proposal
-                </>
-              ) : (
-                <>
-                  {rows.length} of {data.rows.length}{" "}
-                  {data.rows.length === 1 ? "finding" : "findings"}
-                </>
-              )}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="tabular text-sm text-muted-foreground">
+                {tab === "all" ? (
+                  <>
+                    {data.drafts} {data.drafts === 1 ? "proposal awaits" : "proposals await"} a person ·{" "}
+                    {data.without_proposal} without a proposal
+                  </>
+                ) : (
+                  <>
+                    {rows.length} of {data.rows.length} {data.rows.length === 1 ? "finding" : "findings"}
+                  </>
+                )}
+              </p>
+              <ViewSwitch value={view} onChange={setView} />
+            </div>
           </div>
-          <Table
-            container={{
-              tabIndex: 0,
-              role: "group",
-              "aria-label": "Confirmed findings and their proposals",
-              className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-            }}
-          >
-            <TableHeader className="bg-muted">
-              <TableRow>
-                <TableHead scope="col" className="text-xs">
-                  Finding
-                </TableHead>
-                <TableHead scope="col" className="text-xs">
-                  Severity
-                </TableHead>
-                <TableHead scope="col" className="text-xs">
-                  Target
-                </TableHead>
-                <TableHead scope="col" className="text-xs">
-                  Fixes
-                </TableHead>
-                <TableHead scope="col" className="text-xs">
-                  Proposal
-                </TableHead>
-                <TableHead scope="col" className="text-xs">
-                  Verification
-                </TableHead>
-                <TableHead scope="col" className="text-xs">
-                  Approver
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {view === "cards" ? (
+            <ul className="grid gap-4 bg-muted/40 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {rows.map((row) => (
-                <TableRow key={row.finding.code}>
-                  <TableCell className="max-w-sm whitespace-normal">
-                    <Link
-                      href={`/remediation/${row.finding.code}`}
-                      className="inline-block py-1 font-medium text-link hover:underline"
-                    >
-                      {row.finding.code}
-                    </Link>
-                    <span className="block text-[13px]">{row.finding.title}</span>
-                    <span className="block text-xs text-muted-foreground">{row.finding.component}</span>
-                  </TableCell>
-                  <TableCell>
-                    <SeverityBadge severity={row.finding.severity} />
-                  </TableCell>
-                  <TableCell className="text-[13px]">{row.finding.target_name}</TableCell>
-                  <TableCell>
-                    {row.latest && row.latest.fixes_in_short.length > 0 ? (
-                      <ul className="flex max-w-xs flex-wrap gap-1">
-                        {row.latest.fixes_in_short.map((fix, index) => (
-                          <li key={index}>
-                            <FixChip kind={fix.kind} label={fix.kind_label} enforcement={fix.enforcement} />
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-[13px] text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Proposal row={row} />
-                    {row.latest && (
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {row.latest.fix_count} {row.latest.fix_count === 1 ? "fix" : "fixes"} ·{" "}
-                        {formatDate(row.latest.created_at)}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Progress row={row} />
-                  </TableCell>
-                  <TableCell className="text-[13px]">
-                    {row.latest?.decided_by ? (
-                      <>
-                        {row.latest.decided_by}
-                        {row.latest.decided_at && (
-                          <span className="block text-xs text-muted-foreground">
-                            {formatDate(row.latest.decided_at)}
-                          </span>
-                        )}
-                      </>
-                    ) : row.can_approve ? (
-                      <Link
-                        href={`/remediation/${row.finding.code}`}
-                        className="py-1 text-link hover:underline"
-                      >
-                        Review it
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
+                <li key={row.finding.code} className="min-w-0">
+                  <RemediationCard row={row} />
+                </li>
               ))}
-            </TableBody>
-          </Table>
+            </ul>
+          ) : (
+            <Table
+              container={{
+                tabIndex: 0,
+                role: "group",
+                "aria-label": "Confirmed findings and their proposals",
+                className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              }}
+            >
+              <TableHeader className="bg-muted">
+                <TableRow>
+                  <TableHead scope="col" className="text-xs">
+                    Finding
+                  </TableHead>
+                  <TableHead scope="col" className="w-44 text-xs">
+                    Proposal
+                  </TableHead>
+                  <TableHead scope="col" className="w-44 text-xs">
+                    Progress
+                  </TableHead>
+                  <TableHead scope="col" className="w-24 text-xs">
+                    <span className="sr-only">Open</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.finding.code}>
+                    <TableCell className="min-w-56 max-w-md py-3 whitespace-normal">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/remediation/${row.finding.code}`}
+                          className="inline-flex min-h-6 items-center font-mono text-[13px] font-medium text-link hover:underline"
+                        >
+                          {row.finding.code}
+                        </Link>
+                        <SeverityBadge severity={row.finding.severity} />
+                      </div>
+                      <span className="mt-1 line-clamp-2 block text-[13px] font-medium">{row.finding.title}</span>
+                      <span className="block text-xs text-muted-foreground">{row.finding.target_name}</span>
+                    </TableCell>
+                    <TableCell className="py-3 whitespace-normal">
+                      <Proposal row={row} />
+                    </TableCell>
+                    <TableCell className="py-3 whitespace-normal">
+                      <Progress row={row} />
+                    </TableCell>
+                    <TableCell className="py-3 text-right">
+                      <Button
+                        asChild
+                        variant={row.can_approve ? "default" : "outline"}
+                        size="sm"
+                        className="h-8 rounded-full px-4"
+                      >
+                        <Link
+                          href={`/remediation/${row.finding.code}`}
+                          aria-label={`${row.can_approve ? "Review" : "Open"} the proposal for ${row.finding.code}`}
+                        >
+                          {row.can_approve ? "Review" : "Open"}
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
           <p className="border-t p-3 text-[13px] text-muted-foreground">
-            Nothing a proposal recommends takes effect until a person approves it, and no finding is
-            closed until a retest finds nothing.
+            Nothing takes effect until a person approves it.
           </p>
         </section>
       )}
