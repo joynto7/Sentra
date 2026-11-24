@@ -23,6 +23,8 @@ import {
   USE_CASES,
 } from "@/components/landing/landing-content"
 import { AttackPathBand } from "@/components/landing/attack-path-band"
+import { FixAgent } from "@/components/landing/fix-agent"
+import { FindingFlow } from "@/components/landing/finding-flow"
 import { HeroCards } from "@/components/landing/hero-cards"
 import { Pillars } from "@/components/landing/pillars"
 import { ProductShot } from "@/components/landing/product-shot"
@@ -108,11 +110,25 @@ export function LandingPage() {
           </div>
         </section>
 
+        {/* From the list of findings to one finding's proof and risk */}
+        <section aria-labelledby="flow-title" className="bg-white">
+          <div className={`${CONTAINER} py-20 lg:py-28`}>
+            <FindingFlow />
+          </div>
+        </section>
+
+        {/* The fix: asked for, proposed, approved by a person, tested again */}
+        <section aria-labelledby="fix-title" className="bg-lp-wash">
+          <div className={`${CONTAINER} py-20 lg:py-28`}>
+            <FixAgent />
+          </div>
+        </section>
+
         {/* Capabilities */}
-        <section aria-labelledby="capabilities-title" className="bg-lp-wash">
+        <section aria-labelledby="capabilities-title" className="bg-white">
           <div className={`${CONTAINER} py-20 lg:py-28`}>
             <h2 id="capabilities-title" className={`${H2} max-w-3xl font-medium`}>
-              Findings you can act on.
+              Run it safely.
             </h2>
             <div className="mt-6 divide-y divide-lp-line">
               {CAPABILITIES.map((capability, index) => {
@@ -153,14 +169,14 @@ export function LandingPage() {
         </section>
 
         {/* How it works */}
-        <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-20 bg-white">
+        <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-20 bg-lp-wash">
           <div className={`${CONTAINER} py-20 lg:py-28`}>
             <h2 id="how-title" className={`${H2} max-w-3xl font-medium`}>
               Four steps to a verified fix.
             </h2>
             <ol className="mt-12 grid gap-8 md:grid-cols-2 xl:grid-cols-4">
               {STEPS.map((step, index) => (
-                <li key={step.title} className="rounded-2xl border border-lp-line bg-lp-wash p-6">
+                <li key={step.title} className="rounded-2xl border border-lp-line bg-white p-6">
                   <span className="grid size-8 place-items-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
                     {index + 1}
                   </span>
@@ -173,14 +189,14 @@ export function LandingPage() {
         </section>
 
         {/* Use cases */}
-        <section id="use-cases" aria-labelledby="use-title" className="scroll-mt-20 bg-lp-wash">
+        <section id="use-cases" aria-labelledby="use-title" className="scroll-mt-20 bg-white">
           <div className={`${CONTAINER} py-20 lg:py-28`}>
             <h2 id="use-title" className={`${H2} max-w-3xl font-medium`}>
               Made for the people who answer for an AI application.
             </h2>
             <ul className="mt-12 grid gap-4 sm:grid-cols-2">
               {USE_CASES.map((useCase) => (
-                <li key={useCase.title} className="rounded-2xl border border-lp-line bg-white p-6">
+                <li key={useCase.title} className="rounded-2xl border border-lp-line bg-lp-wash p-6">
                   <p className="text-sm font-medium text-link">{useCase.role}</p>
                   <h3 className="mt-2 text-xl leading-snug font-medium tracking-tight text-lp-ink">{useCase.title}</h3>
                 </li>

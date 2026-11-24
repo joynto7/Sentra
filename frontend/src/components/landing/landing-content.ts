@@ -29,18 +29,6 @@ export type Capability = {
 
 export const CAPABILITIES: Capability[] = [
   {
-    id: "evidence",
-    title: "Every finding has its proof",
-    points: [
-      "Several detection methods, and which agreed",
-      "A repeat score: how often it worked",
-      "Evidence stored read-only",
-    ],
-    image: "/landing/finding-evidence.jpg",
-    alt: "A finding's evidence page: three of three repetitions met, the attempt, the tool call and the target's reply, and the detection results of the canary token and the LLM judge.",
-    caption: "A finding's evidence.",
-  },
-  {
     id: "limits",
     title: "Test within limits you set",
     points: [
@@ -51,18 +39,6 @@ export const CAPABILITIES: Capability[] = [
     image: "/landing/live-run.jpg",
     alt: "A running campaign: 540 of 870 planned attempts, a request rate of 18 per minute, the cost so far, a feed of live events and three findings found in this run.",
     caption: "A campaign run.",
-  },
-  {
-    id: "fix",
-    title: "Fix it, then prove it worked",
-    points: [
-      "A person approves every fix",
-      "Policies enforced at the Shield gateway",
-      "An automatic retest, before and after",
-    ],
-    image: "/landing/remediation.jpg",
-    alt: "The Remediation page: confirmed findings with their proposed fixes, each with a version, an approval state and a verification result such as Fixed and Verified or Still open.",
-    caption: "A fix and its retest.",
   },
 ]
 

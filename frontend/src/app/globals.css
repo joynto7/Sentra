@@ -230,6 +230,10 @@
 }
 
 /* The typing caret in the hero cards; only played under motion-safe and gone when the typing ends */
+@keyframes lp-flow {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--gap, 24px)); }
+}
 @keyframes lp-caret {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
