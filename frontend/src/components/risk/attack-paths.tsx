@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { DismissPathDialog } from "@/components/risk/dismiss-path-dialog"
-import { PathGraph } from "@/components/risk/path-graph"
+import { PathMap } from "@/components/risk/path-map"
+import { PathSteps } from "@/components/risk/path-steps"
+import { usePathWalk } from "@/components/risk/use-path-walk"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -19,7 +22,6 @@ import { useCan } from "@/lib/permissions"
 import {
   type AttackPath,
   type AttackPaths as Paths,
-  type PathStep,
   dismissAttackPath,
   getAttackPaths,
   getRiskDashboard,
@@ -28,36 +30,13 @@ import {
 import { formatDate } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
-/** The findings of one step, with the chip that marks what still needs confirmation (3a1). */
-function StepFindings({ step }: { step: PathStep }) {
-  return (
-    <ul className="mt-1 space-y-1">
-      {step.findings.map((finding) => (
-        <li key={finding.code} className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/findings/${finding.code}`}
-            className="inline-block py-0.5 text-[13px] font-medium text-link hover:underline"
-          >
-            {finding.code}
-          </Link>
-          <span className="text-[13px]">{finding.title}</span>
-          <SeverityBadge severity={finding.severity} />
-          {finding.unconfirmed && (
-            <span className="rounded border border-dashed border-warning/60 px-1.5 py-0.5 text-xs text-warning">
-              Unconfirmed
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 /** One path, as the panel and the list both show it (UC-7.5 step 5). */
 function PathCard({
   path,
   selected,
   expanded,
+  step,
+  onStep,
   onSelect,
   onDismiss,
   onRestore,
@@ -68,6 +47,9 @@ function PathCard({
   selected: boolean
   /** The steps are written out for the path that is being followed; the rest show their chain. */
   expanded: boolean
+  /** Where the walkthrough is on this path, when it is the selected one. */
+  step?: number | null
+  onStep?: (index: number) => void
   onSelect?: () => void
   onDismiss?: () => void
   onRestore?: () => void
@@ -87,39 +69,46 @@ function PathCard({
           <button
             type="button"
             onClick={onSelect}
-            aria-pressed={selected}
-            className="rounded-[5px] px-1 py-0.5 text-[15px] font-semibold hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            aria-expanded={expanded}
+            aria-label={`${path.code}, ${path.steps.length} steps`}
+            className="-m-1 flex items-center gap-2 rounded-[5px] p-1 text-[15px] font-semibold hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
+            <ChevronDown
+              aria-hidden="true"
+              className={cn("size-4 text-muted-foreground transition-transform", !selected && "-rotate-90")}
+            />
             {path.code}
           </button>
         ) : (
           <span className="px-1 py-0.5 text-[15px] font-semibold">{path.code}</span>
         )}
         <SeverityBadge severity={path.severity} />
+        <span className="text-xs text-muted-foreground">{path.steps.length} steps</span>
         {path.has_unconfirmed && (
           <span className="rounded border border-dashed border-warning/60 px-1.5 py-0.5 text-xs text-warning">
             Depends on an unconfirmed finding
           </span>
         )}
       </div>
-      <p className="mt-1 text-sm text-text-secondary">{path.description}</p>
-      <p className="mt-1 text-sm">{path.impact}</p>
-      {expanded ? (
-        <ol className="mt-2 space-y-2 border-l pl-3">
-          {path.steps.map((step) => (
-            <li key={step.number}>
-              <p className="text-[13px] font-medium">
-                {step.number}. {step.component.label}
-              </p>
-              <p className="text-[13px] text-text-secondary">{step.sentence}</p>
-              <StepFindings step={step} />
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="mt-2 text-[13px] text-muted-foreground">
-          {path.steps.map((step) => step.component.label).join(" → ")}
-        </p>
+      <ol
+        aria-label={`Route of ${path.code}`}
+        className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px] text-text-secondary"
+      >
+        {path.steps.map((one, index) => (
+          <li key={one.number} className="flex items-center gap-1">
+            {index > 0 && <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" />}
+            <span className="rounded-[5px] bg-muted px-1.5 py-0.5">{one.component.label}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2 text-sm text-text-secondary">{path.description}</p>
+      {expanded && (
+        <>
+          <p className="mt-1 text-sm">{path.impact}</p>
+          <div className="mt-3 border-t pt-3">
+            <PathSteps path={path} step={step ?? null} onStep={onStep} />
+          </div>
+        </>
       )}
       {path.reason ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2">
@@ -200,6 +189,7 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
   // While another target is being read, the page shows its skeleton, not the one before.
   const data = answer && answer.target.id === targetId ? answer : null
   const current = data?.paths.find((path) => path.key === selected) ?? null
+  const walk = usePathWalk(current?.key ?? null, current?.steps.length ?? 0)
 
   async function dismiss(key: string, reason: string) {
     setBusy(true)
@@ -228,7 +218,6 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
     }
   }
 
-  const wide = view === "graph"
   const panel = data && (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -246,14 +235,18 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
           {data.no_paths_reason || "No multi-step path was found."}
         </p>
       ) : (
-        <ol className={cn("gap-3", wide ? "grid lg:grid-cols-2" : "space-y-3")}>
+        <ol className="space-y-3">
           {data.paths.map((path) => (
             <PathCard
               key={path.key}
               path={path}
               selected={path.key === selected}
               expanded={view === "list" || path.key === selected}
-              onSelect={() => setSelected(path.key)}
+              step={path.key === selected ? walk.step : null}
+              onStep={path.key === selected ? walk.go : undefined}
+              onSelect={
+                view === "list" ? undefined : () => setSelected((now) => (now === path.key ? null : path.key))
+              }
               onDismiss={() => setDismissing(path)}
               canTriage={canTriage}
               busy={busy}
@@ -380,26 +373,28 @@ export function AttackPaths({ target: preselected }: { target?: string }) {
       )}
 
       {data && !data.blocker && view === "graph" && (
-        <div className="space-y-4">
-          {/* The pipeline is wider than it is tall, so it gets the whole width: the design's
-              canvas beside the panel would leave it too small to read. */}
-          <section aria-label="The target's components" className="min-w-0 rounded-[10px] border bg-card p-3">
-            <div
-              tabIndex={0}
-              role="group"
-              aria-label="The graph of the target's components"
-              className="overflow-x-auto rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-              <PathGraph nodes={data.nodes} edges={data.edges} findings={data.findings} selected={current} />
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-2">
+            <PathMap
+              targetName={data.target.name}
+              nodes={data.nodes}
+              edges={data.edges}
+              findings={data.findings}
+              selected={current}
+              step={walk.step}
+              playing={walk.playing}
+              onStep={walk.go}
+              onToggle={walk.toggle}
+              onReset={walk.reset}
+            />
+            <p className="text-xs text-muted-foreground">
               {current
-                ? `${current.code} is drawn through the numbered components.`
-                : "Select a path to follow it through the components."}{" "}
-              A dashed component is not in the Target Profile any more. The List view holds the same
-              paths as text.
+                ? `${current.code} is drawn as the bright curve. Choose a step or a component to follow it, or play the walkthrough.`
+                : "Choose a path to follow it through the components."}{" "}
+              A component with a dashed ring is the current step. The List view holds the same paths as
+              text.
             </p>
-          </section>
+          </div>
           <section aria-labelledby="paths" className="min-w-0">
             {panel}
           </section>

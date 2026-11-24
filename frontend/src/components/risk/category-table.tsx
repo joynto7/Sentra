@@ -46,39 +46,32 @@ function spoken(row: CategoryRow): string {
 }
 
 /**
- * "Open findings by OWASP category" (Screen 42; FR-7.4, M7): what each category holds and whether it
- * has been tested. The coverage column says it in words and with a symbol, never in colour alone
- * (NFR-4.3), and the whole matrix is Framework Coverage. Categories that are out of scope and hold
- * nothing are named once under the table instead of taking a row each.
+ * "Open findings by OWASP category" (FR-7.4, M7): what each category holds and whether it has been
+ * tested. It sits on Framework Coverage, above the matrix it summarises. The coverage column says it
+ * in words and with a symbol, never in colour alone (NFR-4.3). Categories that are out of scope and
+ * hold nothing are named once under the table instead of taking a row each. A category's name opens
+ * its open findings.
  */
 export function CategoryTable({
   rows,
   targetQuery,
-  chosen,
-  onChoose,
   className,
 }: {
   rows: CategoryRow[]
   targetQuery: string
-  /** The category the dashboard is filtered by, which the table marks. */
-  chosen: string | null
-  onChoose: (code: string) => void
   className?: string
 }) {
-  const shown = rows.filter((row) => row.status !== "out_of_scope" || row.open_total > 0 || row.code === chosen)
+  const shown = rows.filter((row) => row.status !== "out_of_scope" || row.open_total > 0)
   const folded = rows.filter((row) => !shown.includes(row))
   const most = Math.max(1, ...rows.map((row) => row.open_total))
   const total = rows.reduce((sum, row) => sum + row.open_total, 0)
   const holding = rows.filter((row) => row.open_total > 0).length
   return (
     <section aria-labelledby="by-category" className={cn("min-w-0 rounded-[10px] border bg-card", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+      <div className="border-b px-4 py-3">
         <h2 id="by-category" className="text-[15px] font-semibold">
           Open findings by OWASP category
         </h2>
-        <Link href="/framework-coverage" className="inline-block py-0.5 text-[13px] text-link hover:underline">
-          Framework coverage
-        </Link>
       </div>
       <Table
         container={{
@@ -98,16 +91,14 @@ export function CategoryTable({
         </TableHeader>
         <TableBody>
           {shown.map((row) => (
-            <TableRow key={row.code} className={chosen === row.code ? "bg-muted/60" : undefined}>
+            <TableRow key={row.code}>
               <TableCell className="py-1.5">
-                <button
-                  type="button"
-                  onClick={() => onChoose(row.code)}
+                <Link
+                  href={`/findings?view=open&category=${row.code}${targetQuery}`}
                   className="inline-block min-h-6 rounded-[5px] text-left text-[13px] font-medium text-link hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  aria-pressed={chosen === row.code}
                 >
                   <span className="font-mono">{row.code}</span> {row.name}
-                </button>
+                </Link>
               </TableCell>
               <TableCell className="w-32 py-1.5">
                 {row.open_total > 0 ? <SeverityBar counts={row.open_by_severity} most={most} /> : null}
