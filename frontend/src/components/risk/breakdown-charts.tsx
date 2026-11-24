@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 
-import { Gauge, ClassicPie, Donut, Isometric, Nested, Rings, Rose, Sunburst, type Branch, type Progress, type Slice } from "@/components/risk/radial/radial-charts"
+import { Donut, Nested, Rings, Sunburst, type Branch, type Progress, type Slice } from "@/components/risk/radial/radial-charts"
 import { ChartCard } from "@/components/sentra/chart-card"
 import { SEVERITY_LABEL, type Severity } from "@/components/sentra/severity-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -13,13 +13,6 @@ import { CLOSED_STATUSES, COUNTED, OPEN_STATUSES, type RiskDashboard as Dashboar
 type Style = { id: string; label: string; read: string }
 
 /** The styles of each section's chart, in the order of its picker. */
-const SEVERITY_STYLES = [
-  { id: "donut", label: "Donut", read: "Each part of the ring is a share of the open findings; the middle says the total or the part you are on. Select a part to open its findings." },
-  { id: "pie", label: "Pie", read: "Each slice is a share of the open findings; a slice moves out when you point at it or tab to it. Select a slice to open its findings." },
-  { id: "tilted", label: "3D ring", read: "The same ring with depth, tilted. It is a way of looking, not more data: the legend and the table have the numbers. Select a part to open its findings." },
-  { id: "gauge", label: "Gauge", read: "Half a ring for the same shares, for a place with little height. Select a part, or a name under it, to open its findings." },
-  { id: "rose", label: "Rose", read: "Every severity has the same angle, and each petal's area is proportional to its count, so a small count stays small but easy to select. Areas are hard to compare by eye: read the numbers too." },
-] as const satisfies readonly Style[]
 const STATUS_STYLES = [
   { id: "donut", label: "Donut", read: "Each part of the ring is a status of the open findings; the middle says the total or the part you are on. Select a part to open its findings." },
   { id: "nested", label: "Two rings", read: "The outer ring is the open findings by severity, the inner ring the same findings by status. Select a part of either to open its findings." },
@@ -109,26 +102,19 @@ const EMPTY = "Nothing is open for these filters, so there is nothing to draw. C
  * which are a different question.
  */
 export function SeverityChart({ data, filterQuery, className }: { data: Dashboard; filterQuery: string; className?: string }) {
-  const [style, choose] = useStyle("severity", SEVERITY_STYLES)
   const total = data.open_total
   const severities = severitySlices(data, filterQuery)
-  const current = SEVERITY_STYLES.find((one) => one.id === style)!
   return (
     <ChartCard
       className={className}
       title="Severity chart"
       unit="Open findings by severity"
-      howToRead={current.read}
+      howToRead="Select a part to open its findings."
       state={total === 0 ? "empty" : "ready"}
       emptyText={EMPTY}
       table={<SliceTable caption="By severity" first="Severity" slices={severities} total={total} />}
     >
-      <StylePicker styles={SEVERITY_STYLES} value={style} onChange={choose} label="Severity chart style" />
-      {style === "pie" && <ClassicPie slices={severities} total={total} what={what} />}
-      {style === "donut" && <Donut slices={severities} total={total} what={what} />}
-      {style === "tilted" && <Isometric slices={severities} total={total} what={what} />}
-      {style === "gauge" && <Gauge slices={severities} total={total} what={what} />}
-      {style === "rose" && <Rose slices={severities} total={total} what={what} />}
+      <Donut slices={severities} total={total} what={what} />
     </ChartCard>
   )
 }
