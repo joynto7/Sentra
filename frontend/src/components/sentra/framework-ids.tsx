@@ -27,9 +27,9 @@ export function OwaspId({ code, name }: { code: string; name?: string | null }) 
         <span className="sr-only"> on OWASP (opens in a new tab)</span>
       </a>
       {name ? ` ${name}` : ""}
-      <span className="block text-xs text-muted-foreground">
-        OWASP {OWASP_EDITION}
-        {later && later !== code ? ` · ${later} in the 2026 edition` : ""}
+      <span className="sr-only">
+        {` OWASP ${OWASP_EDITION}`}
+        {later && later !== code ? `, ${later} in the 2026 edition` : ""}
       </span>
     </span>
   )
