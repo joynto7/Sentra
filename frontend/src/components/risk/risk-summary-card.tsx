@@ -10,21 +10,27 @@ export function RiskSummaryCard({
   title,
   count,
   href,
+  badge,
   children,
   className,
 }: {
   title: string
   count: number
   href: string
+  /** At the top right: the change, as a pill */
+  badge?: React.ReactNode
   children?: React.ReactNode
   className?: string
 }) {
   const id = `card-${title.toLowerCase().replace(/\s+/g, "-")}`
   return (
-    <section className={cn("rounded-[10px] border bg-card px-4 py-3", className)} aria-labelledby={id}>
-      <h2 id={id} className="text-[13px] font-medium text-muted-foreground">
-        {title}
-      </h2>
+    <section className={cn("flex flex-col rounded-[10px] border bg-card px-4 py-3", className)} aria-labelledby={id}>
+      <div className="flex items-start justify-between gap-2">
+        <h2 id={id} className="text-[13px] font-medium text-muted-foreground">
+          {title}
+        </h2>
+        {badge}
+      </div>
       <Link
         href={href}
         className="tabular -ml-1 inline-block rounded-[5px] px-1 text-[28px] leading-9 font-semibold tracking-tight hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
