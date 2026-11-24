@@ -1,23 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import {
-  Bug,
-  ChevronRight,
-  Crosshair,
-  FileText,
-  LayoutDashboard,
-  Library,
-  Megaphone,
-  Network,
-  Radar,
-  Search,
-  ShieldCheck,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react"
+import { ChevronRight, Lock, Radar, Search, Siren } from "lucide-react"
 
-import { SentraLogo, SentraWordmark } from "@/components/layout/sentra-logo"
+import { ProductSidebar } from "@/components/landing/product-sidebar"
 
 /**
  * The light band of the page, in the way of a product tour: a dark window of the product, drawn like
@@ -186,13 +172,6 @@ const PANEL = "#ffffff"
 const WASH = "#f3f6fe"
 const COBALT = "#2b4fd8"
 
-/** The product's own left menu, in its own order and colours: the navy bar, the group names, the chosen item. */
-const MENU: { group: string; items: [string, LucideIcon][] }[] = [
-  { group: "Overview", items: [["Risk Dashboard", LayoutDashboard], ["Attack Paths", Network], ["Framework Coverage", Radar]] },
-  { group: "Testing", items: [["Targets", Crosshair], ["Threat Models", ShieldCheck], ["Test Library", Library], ["Campaigns", Megaphone]] },
-  { group: "Response", items: [["Findings", Bug], ["Remediation", Wrench], ["Sentra Shield", FileText]] },
-]
-
 const CHIP = {
   c: { letter: "C", on: "#b42318" },
   h: { letter: "H", on: "#c2410c" },
@@ -286,7 +265,6 @@ export function FindingFlow() {
 
   // Where the person is in the window decides the step: the list, one target's evidence, its risk profile
   const current = !detail ? 0 : tab === "risk" ? 2 : 1
-  const railHeight = current * 64 // each step is 28 px high with 36 px between: the line fills a fixed way
   const go = (index: number) => {
     stopTour()
     if (index === 0) setOpen(null)
@@ -296,38 +274,41 @@ export function FindingFlow() {
     }
   }
 
+  // What the floating note beside the window says, by the step the person is at
+  const note =
+    current === 0
+      ? { Icon: Radar, text: "14 targets tested", tone: "text-[#2b4fd8]", ring: "border-[#c9d6ff]" }
+      : current === 1
+        ? { Icon: Siren, text: "Leaked line marked", tone: "text-[#9f1c12]", ring: "border-[#f5c1bd]" }
+        : { Icon: Radar, text: "Score 900 of 1000", tone: "text-[#2b4fd8]", ring: "border-[#c9d6ff]" }
+
   return (
-    <div className="grid items-start gap-10 lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-12">
-      <div>
+    <div>
+      <div data-reveal="blur" className="mx-auto max-w-2xl text-center">
         <h2 id="flow-title" className="text-3xl leading-tight font-medium tracking-tight text-balance text-lp-ink sm:text-4xl">
           Open any target. See the proof.
         </h2>
-        <ol className="relative mt-8 flex flex-col gap-9 text-lg">
-          {/* The rail that links the steps: grey for the whole way, cobalt as far as the step reached */}
-          <span aria-hidden="true" className="absolute top-[14px] bottom-[14px] left-3 w-px -translate-x-1/2 bg-lp-line" />
-          <span
-            aria-hidden="true"
-            className="absolute top-[14px] left-3 w-px -translate-x-1/2 bg-primary transition-[height] duration-700 ease-in-out motion-reduce:transition-none"
-            style={{ height: `${railHeight}px` }}
-          />
+        {/* The three steps as a control: the chosen one is filled, the ones reached are dark, the rest are grey */}
+        <ol className="mt-7 inline-flex max-w-full flex-wrap justify-center gap-1 rounded-3xl border border-lp-line bg-white p-1 shadow-[0_14px_34px_-20px_rgba(43,79,216,0.55)] sm:rounded-full">
           {STEPS.map((step, index) => {
-            const on = index <= current
+            const chosen = index === current
+            const reached = index < current
             return (
-              <li key={step.key} className="relative h-7">
+              <li key={step.key}>
                 <button
                   type="button"
                   onClick={() => go(index)}
-                  aria-current={index === current ? "step" : undefined}
-                  className="flex h-7 items-center gap-3.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-current={chosen ? "step" : undefined}
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-[15px] outline-none transition-[background-color,color,box-shadow] duration-500 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none ${
+                    chosen ? "bg-primary text-primary-foreground shadow-[0_8px_20px_-8px_rgba(43,79,216,0.8)]" : reached ? "text-lp-ink hover:bg-lp-wash" : "text-lp-muted hover:bg-lp-wash"
+                  }`}
                 >
                   <span
-                    className={`relative z-10 grid size-6 shrink-0 place-items-center rounded-full text-xs font-medium transition-colors duration-500 motion-reduce:transition-none ${
-                      on ? "bg-primary text-primary-foreground" : "bg-lp-line text-lp-muted"
-                    }`}
+                    className={`grid size-5 place-items-center rounded-full text-[11px] font-medium ${chosen ? "bg-white/20" : reached ? "bg-primary text-primary-foreground" : "bg-lp-line"}`}
                   >
                     {index + 1}
                   </span>
-                  <span className={`transition-colors duration-500 motion-reduce:transition-none ${on ? "text-lp-ink" : "text-lp-muted"}`}>{step.text}</span>
+                  {step.text}
                 </button>
               </li>
             )
@@ -335,46 +316,26 @@ export function FindingFlow() {
         </ol>
       </div>
 
-      <figure ref={root} className="min-w-0 lg:mt-1" onPointerDownCapture={stopTour} onKeyDownCapture={stopTour} onFocusCapture={stopTour}>
+      <figure ref={root} data-reveal="tilt" data-reveal-delay="150" className="relative mx-auto mt-12 min-w-0 max-w-[62rem]" onPointerDownCapture={stopTour} onKeyDownCapture={stopTour} onFocusCapture={stopTour}>
+        {/* Two notes that float over the window's corners and follow the step */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-5 right-6 z-20 hidden sm:block motion-safe:animate-[lp-float-a_6s_ease-in-out_infinite]">
+          <p key={current} className={`flex items-center gap-2 rounded-full border bg-white px-3.5 py-2 text-[13px] font-medium shadow-[0_18px_40px_-16px_rgba(43,79,216,0.55)] motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-500 ${note.ring} ${note.tone}`}>
+            <note.Icon className="size-4" />
+            {note.text}
+          </p>
+        </div>
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-4 left-10 z-20 hidden sm:block motion-safe:animate-[lp-float-b_7.5s_ease-in-out_-2s_infinite]">
+          <p className="flex items-center gap-2 rounded-full border border-lp-line bg-white px-3.5 py-2 text-[13px] font-medium text-lp-ink shadow-[0_18px_40px_-16px_rgba(43,79,216,0.45)]">
+            <Lock className="size-4 text-lp-muted" />
+            Evidence stored read-only
+          </p>
+        </div>
         <div
           ref={win}
           className="relative flex overflow-hidden rounded-2xl border shadow-[0_50px_100px_-40px_rgba(43,79,216,0.45)]"
           style={{ background: WASH, borderColor: EDGE, color: INK }}
         >
-          {/* The product's left menu, as it is in the app */}
-          <div aria-hidden="true" className="hidden w-48 shrink-0 flex-col px-3 py-4 sm:flex" style={{ background: "#0e1322", color: "#c3cad8" }}>
-            <div className="flex items-center gap-2.5 px-1.5">
-              <SentraLogo size={26} />
-              <SentraWordmark size={14} onDark className="text-white" />
-            </div>
-            {MENU.map((group) => (
-              <div key={group.group} className="mt-5">
-                <p className="px-2 text-[10px] font-medium tracking-wider uppercase" style={{ color: "#8c96aa" }}>{group.group}</p>
-                <ul className="mt-1.5 space-y-0.5">
-                  {group.items.map(([label, Icon]) => {
-                    const active = label === "Targets"
-                    return (
-                      <li
-                        key={label}
-                        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[12px] whitespace-nowrap"
-                        style={{ background: active ? "#242d48" : "transparent", color: active ? "#ffffff" : "#c3cad8" }}
-                      >
-                        <Icon className="size-4 shrink-0" />
-                        {label}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ))}
-            <div className="mt-auto flex items-center gap-2.5 px-1.5 pt-4">
-              <span className="grid size-8 place-items-center rounded-full bg-[#2b4fd8] text-[11px] font-semibold text-white">AH</span>
-              <span className="leading-tight">
-                <span className="block text-[12px] text-white">Arif Hossain</span>
-                <span className="block text-[11px]" style={{ color: "#8c96aa" }}>Security Analyst</span>
-              </span>
-            </div>
-          </div>
+          <ProductSidebar active="Targets" />
 
           <div className="min-w-0 flex-1" style={{ background: WASH }}>
             <div className="flex items-center gap-1.5 border-b px-4 py-2.5 text-xs" style={{ background: "#ffffff", borderColor: EDGE, color: MUTED }}>

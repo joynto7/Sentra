@@ -8,15 +8,17 @@ const SESSION_COOKIE = "sentra_session"
  */
 export function proxy(request: NextRequest) {
   if (request.cookies.has(SESSION_COOKIE)) return NextResponse.next()
+  // The address of the product is the public page for anyone without a session (see app/page.tsx)
+  if (request.nextUrl.pathname === "/") return NextResponse.next()
 
   const login = new URL("/login", request.url)
   const next = request.nextUrl.pathname + request.nextUrl.search
-  if (next !== "/") login.searchParams.set("next", next)
+  login.searchParams.set("next", next)
   return NextResponse.redirect(login)
 }
 
 export const config = {
   matcher: [
-    "/((?!login|register|verify-email|confirm-email|forgot-password|reset-password|invitations|_next/static|_next/image|icon.svg|robots.txt).*)",
+    "/((?!login|register|verify-email|confirm-email|forgot-password|reset-password|invitations|landing/|_next/static|_next/image|icon.svg|robots.txt).*)",
   ],
 }

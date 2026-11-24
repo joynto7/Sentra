@@ -346,7 +346,7 @@ export function AttackPathBand() {
 
   return (
     <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-14">
-      <div className="lg:col-span-5">
+      <div data-reveal="blur" className="lg:col-span-5">
         <h2 id="paths-title" className="text-3xl leading-tight font-medium tracking-tight text-balance text-white sm:text-4xl">
           See how single weaknesses combine.
         </h2>
@@ -371,7 +371,7 @@ export function AttackPathBand() {
         </ol>
       </div>
 
-      <figure ref={root} className="lg:col-span-7">
+      <figure ref={root} data-reveal="scale" data-reveal-delay="200" className="lg:col-span-7">
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-white p-4 shadow-[0_40px_80px_-40px_rgba(0,0,0,0.7)] sm:p-6">
           <div className="flex min-h-8 items-center justify-between gap-3">
             <p className="text-sm font-medium text-lp-ink">Attack path</p>
