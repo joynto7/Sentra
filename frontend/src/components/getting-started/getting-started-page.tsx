@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowRight,
   Check,
@@ -28,6 +29,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { type FirstSteps, getFirstSteps } from "@/lib/getting-started"
 import { firstName } from "@/lib/members"
+import { restartOnboarding } from "@/lib/onboarding"
 import { useCan } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 
@@ -129,6 +131,7 @@ function StepRow({ step, number, next }: { step: Step; number: number; next: boo
  */
 export function GettingStartedPage() {
   const session = useSession()
+  const router = useRouter()
   const organization = session.organization?.name ?? "your organization"
   usePageCrumbs([{ label: organization }, { label: "Getting Started" }])
   const canInvite = useCan("manage_members")
@@ -229,7 +232,7 @@ export function GettingStartedPage() {
           actions:
             canVerify && steps.unverified_target ? (
               <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
-                <Link href={`/targets/${steps.unverified_target.id}`}>
+                <Link href={`/targets/${steps.unverified_target.id}/verify`}>
                   <ShieldCheck aria-hidden="true" />
                   Verify ownership
                 </Link>
@@ -240,7 +243,7 @@ export function GettingStartedPage() {
         {
           key: "campaign_run",
           title: "Run your first campaign",
-          description: "Start with the recommended Quick Regression suite.",
+          description: "Start with the recommended Quick Regression suite. If your organization requires scope approval, a Security Manager approves it before it runs.",
           minutes: 5,
           done: steps.campaign_run_finished,
           doneText: "Your first campaign run has finished.",
@@ -251,7 +254,7 @@ export function GettingStartedPage() {
                 <Button asChild className="h-9 gap-1.5 hover:bg-primary-hover">
                   <Link href={`/campaigns/new?target=${steps.verified_target.id}&suite=QUICK-REGRESSION`}>
                     <Rocket aria-hidden="true" />
-                    Launch campaign
+                    Set up a campaign
                   </Link>
                 </Button>
               )}
@@ -277,7 +280,7 @@ export function GettingStartedPage() {
       </Button>
     ) : next?.key === "verification" && canVerify && steps?.unverified_target ? (
       <Button asChild variant="outline" className="h-9 gap-1.5">
-        <Link href={`/targets/${steps.unverified_target.id}`}>
+        <Link href={`/targets/${steps.unverified_target.id}/verify`}>
           <ShieldCheck aria-hidden="true" />
           Verify ownership
         </Link>
@@ -286,7 +289,7 @@ export function GettingStartedPage() {
       <Button asChild variant="outline" className="h-9 gap-1.5">
         <Link href={`/campaigns/new?target=${steps.verified_target.id}&suite=QUICK-REGRESSION`}>
           <Rocket aria-hidden="true" />
-          Launch campaign
+          Set up a campaign
         </Link>
       </Button>
     ) : null
@@ -300,6 +303,14 @@ export function GettingStartedPage() {
             ? `${organization} is set up. Its results grow with every campaign run.`
             : `Set up ${organization} and get your first results in about 15 minutes.`}
         </p>
+        <Button
+          type="button"
+          variant="link"
+          className="mt-1 h-7 px-0 text-[13px]"
+          onClick={() => void restartOnboarding().then(() => router.push("/welcome")).catch(() => toast.error("Could not open the setup. Try again."))}
+        >
+          Open the setup again
+        </Button>
         {allDone && (
           <Button asChild className="mt-3 h-9 hover:bg-primary-hover">
             <Link href="/dashboard">Open the Risk Dashboard</Link>
@@ -399,9 +410,7 @@ export function GettingStartedPage() {
           <h2 id="results-heading" className="text-[15px] font-semibold">
             No campaign results yet
           </h2>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            Your risk score, findings and trends appear here after your first campaign run.
-          </p>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">Results appear after your first campaign run.</p>
           {nextAction && <div className="mt-4">{nextAction}</div>}
         </section>
       )}

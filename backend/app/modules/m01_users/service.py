@@ -243,7 +243,7 @@ def login(
         raise AppError(INVALID_CREDENTIALS, code="invalid_credentials", status_code=401)
 
     # The password is correct, so it is safe to say why the login cannot continue.
-    if user.status == UserStatus.UNVERIFIED:
+    if user.status == UserStatus.UNVERIFIED and get_settings().require_email_verification:
         raise AppError(
             "Confirm your e-mail address first. We can send you a new link.",
             code="email_not_verified",
@@ -314,10 +314,18 @@ def _second_step_token(db: Session, raw: str | None) -> OneTimeToken:
     return token
 
 
+def can_have_session(user: User) -> bool:
+    """Active accounts always; an account that never confirmed its e-mail address only while the
+    deployment does not require the confirmation (a local sample stack)."""
+    return user.status == UserStatus.ACTIVE or (
+        user.status == UserStatus.UNVERIFIED and not get_settings().require_email_verification
+    )
+
+
 def pending_login(db: Session, raw: str | None) -> User:
     """The user of a login whose password was right and whose second step is still open."""
     user = db.get_one(User, _second_step_token(db, raw).user_id)
-    if user.status != UserStatus.ACTIVE:
+    if not can_have_session(user):
         raise NotAuthenticatedError(LOGIN_EXPIRED, code="login_expired")
     return user
 
@@ -385,7 +393,7 @@ def session_user(db: Session, raw: str) -> tuple[UserSession, User] | None:
         db.commit()
         return None
     user = db.get_one(User, session.user_id)
-    if user.status != UserStatus.ACTIVE:
+    if not can_have_session(user):
         return None
     if _now() - session.last_seen_at > timedelta(minutes=1):
         session.last_seen_at = _now()

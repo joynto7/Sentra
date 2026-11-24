@@ -143,9 +143,7 @@ export function LoginForm({
                 aria-describedby="sso-note"
               />
             </FormField>
-            <p id="sso-note" className="text-[13px] text-muted-foreground">
-              You&apos;ll be redirected to your company&apos;s login page.
-            </p>
+            <p id="sso-note" className="text-[13px] text-muted-foreground">You go to your company&apos;s login page.</p>
             <Button type="submit" className="h-9 w-full hover:bg-primary-hover" disabled={pending}>
               {pending ? "Taking you there…" : "Continue"}
             </Button>

@@ -31,7 +31,13 @@ export function SessionProvider({
         if (cancelled) return
         if (requireOrganization && !me.organization) {
           // A Platform Administrator without an organization works on the platform pages.
-          router.replace(me.platform_admin ? "/platform/accounts" : "/organizations/new")
+          router.replace(me.platform_admin ? "/platform" : "/organizations/new")
+          return
+        }
+        // The first time in an organization, the setup comes before the dashboard. It can be skipped,
+        // and then it is not asked again.
+        if (requireOrganization && me.organization && me.organization.onboarding_done === false && pathname !== "/welcome") {
+          router.replace("/welcome")
           return
         }
         setUser(me)
@@ -41,7 +47,7 @@ export function SessionProvider({
         // Remove the expired cookie, then log in again and come back here.
         await apiFetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined)
         forgetKeptLists() // Back to a list keeps nothing of this person (UX task 3.0)
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`)
+        router.replace(`/login?expired=1&next=${encodeURIComponent(pathname)}`) // says why: the login page explains an ended session
       })
     return () => {
       cancelled = true

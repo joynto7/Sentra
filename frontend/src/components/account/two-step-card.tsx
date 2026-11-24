@@ -70,9 +70,8 @@ export function TwoStepCard({ status, email, onChanged }: { status: MfaStatus; e
         </>
       ) : (
         <>
-          <p className="text-sm text-text-secondary">
-            Protect your account with a code from an authenticator app on your phone, in addition to your password.
-          </p>
+          <p className="text-sm text-text-secondary">A code from an authenticator app, on top of your password.</p>
+          <p className="text-xs text-muted-foreground">You also get recovery codes. Each works once.</p>
           <Button type="button" className="h-9 hover:bg-primary-hover" onClick={() => setSettingUp(true)}>
             Set up two-step verification
           </Button>

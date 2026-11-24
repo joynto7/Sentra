@@ -40,6 +40,22 @@ class UserOut(BaseModel):
     status: str
 
 
+class OnboardingOut(BaseModel):
+    done: bool
+    skipped: bool
+    step: int
+    answers: dict[str, str]
+    # The next question to ask after the setup (progressive profiling), or None
+    ask: str | None = None
+
+
+class OnboardingIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step: int | None = None
+    answers: dict[str, str] = Field(default_factory=dict, max_length=4)
+
+
 class MessageOut(BaseModel):
     message: str
 
@@ -56,6 +72,8 @@ class OrganizationOut(BaseModel):
     role_label: str
     is_current: bool = False
     status: str = "active"  # "suspended": shown in the organization menu, but it can't be opened
+    # False until the person has finished or skipped the first-run setup of this organization
+    onboarding_done: bool = True
 
 
 class MeOut(UserOut):
@@ -352,3 +370,13 @@ class FirstStepsOut(BaseModel):
     verified_target: FirstStepTarget | None  # the target for the first campaign (step 5)
     campaign_run_finished: bool
     done: list[str]  # organization, team, target, verification, campaign_run
+
+
+class MyInvitationOut(BaseModel):
+    """An open invitation to the logged-in person's own address (no link: that is in the e-mail)."""
+
+    organization: str
+    role: str
+    role_label: str
+    invited_by: str | None
+    expires_at: datetime

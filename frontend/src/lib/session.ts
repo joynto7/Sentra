@@ -8,6 +8,8 @@ export type CurrentOrganization = {
   role: Role
   role_label: string
   is_current: boolean
+  /** False until the person has finished or skipped the first-run setup of this organization */
+  onboarding_done?: boolean
 }
 
 /** The logged-in user, as returned by GET /api/v1/auth/me. */

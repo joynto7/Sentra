@@ -26,6 +26,7 @@ from app.modules.m01_users.schemas import (
     InvitationTokenIn,
     InviteIn,
     JoinedOut,
+    MyInvitationOut,
     OrganizationOut,
     PasswordIn,
     UserOut,
@@ -105,6 +106,24 @@ def remove_member(
 ) -> None:
     """UC-1.10 Remove Team Member, confirmed with the administrator's password."""
     invitations.remove_member(db, membership, user, membership_id, data.password, background)
+
+
+@public_router.get("/mine")
+def my_invitations(
+    user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> list[MyInvitationOut]:
+    """UC-1.9: what a person without a workspace yet may be waiting for, so that they are not led to
+    create an organization by mistake. Only the person's own address; never the link."""
+    return [
+        MyInvitationOut(
+            organization=organization,
+            role=invitation.role,
+            role_label=ROLE_LABELS[Role(invitation.role)],
+            invited_by=inviter,
+            expires_at=invitation.expires_at,
+        )
+        for invitation, organization, inviter in invitations.pending_for(db, user)
+    ]
 
 
 @public_router.post("/details")

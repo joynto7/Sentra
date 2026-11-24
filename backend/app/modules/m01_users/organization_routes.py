@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.models import Organization
-from app.modules.m01_users import getting_started, organizations
+from app.modules.m01_users import getting_started, onboarding, organizations
 from app.modules.m01_users.deps import current_membership, current_session, current_user
 from app.modules.m01_users.models import ROLE_LABELS, Membership, Role, User, UserSession
 from app.modules.m01_users.schemas import (
     FirstStepsOut,
     FirstStepTarget,
+    OnboardingIn,
+    OnboardingOut,
     OrganizationCreate,
     OrganizationOut,
 )
@@ -29,6 +31,7 @@ def organization_out(
         role_label=ROLE_LABELS[Role(membership.role)],
         is_current=organization.id == current_id,
         status=membership.status,
+        onboarding_done=bool((membership.onboarding or {}).get("done")),
     )
 
 
@@ -88,3 +91,50 @@ def switch_organization(
     membership = organizations.switch(db, user, session, organization_id)
     organization = db.get_one(Organization, organization_id)
     return organization_out(membership, organization, organization_id)
+
+
+def _onboarding_out(membership: Membership) -> OnboardingOut:
+    return OnboardingOut(**onboarding.state(membership), ask=onboarding.next_question(membership))
+
+
+@router.get("/current/onboarding")
+def get_onboarding(membership: Membership = Depends(current_membership)) -> OnboardingOut:
+    """Where the logged-in person is in the first-run setup of the current organization."""
+    return _onboarding_out(membership)
+
+
+@router.put("/current/onboarding")
+def save_onboarding(
+    data: OnboardingIn,
+    membership: Membership = Depends(current_membership),
+    db: Session = Depends(get_db),
+) -> OnboardingOut:
+    """Keeps the step reached and the choices made so far; nothing else changes."""
+    onboarding.save(db, membership, data.step, data.answers)
+    return _onboarding_out(membership)
+
+
+@router.post("/current/onboarding/complete")
+def complete_onboarding(
+    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> OnboardingOut:
+    onboarding.finish(db, membership, skipped=False)
+    return _onboarding_out(membership)
+
+
+@router.post("/current/onboarding/skip")
+def skip_onboarding(
+    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> OnboardingOut:
+    """Leaving the setup for now. It is not asked again; the first steps stay on the dashboard."""
+    onboarding.finish(db, membership, skipped=True)
+    return _onboarding_out(membership)
+
+
+@router.post("/current/onboarding/restart")
+def restart_onboarding(
+    membership: Membership = Depends(current_membership), db: Session = Depends(get_db)
+) -> OnboardingOut:
+    """Opens the setup again, for someone who skipped it or wants to go through it once more."""
+    onboarding.restart(db, membership)
+    return _onboarding_out(membership)

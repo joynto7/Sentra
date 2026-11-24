@@ -204,9 +204,7 @@ export function ProfilePage() {
                       aria-invalid={!!emailErrors.email || undefined}
                       aria-describedby={emailErrors.email ? "new-email-error new-email-help" : "new-email-help"}
                     />
-                    <p id="new-email-help" className="text-xs text-muted-foreground">
-                      We&apos;ll send a link to confirm a new address before it changes.
-                    </p>
+                    <p id="new-email-help" className="text-xs text-muted-foreground">A link confirms a new address.</p>
                   </FormField>
                   <FormField id="email-password" label="Confirm with your password" error={emailErrors.password}>
                     <PasswordInput
