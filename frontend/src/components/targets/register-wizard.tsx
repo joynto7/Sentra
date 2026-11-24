@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Check, Gauge, LockKeyhole, ShieldCheck } from "lucide-react"
@@ -13,6 +13,7 @@ import { SegmentedControl } from "@/components/sentra/segmented-control"
 import { ConnectionTestCard } from "@/components/targets/connection-test"
 import { CredentialFields, emptyRows } from "@/components/targets/credential-fields"
 import { FormatFields, type FormatValue } from "@/components/targets/format-fields"
+import { clearRegisterDraft, loadRegisterDraft, registerDraftAdapter, registerDraftKey } from "@/components/targets/register-draft"
 import { VerifyOwnership } from "@/components/targets/verify-ownership"
 import { TypeCards } from "@/components/targets/type-cards"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -27,6 +28,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { useSession } from "@/components/session-provider"
+import { DraftStatus } from "@/components/wizard/status"
+import { useDraftFeedback } from "@/components/wizard/use-draft-feedback"
 import { ApiError, fieldErrors } from "@/lib/api"
 import { useCan } from "@/lib/permissions"
 import {
@@ -100,21 +104,35 @@ export function RegisterWizard() {
   const heading = useRef<HTMLHeadingElement>(null)
   const firstRender = useRef(true)
 
-  const [step, setStep] = useState(1)
-  const [finished, setFinished] = useState<number[]>([])
-  const [type, setType] = useState<TargetType | "">("")
-  const [name, setName] = useState("")
-  const [endpoint, setEndpoint] = useState("")
-  const [environment, setEnvironment] = useState<Environment>("staging")
-  const [rate, setRate] = useState("20")
-  const [format, setFormat] = useState<FormatValue>({
-    request_format: "openai_chat",
-    request_template: EXAMPLE_TEMPLATE,
-    reply_path: "$.output.text",
-    tool_calls_path: "",
-  })
-  const [mode, setMode] = useState<AuthMode>("api_key")
-  const [rows, setRows] = useState<CredentialInput[]>(emptyRows("api_key"))
+  const session = useSession()
+  const draftId = registerDraftKey(session.id, session.organization?.id ?? "")
+  // An unfinished registration of this person in this organization, if one was kept in this browser.
+  // It holds no credential: those are asked for again.
+  const [kept] = useState(() => (typeof window === "undefined" ? null : loadRegisterDraft(draftId)))
+  const start = kept?.data
+
+  const [step, setStep] = useState(start?.step ?? 1)
+  const [finished, setFinished] = useState<number[]>(start ? Array.from({ length: start.step - 1 }, (_, i) => i + 1) : [])
+  const [type, setType] = useState<TargetType | "">(start?.type ?? "")
+  const [name, setName] = useState(start?.name ?? "")
+  const [endpoint, setEndpoint] = useState(start?.endpoint ?? "")
+  const [environment, setEnvironment] = useState<Environment>(start?.environment ?? "staging")
+  const [rate, setRate] = useState(start?.rate ?? "20")
+  const [format, setFormat] = useState<FormatValue>(
+    start?.format ?? {
+      request_format: "openai_chat",
+      request_template: EXAMPLE_TEMPLATE,
+      reply_path: "$.output.text",
+      tool_calls_path: "",
+    },
+  )
+  const [mode, setMode] = useState<AuthMode>(start?.mode ?? "api_key")
+  const [rows, setRows] = useState<CredentialInput[]>(emptyRows(start?.mode ?? "api_key"))
+  const [restoredAt, setRestoredAt] = useState<string | null>(kept?.savedAt ?? null)
+  const adapter = useMemo(() => registerDraftAdapter(draftId), [draftId])
+  const draft = useDraftFeedback(adapter, 500)
+  const { noteEdit } = draft
+  const skipFirst = useRef(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<"checking" | "saving" | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -123,6 +141,18 @@ export function RegisterWizard() {
   const [registered, setRegistered] = useState<Target | null>(null)
 
   const dirty = !saved && Boolean(type || name || endpoint || rows.some((r) => r.value))
+  // Only what a draft may hold is worth keeping; credentials are never part of it
+  const worthKeeping = !saved && Boolean(type || name.trim() || endpoint.trim())
+  const typedCredentials = rows.some((r) => r.value)
+
+  // The identity and the format are kept on this device a moment after the last change.
+  useEffect(() => {
+    if (skipFirst.current) {
+      skipFirst.current = false
+      return
+    }
+    if (worthKeeping) noteEdit({ step: Math.min(step, 3), type, name, endpoint, environment, rate, format, mode })
+  }, [worthKeeping, step, type, name, endpoint, environment, rate, format, mode, noteEdit])
 
   // A changed step moves the focus to its heading, so keyboard and screen-reader users follow.
   useEffect(() => {
@@ -134,18 +164,20 @@ export function RegisterWizard() {
   }, [step])
 
   // Leaving the page with unsaved input asks first (closing the tab, reloading).
+  // Credentials are the one thing a draft does not keep, so leaving with some typed asks first.
   useEffect(() => {
-    if (!dirty) return
+    if (saved || !typedCredentials) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
     window.addEventListener("beforeunload", warn)
     return () => window.removeEventListener("beforeunload", warn)
-  }, [dirty])
+  }, [saved, typedCredentials])
 
   if (canManage === false) {
     return (
       <EmptyState
+        page
         title="You can't register targets"
-        description="Only AI Application Developers register the applications that Sentra tests."
+        description="Ask an AI Application Developer."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/targets">Back to targets</Link>
@@ -219,6 +251,8 @@ export function RegisterWizard() {
         credentials: credentialsPayload(mode, rows),
       })
       setSaved(true)
+      clearRegisterDraft(draftId)
+      draft.reset()
       setRegistered(target)
       setFinished([1, 2, 3])
       setStep(4)
@@ -269,6 +303,7 @@ export function RegisterWizard() {
             Step {step} of {STEPS.length}
             {step > 1 && name.trim() ? ` · ${name.trim()}` : ""}
           </p>
+          {!verifying && <DraftStatus feedback={draft.feedback} onRetry={() => void draft.retry()} className="mt-1" />}
         </div>
         {!verifying && (
           <Button
@@ -280,6 +315,39 @@ export function RegisterWizard() {
           </Button>
         )}
       </div>
+
+      {restoredAt && !saved && (
+        <Alert className="mb-5" role="status">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              Your unfinished target from {new Date(restoredAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} was restored. Credentials are
+              never kept in a draft, so you enter them again. Nothing has been registered.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                clearRegisterDraft(draftId)
+                draft.reset()
+                setStep(1)
+                setFinished([])
+                setType("")
+                setName("")
+                setEndpoint("")
+                setEnvironment("staging")
+                setRate("20")
+                setFormat({ request_format: "openai_chat", request_template: EXAMPLE_TEMPLATE, reply_path: "$.output.text", tool_calls_path: "" })
+                setMode("api_key")
+                setRows(emptyRows("api_key"))
+                setRestoredAt(null)
+              }}
+            >
+              Start over
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,720px)]">
         <div className="flex flex-col gap-6">
@@ -349,10 +417,7 @@ export function RegisterWizard() {
                 </Button>
               }
             />
-            <p className="text-xs text-muted-foreground">
-              The target is saved as Unverified until the check succeeds. You can come back to it from its page at any
-              time.
-            </p>
+            <p className="text-xs text-muted-foreground">Saved as Unverified until the check succeeds.</p>
           </div>
         ) : (
         <form onSubmit={onSubmit} noValidate aria-labelledby="step-heading" className="min-w-0 rounded-[10px] border bg-card p-6">
@@ -443,10 +508,17 @@ export function RegisterWizard() {
             </div>
           )}
 
-          {step === 2 && <FormatFields value={format} onChange={setFormat} errors={errors} />}
+          {step === 2 && <FormatFields value={format} onChange={setFormat} errors={errors} type={type} />}
 
           {step === 3 && (
-            <CredentialFields mode={mode} rows={rows} onModeChange={setMode} onRowsChange={setRows} errors={errors} />
+            <>
+              <CredentialFields mode={mode} rows={rows} onModeChange={setMode} onRowsChange={setRows} errors={errors} />
+              <p className="mt-5 rounded-[10px] bg-muted/60 p-3.5 text-sm text-text-secondary">
+                <span className="font-medium text-foreground">What “Save target” does: </span>
+                it registers the target as Unverified, encrypts these credentials (never shown again, never kept in a draft) and then sends one connection-test request to the endpoint. No security
+                test runs and no campaign can run until you prove ownership on the next step.
+              </p>
+            </>
           )}
 
           <div className="mt-8 flex items-center justify-between gap-3 border-t pt-5">
@@ -470,8 +542,10 @@ export function RegisterWizard() {
       <Dialog open={confirmCancel} onOpenChange={setConfirmCancel}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Discard this target?</DialogTitle>
-            <DialogDescription>What you entered isn&apos;t saved. Nothing is registered.</DialogDescription>
+            <DialogTitle>Leave this registration?</DialogTitle>
+            <DialogDescription>
+              Nothing is registered. Your answers so far, without any credentials, are kept on this device, so you can carry on later, or you can discard them.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
@@ -479,15 +553,19 @@ export function RegisterWizard() {
                 Keep editing
               </Button>
             </DialogClose>
+            <Button variant="outline" className="h-9" onClick={() => router.push("/targets")}>
+              Leave, keep the draft
+            </Button>
             <Button
               variant="destructive"
               className="h-9"
               onClick={() => {
+                clearRegisterDraft(draftId)
                 setSaved(true)
                 router.push("/targets")
               }}
             >
-              Discard
+              Discard the draft
             </Button>
           </DialogFooter>
         </DialogContent>

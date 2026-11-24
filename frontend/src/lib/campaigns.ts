@@ -65,6 +65,8 @@ export const APPROVAL_STEP_LABEL: Record<ApprovalAction, string> = {
 /** What Screen 35 shows: the scope, how it got there, and whether this user may decide. */
 export type ApprovalView = {
   campaign: CampaignDetail
+  /** A fingerprint of the scope shown; a decision says which scope it read, and a changed one is not decided on */
+  scope_digest: string
   /** Whether this organization requires approval at all */
   required: boolean
   timeline: ApprovalStep[]
@@ -225,8 +227,8 @@ export const getApproval = (code: string, signal?: AbortSignal) =>
 export const submitForApproval = (code: string, note: string | null) =>
   apiFetch<ApprovalView>(approvalPath(code), post({ note }))
 /** UC-5.2 steps 3 and 3a: a rejection needs a reason. */
-export const decideApproval = (code: string, approve: boolean, reason: string | null) =>
-  apiFetch<ApprovalView>(`${approvalPath(code)}/decision`, post({ approve, reason }))
+export const decideApproval = (code: string, approve: boolean, reason: string | null, reviewed?: string) =>
+  apiFetch<ApprovalView>(`${approvalPath(code)}/decision`, post({ approve, reason, reviewed }))
 
 export type RunStatus = "queued" | "running" | "paused" | "completed" | "stopped" | "cancelled"
 

@@ -47,6 +47,7 @@ import { formatDateTime } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
 const ACTIVE = ["queued", "running", "paused"]
+const SETTLE_MS = 10_000
 const TICK_MS = 1000
 
 /** "31 min", "2 h 29 min": how long something has been going on, or how long is left. */
@@ -120,6 +121,7 @@ function StatusChip({ status }: { status: RunDetail["status"] }) {
 export function RunMonitor({ code, number }: { code: string; number: number }) {
   const canPause = useCan("pause_campaign_runs")
   const canStop = useCan("stop_campaign_runs")
+  const [settling, setSettling] = useState<{ what: "pause" | "stop"; at: string } | null>(null)
   const [run, setRun] = useState<RunDetail | null>(null)
   // Whether the live stream may open: once the run is loaded, it follows the events from the
   // start of the run's stream, so a monitor that opens in the middle of a run still shows what
@@ -220,6 +222,12 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
       setRun(updated)
       setConfirmStop(false)
       setReason("")
+      // The status is the recorded request: the worker is not asked to confirm. An attempt already on its way is still
+      // recorded, so the counts can rise a moment longer; this is said until it has surely passed.
+      if (what !== "resume") {
+        setSettling({ what, at: new Date().toISOString() })
+        setTimeout(() => setSettling(null), SETTLE_MS)
+      } else setSettling(null)
       toast.success(
         what === "pause"
           ? "The run pauses before its next attempt"
@@ -238,7 +246,6 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
     return (
       <EmptyState
         title="Campaign run not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/campaigns">Back to campaigns</Link>
@@ -257,8 +264,9 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
     )
   }
 
-  const planned = run.attempts_planned || run.attempt_budget
-  const percent = planned ? Math.min(100, Math.round((run.attempts_sent / planned) * 100)) : 0
+  // The plan is known once the worker has laid it out; the budget is only a ceiling, never shown as the plan.
+  const planned = run.attempts_planned
+  const percent = planned > 0 ? Math.min(100, Math.round((run.attempts_sent / planned) * 100)) : null
   const severities = findings.reduce<SeverityCounts>(
     (counts, finding) => ({ ...counts, [finding.severity]: (counts[finding.severity] ?? 0) + 1 }),
     { critical: 0, high: 0, medium: 0, low: 0, informational: 0 },
@@ -325,12 +333,33 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
         </div>
       </div>
 
+      {settling && (
+        <p role="status" className="rounded-[10px] border border-primary/30 bg-primary/5 p-3 text-[13px]">
+          {settling.what === "pause" ? "Pause" : "Stop"} recorded at {new Date(settling.at).toLocaleTimeString("en-GB")}. No new attempt is started. One that was already on its way is still recorded
+          and evaluated, so the count below can rise for a few seconds. The status shows the request, not a report from the worker.
+        </p>
+      )}
+      {Boolean((run.settings as Record<string, unknown> | undefined)?.adaptive_agent) && (
+        <p className="text-xs text-muted-foreground">The adaptive agent is on, but no refinement is recorded yet. Every attempt above is from the planned tests.</p>
+      )}
+      {ACTIVE.includes(run.status) && canPause === false && (
+        <p className="text-xs text-muted-foreground">
+          {canStop ? "Only a Security Analyst can pause or resume a run. You can stop it." : "Only a Security Analyst can pause, resume or stop a run, and an AI Application Developer can stop one."}
+        </p>
+      )}
+
       <section aria-label="Progress" className="space-y-3 rounded-[10px] border bg-card p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm">
-            <span className="tabular font-semibold">{formatCount(run.attempts_sent)}</span> of{" "}
-            <span className="tabular">{formatCount(planned)}</span> planned attempts
-            <span className="tabular text-muted-foreground"> ({percent} %)</span>
+            <span className="tabular font-semibold">{formatCount(run.attempts_sent)}</span>
+            {percent === null ? (
+              <> attempts sent · the plan is not laid out yet, so no percentage is shown</>
+            ) : (
+              <>
+                {" "}of <span className="tabular">{formatCount(planned)}</span> planned attempts
+                <span className="tabular text-muted-foreground"> ({percent} %)</span>
+              </>
+            )}
           </p>
           <p className="tabular text-sm text-muted-foreground">
             Budget {formatCount(run.attempts_sent)} of {formatCount(run.attempt_budget)}
@@ -339,14 +368,15 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
         <div
           className="h-2 w-full overflow-hidden rounded-full bg-muted"
           role="progressbar"
-          aria-valuenow={percent}
+          aria-valuenow={percent ?? undefined}
+          aria-valuetext={percent === null ? "Not known yet" : undefined}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-label="Attempts sent"
         >
           <div
             className={cn("h-full rounded-full", run.status === "paused" ? "bg-warning" : "bg-primary")}
-            style={{ width: `${Math.max(percent, 1)}%` }}
+            style={{ width: percent === null ? "0%" : `${Math.max(percent, 1)}%` }}
           />
         </div>
         <p className="text-sm text-text-secondary">{run.status_message}</p>
@@ -576,9 +606,6 @@ export function RunMonitor({ code, number }: { code: string; number: number }) {
               placeholder="The target is being deployed"
               className="h-9"
             />
-            <p className="text-xs text-muted-foreground">
-              It is recorded in the audit log and told to whoever launched the run.
-            </p>
           </div>
           <DialogFooter>
             <DialogClose asChild>

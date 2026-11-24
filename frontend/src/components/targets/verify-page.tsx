@@ -40,7 +40,6 @@ export function VerifyTargetPage({ id }: { id: string }) {
     return (
       <EmptyState
         title="Target not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/targets">Back to targets</Link>

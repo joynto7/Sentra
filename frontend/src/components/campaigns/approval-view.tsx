@@ -81,6 +81,8 @@ export function CampaignApprovalView({ code }: { code: string }) {
   const [reasonError, setReasonError] = useState<string>()
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
+  // The scope changed while the manager was reading it: said until they have read the new one
+  const [changed, setChanged] = useState(false)
 
   usePageCrumbs([
     { label: approval?.campaign.name ?? code, href: `/campaigns/${code}` },
@@ -110,7 +112,6 @@ export function CampaignApprovalView({ code }: { code: string }) {
     return (
       <EmptyState
         title="Campaign not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/campaigns">Back to campaigns</Link>
@@ -152,8 +153,10 @@ export function CampaignApprovalView({ code }: { code: string }) {
     setBusy(true)
     setReasonError(undefined)
     try {
-      const saved = await decideApproval(campaign.code, approve, approve ? null : reason.trim() || null)
+      // The decision names the scope that was read: if the schedule changed meanwhile, nothing is decided
+      const saved = await decideApproval(campaign.code, approve, approve ? null : reason.trim() || null, approval?.scope_digest)
       setApproval(saved)
+      setChanged(false)
       setRejecting(false)
       setReason("")
       toast.success(
@@ -162,7 +165,11 @@ export function CampaignApprovalView({ code }: { code: string }) {
       )
     } catch (error) {
       const field = fieldErrors(error).reason
-      if (field) setReasonError(field)
+      if (error instanceof ApiError && error.code === "scope_changed") {
+        setChanged(true)
+        setRejecting(false)
+        load()
+      } else if (field) setReasonError(field)
       else toast.error(error instanceof ApiError ? error.message : "The decision could not be saved.")
     } finally {
       setBusy(false)
@@ -249,7 +256,7 @@ export function CampaignApprovalView({ code }: { code: string }) {
                 {campaign.suites.length} ({estimate.tests} tests
                 {estimate.skipped ? `, ${estimate.skipped} skipped` : ""})
                 <div className="text-xs text-muted-foreground">
-                  {campaign.suites.map((suite) => suite.name).join(" · ")}
+                  {campaign.suites.map((suite) => `${suite.name} v${suite.version}`).join(" · ")}
                 </div>
               </Row>
               <Row term="Adaptive testing agent">{campaign.adaptive_agent ? "On" : "Off"}</Row>
@@ -312,6 +319,17 @@ export function CampaignApprovalView({ code }: { code: string }) {
             <h2 id="decision-heading" className="text-[15px] font-semibold">
               {canDecide ? "Your decision" : "Decision"}
             </h2>
+
+            {changed && (
+              <p role="alert" className="rounded-[7px] border border-warning/50 bg-warning/10 p-3 text-sm">The scope changed, so nothing was decided. Read it, then decide.</p>
+            )}
+
+            {canDecide && waiting && (
+              <p className="rounded-[7px] bg-muted/60 p-3 text-[13px] text-text-secondary">
+                <span className="font-medium text-foreground">Approve</span> lets the campaign run; it starts nothing by itself, the analyst launches it or its schedule does.{" "}
+                <span className="font-medium text-foreground">Reject</span> needs a reason, and {campaign.created_by ?? "the analyst"} can change the campaign and ask again. Your decision is for the scope shown here.
+              </p>
+            )}
 
             {decision && (
               <p className="text-sm">
@@ -378,11 +396,7 @@ export function CampaignApprovalView({ code }: { code: string }) {
             <h2 id="why-heading" className="text-sm font-semibold text-foreground">
               Why this step?
             </h2>
-            <p>
-              A campaign sends security tests to a real application. Where an organization requires
-              it, a Security Manager checks what will be sent, how much of it and how fast, before
-              anything runs.
-            </p>
+            <p>A Security Manager checks what will be sent before anything runs.</p>
             <p>Every decision is recorded with the manager who made it, in the audit log.</p>
           </aside>
         </div>

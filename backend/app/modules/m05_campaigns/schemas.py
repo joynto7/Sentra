@@ -188,6 +188,7 @@ class ApprovalView(BaseModel):
     """Screen 35: the scope to decide on, how it got there, and whether this user may decide."""
 
     campaign: CampaignDetail
+    scope_digest: str  # a fingerprint of the scope shown; a decision can say which one it read
     required: bool  # whether this organization requires approval at all
     timeline: list[ApprovalStep]
     can_decide: bool
@@ -207,6 +208,8 @@ class ApprovalDecisionIn(BaseModel):
 
     approve: bool
     reason: str | None = Field(default=None, max_length=2000)
+    # The `scope_digest` of the scope the manager read; a changed scope is then not decided on
+    reviewed: str | None = Field(default=None, max_length=64)
 
 
 # ---------------------------------------------------------------- campaign runs (FR-5.4, FR-5.6)

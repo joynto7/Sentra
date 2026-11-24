@@ -19,6 +19,8 @@ Three rules decide everything here:
 - **Nobody approves their own campaign** (quality requirement 3), not even a Security Manager.
 """
 
+import hashlib
+import json
 import uuid
 
 from sqlalchemy import select
@@ -192,11 +194,44 @@ def submit(db: Session, membership: Membership, code: str, note: str | None) -> 
 # ---------------------------------------------------------------- the decision (steps 3 and 3a)
 
 
+# What a decision is about: everything the Security Manager is shown on Screen 35. It is hashed, so
+# the decision can say which version of it was read (the schedule can still change while a campaign
+# waits for a decision).
+SCOPE_FIELDS = (
+    "target",
+    "suites",
+    "adaptive_agent",
+    "attempt_budget",
+    "request_rate",
+    "repetitions",
+    "window_start",
+    "window_end",
+    "time_zone",
+    "schedule",
+    "based_on_threat_model",
+)
+SCOPE_CHANGED = "The scope changed after you opened it. Read the new scope before you decide."
+
+
+def scope_digest(detail: dict) -> str:
+    """A short fingerprint of the scope as the campaign's detail shows it."""
+    scope = {key: detail.get(key) for key in SCOPE_FIELDS}
+    return hashlib.sha256(json.dumps(scope, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
 def decide(
-    db: Session, membership: Membership, code: str, approve: bool, reason: str | None
+    db: Session,
+    membership: Membership,
+    code: str,
+    approve: bool,
+    reason: str | None,
+    reviewed: str | None = None,
 ) -> Campaign:
     """UC-5.2 steps 3 and 4, or 3a: the Security Manager's decision, recorded with them and the
-    moment, and the analyst is told."""
+    moment, and the analyst is told. When the caller says which scope it read (`reviewed`), a scope
+    that has changed since is not decided on."""
+    from app.modules.m05_campaigns import service
+
     campaign = _campaign(db, membership.organization_id, code)
     if not allowed(membership.role, Action.APPROVE_CAMPAIGN_SCOPE):
         raise PermissionDeniedError(NOT_A_MANAGER)
@@ -207,6 +242,10 @@ def decide(
     reason = _clean(reason)
     if not approve and not reason:
         raise FieldValidationError("reason", NO_REASON)
+    if reviewed is not None:
+        current = scope_digest(service.get_campaign(db, membership.organization_id, code))
+        if reviewed != current:
+            raise ConflictError(SCOPE_CHANGED, code="scope_changed")
 
     campaign.approval_status = ApprovalStatus.APPROVED if approve else ApprovalStatus.REJECTED
     action = ApprovalAction.APPROVED if approve else ApprovalAction.REJECTED
@@ -269,8 +308,10 @@ def view(db: Session, membership: Membership, code: str) -> dict:
 
     campaign = _campaign(db, membership.organization_id, code)
     reason = _why_not(db, membership, campaign)
+    detail = service.get_campaign(db, membership.organization_id, code)
     return {
-        "campaign": service.get_campaign(db, membership.organization_id, code),
+        "campaign": detail,
+        "scope_digest": scope_digest(detail),
         "required": required(db, membership.organization_id),
         "timeline": timeline(db, campaign),
         "can_decide": reason is None,

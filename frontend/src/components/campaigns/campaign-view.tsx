@@ -130,10 +130,7 @@ function ScheduleCard({
           {schedule.created_by && <Row term="Runs with the permissions of">{schedule.created_by}</Row>}
         </dl>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          This campaign runs only when someone launches it. A schedule starts it by itself, with the
-          permissions of whoever saved it.
-        </p>
+        <p className="text-sm text-muted-foreground">Runs only when launched, or on its schedule.</p>
       )}
 
       {canManage && (
@@ -255,7 +252,6 @@ export function CampaignView({ code }: { code: string }) {
     return (
       <EmptyState
         title="Campaign not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/campaigns">Back to campaigns</Link>
@@ -296,11 +292,17 @@ export function CampaignView({ code }: { code: string }) {
           </span>
         </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {/* A returning analyst's shortcut: the builder opens with this campaign's settings */}
+        <Button asChild variant="outline" className="h-9">
+          <Link href={`/campaigns/new?from=${encodeURIComponent(campaign.code)}`}>Duplicate</Link>
+        </Button>
         <LaunchRunButton
           code={campaign.code}
           targetVerified={target?.status === "verified"}
           approvalStatus={approval}
         />
+        </div>
       </div>
 
       {/* FR-5.2: while a campaign needs a decision, the page says so where the eye lands first. */}
@@ -358,9 +360,6 @@ export function CampaignView({ code }: { code: string }) {
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-muted-foreground">
-              Each run uses the suites&apos; versions of that moment and records them.
-            </p>
           </Card>
 
           <Card title="Limits">
@@ -400,9 +399,7 @@ export function CampaignView({ code }: { code: string }) {
             {runs === null ? (
               <Skeleton className="h-16 w-full" />
             ) : runs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not run yet. A run sends this campaign&apos;s tests to the target and can be followed live.
-              </p>
+              <p className="text-sm text-muted-foreground">Not run yet.</p>
             ) : (
               <ul className="space-y-2">
                 {runs.slice(0, 5).map((run) => (
