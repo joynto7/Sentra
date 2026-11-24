@@ -1,0 +1,363 @@
+# The product guide the assistant answers from. Each topic is one thing a person may ask about.
+# It is read in two places (knowledge.py): the best topics for a question go into the model's
+# instructions, and with no model configured the assistant answers from them alone.
+#
+# Write what is true of the product and nothing about attacks: no payloads belong here.
+# `href` is the page the topic is about; `roles` says who does it (all roles when omitted).
+# Values that contain ": " are quoted.
+
+- id: what-is-sentra
+  title: What Sentra is
+  keywords: [sentra, what, product, overview, about, platform, purpose]
+  href: /getting-started
+  body: >
+    Sentra tests AI applications (chatbots, retrieval-augmented apps and tool-using agents) for
+    security weaknesses before attackers find them. You register a target, prove you own it, let
+    Sentra model its threats, run campaigns of tests against it, review the findings, and get fixes
+    you approve. Everything runs in your organization only.
+  steps:
+    - Register a target and verify that you own it.
+    - Review its threat model and choose test suites.
+    - Create a campaign and launch a run.
+    - Triage the findings, request fixes and approve them.
+    - Report the result.
+
+- id: roles
+  title: Roles and what each can do
+  keywords: [role, roles, permission, permissions, access, allowed, cannot, can't, analyst, developer, manager, admin, forbidden]
+  href: /admin/members
+  body: >
+    There are four roles. A Security Analyst runs campaigns, reviews threat models, triages
+    findings and generates reports. An AI Application Developer registers targets, proves
+    ownership, and requests and applies fixes. A Security Manager approves campaign scope and fixes
+    and reads risk and reports. An Organization Administrator manages members, roles, API keys and
+    organization settings. If something is refused, your role does not allow it; ask an
+    administrator to change your role.
+
+- id: register-target
+  title: Register a target
+  keywords: [register, add, new, target, application, app, chatbot, agent, rag, endpoint, onboard]
+  href: /targets/new
+  roles: [target_owner]
+  body: >
+    A target is the AI application you want tested. Registering needs a name, a type (chatbot, RAG
+    application or tool-using agent), the address Sentra sends requests to, and an environment
+    (staging or production). Sentra sends nothing to it yet. Credentials, if the target needs them,
+    are typed on the target's own page and are never shown again; I never take them in chat.
+  steps:
+    - Open Targets and choose Register target (or ask me to prepare it).
+    - Give the name, type, address and environment.
+    - Add credentials on the target's page if it needs them.
+    - Verify ownership, then test the connection.
+
+- id: verify-ownership
+  title: Prove you own a target
+  keywords: [verify, verification, ownership, own, dns, txt, well-known, token, prove, verified, unverified]
+  href: /targets
+  roles: [target_owner]
+  body: >
+    Campaigns only run against targets whose ownership is verified. Sentra gives you a token. You
+    publish it either in a DNS TXT record or in a file under /.well-known/ on the target's host,
+    then choose Check now. Only a successful check verifies a target; nothing sets it by hand.
+  steps:
+    - Open the target and choose Verify ownership.
+    - Publish the token by DNS TXT record or well-known file.
+    - Choose Check now.
+
+- id: connection-test
+  title: Test a target's connection
+  keywords: [connection, test, connect, reach, reachable, unreachable, timeout, endpoint, credentials, 401, 403]
+  href: /targets
+  body: >
+    Test connection sends one harmless request to the target to show that Sentra can reach it and
+    that the credentials work. If it fails, the result says why: a wrong address, a refused
+    credential or a timeout. Fix the address or credentials on the target's page and test again.
+
+- id: target-profile
+  title: The target profile
+  keywords: [profile, mapping, map, knowledge, tools, canary, canaries, benign, capabilities]
+  href: /targets
+  body: >
+    The profile describes what the target can do (its tools and knowledge) so tests and threat
+    models fit it. Sentra maps it from the target; you review and correct it. Canaries are harmless
+    marker values placed in the target so a leak can be recognised.
+
+- id: threat-models
+  title: Threat models
+  keywords: [threat, model, models, threats, owasp, atlas, framework, approve, version, baseline, generate]
+  href: /threat-models
+  roles: [security_analyst]
+  body: >
+    A threat model lists what could go wrong with a target, mapped to OWASP and MITRE ATLAS.
+    Sentra drafts it from the target's profile; an analyst reviews it, edits it and approves a
+    version. Campaigns are based on the approved version, and the builder preselects the suites
+    that cover its threats. Only a person approves a version.
+  steps:
+    - Open the target's Threat model tab and choose Generate threat model.
+    - Review and edit the threats.
+    - Approve the version.
+
+- id: test-library
+  title: The test library and suites
+  keywords: [test, tests, library, suite, suites, custom, catalogue, definition, owasp, coverage]
+  href: /test-library
+  body: >
+    The test library holds the built-in tests, each with its objective, how success is decided
+    and the recommended mitigation. Tests are grouped in suites; a campaign runs one or more
+    suites. Analysts can write custom tests and build their own suites. Tests contain no attack
+    text of their own that leaves Sentra's lab and verified targets.
+
+- id: create-campaign
+  title: Create a campaign
+  keywords: [campaign, campaigns, create, new, build, builder, suites, budget, attempts, schedule, rate, window]
+  href: /campaigns/new
+  roles: [security_analyst]
+  body: >
+    A campaign says which target to test, with which suites, how many attempts at most (the
+    budget), how fast (requests per minute) and when. Creating it sends nothing; a run starts when
+    it is launched or scheduled. The builder shows the tests that will run and the cost the judge
+    may add before you commit.
+  steps:
+    - Open Campaigns and choose Create campaign.
+    - Choose the target and suites, set the budget and rate.
+    - Choose when it runs, or launch it later.
+
+- id: launch-run
+  title: Launch, pause and stop a run
+  keywords: [launch, run, runs, start, pause, resume, stop, monitor, progress, live, running, halt, emergency]
+  href: /campaigns
+  body: >
+    Launching a campaign starts a run, which sends test traffic to the target within the budget
+    and rate you set. You can follow it live, pause and resume it (analysts), or stop it for good
+    (analysts and developers, as an emergency measure). Runs only start against a verified target,
+    and within the organization's monthly limits.
+  steps:
+    - Open the campaign and choose Launch campaign.
+    - Follow the run on its page.
+    - Pause, resume or stop it if needed.
+
+- id: scope-approval
+  title: Scope approval
+  keywords: [approval, approve, scope, manager, requires, decision, reject, submit, sign-off]
+  href: /campaigns
+  roles: [security_manager]
+  body: >
+    An organization can require a Security Manager to approve a campaign's scope and budget before
+    it can be launched. The analyst submits it; the manager approves or rejects with a reason.
+    Nobody decides on a campaign they created themselves.
+
+- id: scheduling
+  title: Schedule a campaign
+  keywords: [schedule, scheduled, recurring, daily, weekly, monthly, once, later, automatic, window, time]
+  href: /campaigns
+  body: >
+    A campaign can run once at a chosen time or repeat daily, weekly or monthly. A scheduled run
+    uses the permissions of the person who created the schedule and is skipped, with the reason
+    recorded, if the target is no longer verified or a limit is reached. Schedules can be paused
+    and resumed.
+
+- id: findings
+  title: Findings
+  keywords: [finding, findings, vulnerability, issue, result, severity, evidence, open, status, new, confirmed, false, positive]
+  href: /findings
+  body: >
+    A finding is a weakness a test found. It has a severity, a status (new, requires
+    confirmation, confirmed, false positive, merged, fixed and verified, or reopened), the
+    evidence behind it, a reproducibility score and an owner. Findings the system is unsure of
+    start as requires confirmation so a person decides.
+
+- id: triage
+  title: Triage a finding
+  keywords: [triage, confirm, false positive, merge, duplicate, assign, owner, severity, change, comment]
+  href: /findings
+  roles: [security_analyst]
+  body: >
+    Triage is the analyst's decision on a finding: confirm it, mark it a false positive (a reason
+    is needed), or merge it into a duplicate. You can also change its severity with a
+    justification, assign an owner and comment. Each change is recorded in the finding's history
+    and the audit log.
+
+- id: risk-score
+  title: Risk score and severity
+  keywords: [risk, score, rating, severity, band, critical, high, medium, low, dashboard, calculated, method]
+  href: /dashboard
+  body: >
+    The risk dashboard shows each target's risk score and band, the open findings by severity,
+    what awaits triage or a fix, and trends. A target has no score until its ownership is verified
+    and it has had a campaign run. The method page explains how severity and score are calculated.
+
+- id: attack-paths
+  title: Attack paths and framework coverage
+  keywords: [attack, path, paths, chain, framework, coverage, owasp, atlas, matrix, covered, gap]
+  href: /attack-paths
+  body: >
+    Attack paths show how weaknesses in a target could be chained. Framework coverage shows which
+    OWASP and MITRE ATLAS items your tests and findings cover and where there are gaps.
+
+- id: remediation
+  title: Fix proposals (remediation)
+  keywords: [remediation, fix, fixes, proposal, remediate, mitigation, request, approve, reject, version, implement, apply]
+  href: /remediation
+  body: >
+    For a confirmed finding you can request a fix proposal. Sentra drafts it; developers and
+    analysts adapt it, and a manager or analyst approves it. Only a person approves, and never a
+    version they adapted themselves. Fixes are then applied in the application or deployed as
+    Sentra Shield policies, and Sentra retests automatically once they are in effect.
+  steps:
+    - Open the finding and choose Request remediation (or ask me).
+    - Review and adapt the draft.
+    - Approve it, apply the fix, and let the retest confirm it.
+
+- id: retest
+  title: Retests and before-and-after
+  keywords: [retest, retesting, verify, fixed, before, after, comparison, regression, reopened, benign]
+  href: /remediation
+  body: >
+    When every fix of an approved proposal is in effect, Sentra retests the finding by itself and
+    compares before and after, including normal requests the fix might have broken. A finding is
+    closed as fixed and verified only when the retest passes; if it comes back it is reopened.
+
+- id: shield
+  title: Sentra Shield
+  keywords: [shield, gateway, policy, policies, deploy, rollback, protect, block, filter, connect]
+  href: /shield
+  roles: [target_owner]
+  body: >
+    Sentra Shield is a gateway in front of a target that enforces policies from approved fixes. You
+    connect a gateway to a target, deploy policies, and can roll a policy back. The Targets list
+    shows each target's Shield state.
+
+- id: reports
+  title: Reports
+  keywords: [report, reports, export, pdf, json, executive, technical, download, schedule, summary]
+  href: /reports
+  body: >
+    Reports come as executive (plain language) or technical (every finding with evidence and
+    remediation), as PDF or JSON, for the whole organization, one target or one run. They can be
+    scheduled and are delivered as links that need a login, never as attachments.
+
+- id: notifications
+  title: Notifications
+  keywords: [notification, notifications, alert, email, bell, unread, preferences, notify]
+  href: /notifications
+  body: >
+    Notifications tell you about runs, findings assigned to you and approvals waiting for you. In
+    Preferences you choose, per event, whether it appears in the app, by email or both.
+
+- id: api-keys-webhooks
+  title: API keys and webhooks
+  keywords: [api, key, keys, webhook, webhooks, integration, token, rest, automation, scope, expire]
+  href: /integrations/api-keys
+  roles: [org_admin]
+  body: >
+    Administrators create API keys with chosen scopes, targets and an expiry for other tools; the
+    key is shown once. Webhooks send event summaries (never evidence or secrets) to an address you
+    set. Both are managed on their pages, never in chat, because they involve secrets.
+
+- id: ci-gate
+  title: The CI/CD security gate
+  keywords: [ci, cd, gate, pipeline, build, cli, fail, deploy, github, jenkins, gitlab, block]
+  href: /integrations
+  roles: [security_analyst]
+  body: >
+    A security gate runs a campaign from your pipeline and fails the build when it finds issues of
+    the severities you choose (and reopened ones, if you ask). It uses the Sentra CLI with an API
+    key.
+
+- id: audit-log
+  title: The audit log
+  keywords: [audit, log, history, who, trail, changes, tamper, accountability, record]
+  href: /audit-log
+  roles: [org_admin]
+  body: >
+    The audit log records who did what and when, with the address it came from, in a hash chain
+    that shows if an entry was changed. Only Organization Administrators read it. Actions I take
+    for you are recorded as yours.
+
+- id: members
+  title: Members, invitations and roles
+  keywords: [member, members, invite, invitation, user, users, team, role, remove, suspend, add]
+  href: /admin/members
+  roles: [org_admin]
+  body: >
+    Administrators invite people by email, choose their role, change roles and suspend or remove
+    members on the Members page. This is done on its page, not in chat.
+
+- id: security-settings
+  title: Two-step verification and security settings
+  keywords: [mfa, two-step, 2fa, authenticator, security, password, sso, login, log in, required]
+  href: /account/security
+  body: >
+    You can turn on two-step verification with an authenticator app in your account's Security
+    page, and an administrator can require it for the whole organization. Sensitive settings ask
+    for your password again. I can't change security settings for you.
+
+- id: data-and-ai
+  title: Data sharing and AI models
+  keywords: [data, ai, llm, model, models, local, provider, privacy, masking, sharing, external, retention, delete]
+  href: /admin/data-and-ai
+  roles: [org_admin]
+  body: >
+    Sentra masks secrets and personal data before anything goes to a model. An administrator can
+    restrict the organization to local models only, so no data leaves the platform; features that
+    need a model then work without one where they can. Retention settings decide how long data is
+    kept.
+
+- id: lab
+  title: The Security Lab and benchmarks
+  keywords: [lab, security lab, benchmark, benchmarks, practice, safe, sandbox, vulnerable, demo, accuracy, precision]
+  href: /lab
+  roles: [security_analyst]
+  body: >
+    The Security Lab contains deliberately vulnerable practice targets that run on the platform, so
+    you can try Sentra safely. Benchmarks run Sentra against them and measure how many of the known
+    weaknesses it finds.
+
+- id: limits
+  title: Monthly limits and cost
+  keywords: [limit, limits, quota, cost, budget, usage, monthly, spend, exceeded, reached]
+  href: /campaigns
+  body: >
+    Each organization has monthly limits on campaign runs, attempts and model cost, set by a
+    platform administrator. You are warned as you approach a limit, and a run that would pass it is
+    not launched. The campaign builder shows what you have used.
+
+- id: safety
+  title: Safety rules
+  keywords: [safe, safety, rules, authorised, authorized, permission, legal, production, allowed, scope]
+  href: /getting-started
+  body: >
+    Sentra only tests targets whose ownership you proved, at the rate and budget you set, and never
+    sends more than that. Production targets need extra care: prefer staging. Everything you do is
+    audited. I only act with your confirmation, and only with what your role allows.
+
+- id: assistant
+  title: What the assistant can do
+  keywords: [assistant, chat, bot, help, guide, ask, do, can you, capabilities, confirm, assistant]
+  href: /getting-started
+  body: >
+    I answer questions about Sentra and do work for you: look up targets, campaigns, findings and
+    risk; register and verify targets; generate threat models; create and launch campaigns; triage
+    findings; request and approve fixes; and generate reports. Anything that changes data is shown
+    to you first and runs only when you confirm. I use your own permissions, so I can do nothing
+    you could not do yourself, and I never take passwords, keys or tokens in chat.
+
+- id: autopilot
+  title: Autopilot, the whole assessment in one go
+  keywords: [autopilot, automatic, automate, everything, whole, full, assessment, end to end, one click, central, hands-free]
+  href: /autopilot
+  roles: [security_analyst]
+  body: >
+    The autopilot assesses one verified target from start to finish. It makes the threat model,
+    creates a campaign of every test that applies, launches the run under the target's safe rate and
+    the attempt budget, and drafts remediation proposals for the most severe findings. It stops
+    and waits whenever a person must decide: the threat model, the campaign's scope where the
+    organization requires approval, and every fix are approved by people, never by the autopilot.
+    It can be stopped at any time, and stopping it also stops the run.
+  steps:
+    - Open Autopilot and choose a verified target.
+    - Read the plan, which shows the tests, the attempts, the time and what you still approve.
+    - Press Start the autopilot and watch it go from stage to stage.
+    - Approve the threat model when it waits for you.
+    - Review the findings and approve the fixes you want.
+

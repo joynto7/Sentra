@@ -348,6 +348,24 @@ const TOPICS: [RegExp, HelpTopic][] = [
     },
   ],
   [
+    /^\/autopilot/,
+    {
+      title: "Autopilot",
+      what: "One assessment of a verified target, from the threat model to the remediation proposals. It stops wherever a person has to decide.",
+      steps: [
+        "Choose a verified target and read the plan: the tests, the attempts, the time and what you still decide.",
+        "Start it. It sends test traffic to the target within its safe rate, so you confirm first.",
+        "When it waits for you, open the page it names, decide, and it goes on by itself.",
+        "When it has finished, review the findings and approve the fixes you want.",
+      ],
+      who: [
+        EVERYONE_READS,
+        { roles: [ANALYST], can: "Start and stop an assessment." },
+        { roles: [ANALYST, MANAGER], can: "Approve fixes. The autopilot never approves anything for you." },
+      ],
+    },
+  ],
+  [
     /^\/campaigns/,
     {
       title: "Campaigns",

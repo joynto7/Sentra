@@ -1,12 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Bot, CircleCheck, Cloud, HardDrive, Info, Plus, TriangleAlert } from "lucide-react"
+import { Info, Plus, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
-import { ProviderPanel, TestOutcome } from "@/components/platform/provider-panel"
+import { LlmOverview } from "@/components/platform/llm-overview"
+import { AddProviderTile, ProviderCard } from "@/components/platform/llm-provider-cards"
+import { TaskCards } from "@/components/platform/llm-task-cards"
+import { ProviderPanel } from "@/components/platform/provider-panel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -18,205 +20,19 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ApiError, fieldErrors } from "@/lib/api"
+import { confirmPassword } from "@/lib/mfa"
 import {
-  type Assignment,
   type LLMConfiguration,
   type Provider,
-  type ProviderModel,
   type TestResult,
   addModel,
   assignModel,
-  cost,
-  duration,
   llmConfiguration,
   removeProvider,
   testProvider,
 } from "@/lib/llm-providers"
-
-const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
-
-/** External or local, in one chip: whether an organization's data leaves the platform. */
-function Location({ deployment }: { deployment: "external" | "local" }) {
-  const local = deployment === "local"
-  const Icon = local ? HardDrive : Cloud
-  return (
-    <Badge variant="outline" className="gap-1.5">
-      <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-      {local ? "Local" : "External"}
-    </Badge>
-  )
-}
-
-/** "Last test: OK · 412 ms · $0.0021", or what the provider said when it failed. */
-function LastTest({ provider }: { provider: Provider }) {
-  if (!provider.tested_at) return <span className="text-muted-foreground">Not tested yet</span>
-  const ok = provider.test_duration_ms !== null
-  if (!ok) {
-    return (
-      <span className="flex items-start gap-1.5 font-medium text-destructive">
-        <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        <span className="font-normal">Last test failed: {provider.test_reply}</span>
-      </span>
-    )
-  }
-  return (
-    <span className="flex items-center gap-1.5">
-      <CircleCheck className="size-3.5 shrink-0 text-success" aria-hidden="true" />
-      <span className="tabular">
-        Last test: OK · {duration(provider.test_duration_ms)} · {cost(provider.test_cost_usd)}
-      </span>
-    </span>
-  )
-}
-
-function ProviderCard({
-  provider,
-  busy,
-  onTest,
-  onAddModel,
-  onRemove,
-}: {
-  provider: Provider
-  busy: boolean
-  onTest: () => void
-  onAddModel: () => void
-  onRemove: () => void
-}) {
-  return (
-    <section aria-label={provider.name} className="rounded-[10px] border bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <Bot className="size-4 text-muted-foreground" aria-hidden="true" />
-            {provider.name}
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {provider.kind_label}
-            {provider.base_url ? ` · ${provider.base_url}` : ""}
-          </p>
-        </div>
-        <Location deployment={provider.deployment} />
-      </div>
-
-      <dl className="mt-3 space-y-2 text-sm">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <dt className="text-muted-foreground">Models</dt>
-          <dd className="min-w-0">
-            {provider.models.map((model) => model.label).join(", ")}
-          </dd>
-        </div>
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <dt className="text-muted-foreground">API key</dt>
-          <dd>{provider.has_api_key ? <span aria-label="stored, never shown">Stored encrypted (••••)</span> : "None needed"}</dd>
-        </div>
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <dt className="text-muted-foreground">Tasks</dt>
-          <dd>{provider.tasks.length ? provider.tasks.join(", ") : "No tasks assigned"}</dd>
-        </div>
-      </dl>
-
-      <p className="mt-3 text-sm">
-        <LastTest provider={provider} />
-      </p>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={onTest} disabled={busy}>
-          Test request
-        </Button>
-        <Button variant="outline" size="sm" onClick={onAddModel} disabled={busy}>
-          <Plus className="size-4" aria-hidden="true" />
-          Add model
-        </Button>
-        <Button variant="outline" size="sm" onClick={onRemove} disabled={busy}>
-          Remove
-        </Button>
-      </div>
-    </section>
-  )
-}
-
-/** The "Model assignment" table of Screen 62: one row per task of Sentra's own AI, each with a
- * select over every configured model (UC-10.4 step 4). */
-function ModelAssignment({
-  assignments,
-  providers,
-  onAssign,
-  busy,
-}: {
-  assignments: Assignment[]
-  providers: Provider[]
-  onAssign: (task: string, modelId: string) => void
-  busy: string | null
-}) {
-  const options: { model: ProviderModel; provider: Provider }[] = providers.flatMap((provider) =>
-    provider.models.map((model) => ({ model, provider })),
-  )
-  return (
-    <section aria-label="Model assignment" className="rounded-[10px] border bg-card">
-      <div className="border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">Model assignment</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Which model does which task of Sentra&apos;s own AI. A change applies to the next request.
-        </p>
-      </div>
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[26%]">Task</TableHead>
-              <TableHead>Model</TableHead>
-              <TableHead className="w-[14%]">Location</TableHead>
-              <TableHead className="w-[16%]">Since</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {assignments.map((row) => (
-              <TableRow key={row.task}>
-                <TableCell className="align-top font-medium">
-                  {row.function}
-                  {row.note && (
-                    <p className="mt-1 flex items-start gap-1.5 text-xs font-normal text-muted-foreground">
-                      <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                      {row.note}
-                    </p>
-                  )}
-                </TableCell>
-                <TableCell className="align-top">
-                  <Select
-                    value={row.model_id ?? ""}
-                    disabled={!options.length || busy === row.task}
-                    onValueChange={(next) => onAssign(row.task, next)}
-                  >
-                    <SelectTrigger className="h-9 w-full min-w-44" aria-label={`Model for ${row.function}`}>
-                      <SelectValue placeholder={options.length ? "No model assigned" : "No provider configured"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {options.map(({ model, provider }) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.label} ({provider.name})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell className="align-top">
-                  {row.deployment ? <Location deployment={row.deployment} /> : <span className="text-muted-foreground">—</span>}
-                </TableCell>
-                <TableCell className="tabular align-top text-muted-foreground">
-                  {row.since ? DAY.format(new Date(row.since)) : "—"}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </section>
-  )
-}
 
 /**
  * Screen 62: the LLM providers and models Sentra's own agents use (FR-10.3, UC-10.4), for
@@ -229,10 +45,48 @@ export function LLMProvidersPage() {
   const [reloads, setReloads] = useState(0)
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const [testing, setTesting] = useState<string | null>(null)
   const [result, setResult] = useState<{ provider: string; test: TestResult } | null>(null)
   const [newModel, setNewModel] = useState<{ provider: Provider; name: string; label: string } | null>(null)
   const [modelError, setModelError] = useState<string | undefined>()
   const [removing, setRemoving] = useState<Provider | null>(null)
+  // The password confirmation lasts ten minutes. When it has run out, the action that needed it waits
+  // here: the person types the password, and the action is tried again.
+  const [asking, setAsking] = useState<{ retry: () => void } | null>(null)
+  const [password, setPassword] = useState("")
+  const [passwordError, setPasswordError] = useState<string | undefined>()
+  const [confirming, setConfirming] = useState(false)
+
+  /** True when the server wants the password again: the dialog is then opened, and `retry` waits in it. */
+  function needsPassword(failed: unknown, retry: () => void): boolean {
+    if (failed instanceof ApiError && failed.code === "password_confirmation_required") {
+      setPassword("")
+      setPasswordError(undefined)
+      setAsking({ retry })
+      return true
+    }
+    return false
+  }
+
+  async function confirmAndRetry() {
+    if (!asking) return
+    setConfirming(true)
+    setPasswordError(undefined)
+    try {
+      await confirmPassword(password)
+      const retry = asking.retry
+      setAsking(null)
+      setPassword("")
+      retry()
+    } catch (failed) {
+      setPasswordError(
+        fieldErrors(failed).password ??
+          (failed instanceof ApiError ? failed.message : "The password could not be checked. Try again."),
+      )
+    } finally {
+      setConfirming(false)
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -249,14 +103,17 @@ export function LLMProvidersPage() {
 
   async function test(provider: Provider) {
     setBusy(provider.id)
+    setTesting(provider.id)
     setResult(null)
     try {
       setResult({ provider: provider.id, test: await testProvider(provider.id) })
       reload()
     } catch (failed) {
+      if (needsPassword(failed, () => void test(provider))) return
       toast.error(failed instanceof ApiError ? failed.message : "The test request could not be sent.")
     } finally {
       setBusy(null)
+      setTesting(null)
     }
   }
 
@@ -267,6 +124,7 @@ export function LLMProvidersPage() {
       toast.success(`${row.function} now uses ${row.model}.`, { description: row.note || undefined })
       reload()
     } catch (failed) {
+      if (needsPassword(failed, () => void assign(task, modelId))) return
       toast.error(failed instanceof ApiError ? failed.message : "The model could not be assigned.")
     } finally {
       setBusy(null)
@@ -281,6 +139,7 @@ export function LLMProvidersPage() {
       setRemoving(null)
       reload()
     } catch (failed) {
+      if (needsPassword(failed, () => void remove(provider))) return
       toast.error(failed instanceof ApiError ? failed.message : "The provider could not be removed.")
     } finally {
       setBusy(null)
@@ -297,6 +156,7 @@ export function LLMProvidersPage() {
       setNewModel(null)
       reload()
     } catch (failed) {
+      if (needsPassword(failed, () => void saveModel())) return
       const fields = fieldErrors(failed)
       setModelError(fields.name ?? (failed instanceof ApiError ? failed.message : "The model could not be added."))
     } finally {
@@ -332,52 +192,70 @@ export function LLMProvidersPage() {
       )}
 
       {!data && !error && (
-        <div className="space-y-4" role="status" aria-label="Loading the providers">
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-52 w-full" />
+        <div className="space-y-6" role="status" aria-label="Loading the providers">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((n) => (
+              <Skeleton key={n} className="h-28 rounded-2xl" />
+            ))}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            {[0, 1, 2].map((n) => (
+              <Skeleton key={n} className="h-48 rounded-2xl" />
+            ))}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[0, 1].map((n) => (
+              <Skeleton key={n} className="h-72 rounded-2xl" />
+            ))}
+          </div>
         </div>
       )}
 
       {data && (
-        <div className="space-y-6">
-          {data.providers.length === 0 ? (
-            <section aria-label="Providers" className="rounded-[10px] border bg-card p-6 text-center">
-              <h2 className="text-sm font-semibold">No provider is configured</h2>
-              <p className="mx-auto mt-1 max-w-prose text-sm text-muted-foreground">
-                Until a provider is added, Sentra&apos;s own AI works as when a provider is unavailable: campaigns send
-                their planned tests, and the other detection methods decide.
-              </p>
-              <Button className="mt-4" onClick={() => setAdding(true)}>
-                <Plus className="size-4" aria-hidden="true" />
-                Add provider
-              </Button>
-            </section>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {data.providers.map((provider) => (
-                <div key={provider.id} className="space-y-3">
-                  <ProviderCard
-                    provider={provider}
-                    busy={busy === provider.id}
-                    onTest={() => void test(provider)}
-                    onAddModel={() => {
-                      setNewModel({ provider, name: "", label: "" })
-                      setModelError(undefined)
-                    }}
-                    onRemove={() => setRemoving(provider)}
-                  />
-                  {result?.provider === provider.id && <TestOutcome result={result.test} />}
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="space-y-8">
+          <LlmOverview data={data} />
 
-          <ModelAssignment
+          <TaskCards
             assignments={data.assignments}
             providers={data.providers}
             onAssign={(task, modelId) => void assign(task, modelId)}
             busy={busy}
           />
+
+          <section aria-labelledby="providers-heading" className="space-y-3">
+            <div>
+              <h2 id="providers-heading" className="text-base font-semibold">
+                Providers
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Where the models run. A provider&apos;s key is stored encrypted and is never shown again.
+              </p>
+            </div>
+            {data.providers.length === 0 && (
+              <p className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                No provider is configured. Until one is added, planned tests run and the other detection methods decide.
+              </p>
+            )}
+            <div className="grid gap-4 lg:grid-cols-2">
+              {data.providers.map((provider, index) => (
+                <ProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  index={index}
+                  busy={busy === provider.id}
+                  testing={testing === provider.id}
+                  result={result?.provider === provider.id ? result.test : null}
+                  onTest={() => void test(provider)}
+                  onAddModel={() => {
+                    setNewModel({ provider, name: "", label: "" })
+                    setModelError(undefined)
+                  }}
+                  onRemove={() => setRemoving(provider)}
+                />
+              ))}
+              <AddProviderTile index={data.providers.length} onAdd={() => setAdding(true)} />
+            </div>
+          </section>
 
           <p className="flex items-start gap-2 text-sm text-muted-foreground">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -476,6 +354,53 @@ export function LLMProvidersPage() {
               {busy ? "Removing…" : "Remove provider"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!asking} onOpenChange={(open) => !open && setAsking(null)}>
+        <DialogContent>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              void confirmAndRetry()
+            }}
+            className="space-y-4"
+          >
+            <DialogHeader>
+              <DialogTitle>Enter your password to go on</DialogTitle>
+              <DialogDescription>
+                Changing these settings needs your password again. It stays confirmed for 10 minutes, and then
+                the change you asked for is made.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-password">Your password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                aria-invalid={!!passwordError || undefined}
+                aria-describedby={passwordError ? "confirm-password-error" : undefined}
+                className="h-9"
+                autoFocus
+              />
+              {passwordError && (
+                <p id="confirm-password-error" role="alert" className="text-xs text-destructive">
+                  {passwordError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAsking(null)} disabled={confirming}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={confirming || !password}>
+                {confirming ? "Checking…" : "Confirm and continue"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

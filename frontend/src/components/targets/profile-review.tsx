@@ -26,6 +26,7 @@ import {
   getProfile,
   getTarget,
   saveProfile,
+  startProfileMapping,
 } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
@@ -120,6 +121,7 @@ function Card({
  */
 export function ProfileReview({ id }: { id: string }) {
   const canMap = useCan("map_target_profiles")
+  const [starting, setStarting] = useState(false)
   const [target, setTarget] = useState<Target | null>(null)
   const [profile, setProfile] = useState<TargetProfile | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -127,6 +129,8 @@ export function ProfileReview({ id }: { id: string }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [editing, setEditing] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  // The version just saved: what it sets going is said until the page is left
+  const [savedVersion, setSavedVersion] = useState<number | null>(null)
   const [polls, setPolls] = useState(0)
 
   usePageCrumbs([{ label: target?.name ?? "Target", href: `/targets/${id}` }, { label: "Profile" }])
@@ -201,6 +205,7 @@ export function ProfileReview({ id }: { id: string }) {
       setProfile(saved)
       setDraft(draftOf(saved))
       setEditing([])
+      setSavedVersion(saved.version)
       toast.success("Target Profile saved", {
         description: "Your corrections are marked as added manually and kept in the target's history.",
       })
@@ -211,11 +216,22 @@ export function ProfileReview({ id }: { id: string }) {
     }
   }, [draft, id])
 
+  async function mapNow() {
+    setStarting(true)
+    try {
+      setProfile(await startProfileMapping(id))
+      setPolls(0)
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "The mapping could not be started.")
+    } finally {
+      setStarting(false)
+    }
+  }
+
   if (notFound) {
     return (
       <EmptyState
         title="Target not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/targets">Back to targets</Link>
@@ -236,6 +252,10 @@ export function ProfileReview({ id }: { id: string }) {
             target && target.status !== "verified" ? (
               <Button asChild variant="outline" className="h-9">
                 <Link href={`/targets/${id}/verify`}>Verify ownership</Link>
+              </Button>
+            ) : target && canMap === true && profile?.status === "not_mapped" ? (
+              <Button className="h-9" disabled={starting} onClick={() => void mapNow()}>
+                {starting ? "Starting…" : "Map the profile now"}
               </Button>
             ) : (
               <Button asChild variant="outline" className="h-9">
@@ -299,6 +319,19 @@ export function ProfileReview({ id }: { id: string }) {
               ? ` · saved by ${profile.reviewed_by} on ${formatDateTime(profile.reviewed_at)}`
               : ""}
             . Your corrections become the basis of the Threat Model.
+          </span>
+        </p>
+      )}
+
+      {savedVersion !== null && (
+        <p role="status" className="mt-4 flex items-start gap-2 rounded-[10px] border border-primary/30 bg-primary/5 p-4 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+          <span>
+            Version {savedVersion} is saved. Sentra starts a new threat model from it when it can. That model is a draft until a Security Analyst reviews and approves it, and until then
+            assessments keep using the approved model made from the earlier profile.{" "}
+            <Link href={`/threat-models/${target.id}`} className="font-medium text-link hover:underline">
+              Open the threat model
+            </Link>
           </span>
         </p>
       )}
@@ -561,26 +594,30 @@ export function ProfileReview({ id }: { id: string }) {
         ))}
       </div>
 
-      {canEdit && dirty && (
+      {canEdit && (dirty || profile.status === "ready" || profile.status === "partial") && (
         <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-card/95 backdrop-blur">
-          <div className="mx-auto flex max-w-[1240px] flex-wrap items-center justify-between gap-3 px-6 py-3">
+          <div className="mx-auto flex max-w-[1240px] flex-wrap items-center justify-between gap-3 py-3 pr-24 pl-6">
             <p className="text-sm text-muted-foreground">
-              Changed entries are saved as added manually, and the change is kept in the target&apos;s history.
+              {dirty
+                ? "Changed entries are saved as added manually, and the change is kept in the target's history."
+                : "The mapped profile is ready for you to check. When it looks right, confirm it: it becomes the basis of the threat model."}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                className="h-9"
-                disabled={saving}
-                onClick={() => {
-                  setDraft(draftOf(profile))
-                  setEditing([])
-                }}
-              >
-                Discard changes
-              </Button>
+              {dirty && (
+                <Button
+                  variant="outline"
+                  className="h-9"
+                  disabled={saving}
+                  onClick={() => {
+                    setDraft(draftOf(profile))
+                    setEditing([])
+                  }}
+                >
+                  Discard changes
+                </Button>
+              )}
               <Button className="h-9 hover:bg-primary-hover" disabled={saving} onClick={() => void save()}>
-                {saving ? "Saving…" : "Save profile"}
+                {saving ? "Saving…" : dirty ? "Save profile" : "Confirm the profile"}
               </Button>
             </div>
           </div>

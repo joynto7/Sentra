@@ -321,6 +321,21 @@
     opacity: 1;
   }
 }
+/* A value that changed is lit for a moment (the campaign summary); not for reduced motion. */
+@keyframes value-flash {
+  from {
+    background-color: color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .value-flash {
+    animation: value-flash 900ms ease-out;
+    border-radius: 4px;
+  }
+}
 .skeleton {
   opacity: 0;
   animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) 200ms infinite;
@@ -328,5 +343,519 @@
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     animation: skeleton-appear 1ms linear 200ms forwards;
+  }
+}
+
+/* The assistant's mark. At rest in the corner it is Sentra's logo: the cobalt rounded square with the
+   shield and check. When the cursor comes near it, or touches it, the square turns into a white and
+   blue orb and the shield melts into two pill eyes (assistant-avatar.tsx draws it; this file moves
+   it). The eyes follow the cursor, blink to a dash, squint when the orb is touched; pressed, it
+   swells and sends out a ripple; while the assistant works they scan from side to side and a spark
+   circles it. For a person who prefers reduced motion the form and the faces still change, at once. */
+@keyframes orb-blink {
+  0%, 90%, 100% { transform: scale(1, 1); }
+  94% { transform: scale(1.45, 0.12); }
+}
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+@keyframes orb-scan {
+  0% { transform: translate(-5px, -1px); }
+  50% { transform: translate(5px, 1px); }
+  100% { transform: translate(-5px, -1px); }
+}
+@keyframes orb-orbit { to { transform: rotate(360deg); } }
+@keyframes orb-ripple {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes orb-glow {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.18); }
+}
+.orb-root { --ox: 0px; --oy: 0px; --s: 1; --ex: 0px; --ey: 0px; --er: 0deg; }
+.orb-eye, .orb-eyes, .orb-eyes-wrap, .orb-shield, .orb-orbit, .orb-ripple {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.orb-body { transform: translate(var(--ox), var(--oy)) scale(var(--s)); transition: transform 0.14s ease-out; }
+.orb-eyes { transform: translate(var(--ex), var(--ey)) rotate(var(--er)); transition: transform 0.14s ease-out; }
+.orb-eye { transition: transform 0.2s ease; }
+.orb-ripple { opacity: 0; }
+
+/* the form: a rounded square with the logo, or a circle with a face */
+.orb-shape { border-radius: 50%; transition: border-radius 0.5s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.orb-fill-logo, .orb-fill-ball { transition: opacity 0.4s ease; }
+.orb-fill-logo { opacity: 0; }
+.orb-eyes-wrap, .orb-shield { transition: opacity 0.3s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.orb-shield { opacity: 0; transform: scale(0.3) rotate(-25deg); }
+.orb-root[data-rest="logo"]:not([data-form="orb"]):not([data-near]) .orb-shape { border-radius: 25%; }
+.orb-root[data-rest="logo"]:not([data-form="orb"]):not([data-near]) .orb-fill-logo { opacity: 1; }
+.orb-root[data-rest="logo"]:not([data-form="orb"]):not([data-near]) .orb-fill-ball { opacity: 0; }
+.orb-root[data-rest="logo"]:not([data-form="orb"]):not([data-near]) .orb-shield { opacity: 1; transform: scale(1) rotate(0); }
+.orb-root[data-rest="logo"]:not([data-form="orb"]):not([data-near]) .orb-eyes-wrap { opacity: 0; transform: scale(0.3); }
+
+/* the moods, once it is an orb */
+.orb-root[data-mood="happy"] .orb-eye { transform: scale(1.5, 0.13) rotate(-14deg); }
+.orb-root[data-mood="wow"] { --s: 1.1; }
+.orb-root[data-mood="wow"] .orb-eye { transform: scale(1.1, 1.18); }
+.orb-root[data-mood="think"] .orb-eye { transform: scale(0.8, 0.55); }
+@media (prefers-reduced-motion: no-preference) {
+  .orb-animated .orb-shape { animation: orb-breathe 3.6s ease-in-out infinite; }
+  .orb-animated[data-mood="idle"] .orb-eye { animation: orb-blink 4.6s ease-in-out infinite; }
+  .orb-animated[data-mood="wow"] .orb-ripple { animation: orb-ripple 0.6s ease-out 1; }
+  .orb-glow { animation: orb-glow 3.6s ease-in-out infinite; }
+  .orb-thinking .orb-eyes-wrap { animation: orb-scan 1.2s ease-in-out infinite; }
+  .orb-thinking .orb-glow { animation-duration: 1.2s; }
+  .orb-thinking .orb-orbit { animation: orb-orbit 1.3s linear infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orb-root *, .orb-root { transition-duration: 0.01ms !important; }
+}
+
+/* The feelings are all in the eyes. Teased (touched again and again) the orb gets angry: the eyes slant
+   inward and narrow and two brows appear; the colour of the orb does not change. The parts of the
+   face are drawn in assistant-avatar.tsx and shown here by the mood. */
+.orb-x { opacity: 0; transition: opacity 0.25s ease; transform-box: fill-box; transform-origin: center; }
+.orb-root[data-mood="angry"] .orb-brows { opacity: 1; }
+.orb-root[data-mood="angry"] .orb-eye-l { transform: rotate(22deg) scale(1.05, 0.78); }
+.orb-root[data-mood="angry"] .orb-eye-r { transform: rotate(-22deg) scale(1.05, 0.78); }
+
+/* ---- First-run setup: three small motions, all off for reduced motion -----------------------
+   1. Stagger: a step crossfades in from the side the person is moving to, its parts one after the
+      other. 2. Height morph: a revealed part grows from zero height and folds back. 3. Vector: a
+      check that draws itself. With reduced motion nothing moves: everything is simply there. */
+@keyframes welcome-in-forward {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes welcome-in-back {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes welcome-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes welcome-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes welcome-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes welcome-ring {
+  from { transform: scale(0.8); opacity: 0.5; }
+  to { transform: scale(1.7); opacity: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-step[data-dir="forward"] { animation: welcome-in-forward 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .welcome-step[data-dir="back"] { animation: welcome-in-back 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .welcome-rise {
+    animation: welcome-rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .welcome-draw {
+    stroke-dasharray: var(--len, 24);
+    stroke-dashoffset: var(--len, 24);
+    animation: welcome-draw 0.45s ease-out forwards;
+    animation-delay: var(--delay, 0.05s);
+  }
+  .welcome-pop { animation: welcome-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+  .welcome-ring { animation: welcome-ring 0.9s ease-out 0.25s both; }
+  .welcome-collapse { transition: grid-template-rows 0.28s ease, opacity 0.2s ease; }
+}
+
+/* ---- The landing page's entrance motion (components/landing/scroll-reveal.tsx) -------------------------
+   Marked items rise a little and fade in the first time they scroll into view, one after the other when they
+   have a delay; headings also lose a soft blur. Anchor links glide. Nothing moves for "reduce motion". */
+.lp-motion [data-reveal] {
+  opacity: 0;
+  transform: translate3d(0, 26px, 0);
+  transition:
+    opacity 900ms cubic-bezier(0.22, 1, 0.36, 1) var(--d, 0ms),
+    transform 1000ms cubic-bezier(0.22, 1, 0.36, 1) var(--d, 0ms),
+    filter 900ms cubic-bezier(0.22, 1, 0.36, 1) var(--d, 0ms);
+}
+.lp-motion [data-reveal="blur"] {
+  filter: blur(8px);
+}
+.lp-motion [data-reveal="scale"] {
+  transform: translate3d(0, 30px, 0) scale(0.97);
+}
+.lp-motion [data-reveal="tilt"] {
+  transform: perspective(1500px) translate3d(0, 44px, 0) rotateX(10deg) scale(0.96);
+  transform-origin: 50% 0%;
+}
+/* Dealt like a card from a pile in the middle of the row: tilted, shrunk, then laid down in its place */
+.lp-motion [data-reveal="shuffle"] {
+  transform: translate3d(calc(var(--k, 0) * 106%), 18px, 0) rotate(var(--r, 0deg)) scale(0.9);
+  transition:
+    opacity 500ms ease var(--d, 0ms),
+    transform 1100ms cubic-bezier(0.34, 1.3, 0.5, 1) var(--d, 0ms);
+}
+@media (max-width: 1023px) {
+  .lp-motion [data-reveal="shuffle"] {
+    transform: translate3d(0, 40px, 0) rotate(var(--r, 0deg)) scale(0.94);
+  }
+}
+.lp-motion [data-reveal="from-left"] {
+  transform: translate3d(-48px, 0, 0);
+}
+.lp-motion [data-reveal="from-right"] {
+  transform: translate3d(48px, 0, 0);
+}
+@media (max-width: 1023px) {
+  .lp-motion [data-reveal="from-left"],
+  .lp-motion [data-reveal="from-right"] {
+    transform: translate3d(0, 26px, 0);
+  }
+}
+.lp-motion [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-motion [data-reveal] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.landing-light) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ---- Creative motion of the landing page's last sections (all of it off for "reduce motion") -------- */
+@keyframes lp-comet {
+  from { stroke-dashoffset: 1.08; }
+  to { stroke-dashoffset: -0.08; }
+}
+@keyframes lp-pulse-ring {
+  0%, 62%, 100% { transform: scale(1); opacity: 0; }
+  68% { opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes lp-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(60px, -40px, 0) scale(1.12); }
+}
+@keyframes lp-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-70px, 30px, 0) scale(1.1); }
+}
+@keyframes lp-shimmer {
+  from { background-position: 0% 50%; }
+  to { background-position: 200% 50%; }
+}
+@keyframes lp-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+/* A line that draws itself when its group comes into view */
+.lp-motion .lp-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 2200ms cubic-bezier(0.65, 0, 0.35, 1) 300ms;
+}
+.lp-motion .is-in .lp-draw {
+  stroke-dashoffset: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-motion .lp-draw {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+}
+
+@keyframes lp-nudge-left {
+  0%, 100% { transform: translateX(0); opacity: 0.5; }
+  50% { transform: translateX(-6px); opacity: 1; }
+}
+@keyframes lp-nudge-right {
+  0%, 100% { transform: translateX(0); opacity: 0.5; }
+  50% { transform: translateX(6px); opacity: 1; }
+}
+
+/* ---- Small product demos in the role panels (components/landing/roles-showcase.tsx) ---------------- */
+@keyframes lp-dash {
+  to { stroke-dashoffset: -20; }
+}
+@keyframes lp-shrink {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0.03); }
+}
+@keyframes lp-ring {
+  from { stroke-dashoffset: var(--c); }
+}
+@keyframes lp-type {
+  from { width: 0; }
+  to { width: calc(var(--n) * 1ch); }
+}
+@keyframes lp-blink {
+  50% { opacity: 0; }
+}
+
+/* The autopilot page (autopilot-view.tsx, autopilot-start.tsx). Every movement is here, and every one
+   is inside "no-preference": a person who asks for reduced motion sees the same page, still. The
+   state is never carried by movement alone (each stage says its state in words). */
+@media (prefers-reduced-motion: no-preference) {
+  /* A card or a row comes up into place; --i staggers a list. */
+  @keyframes ap-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .ap-rise {
+    animation: ap-rise 480ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  /* A stage that is done pops in, and its check is drawn. */
+  @keyframes ap-pop {
+    0% {
+      transform: scale(0.5);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.12);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  .ap-pop {
+    animation: ap-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    animation-delay: calc(var(--i, 0) * 110ms);
+  }
+  @keyframes ap-draw {
+    from {
+      stroke-dashoffset: 26;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  .ap-draw {
+    stroke-dasharray: 26;
+    animation: ap-draw 520ms ease-out both;
+    animation-delay: calc(var(--i, 0) * 110ms + 180ms);
+  }
+  /* The stage that is working sends out a ring. */
+  @keyframes ap-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    80%,
+    100% {
+      transform: scale(2.3);
+      opacity: 0;
+    }
+  }
+  .ap-ping {
+    animation: ap-ping 1.9s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  /* A stage that waits for a person swings its hourglass and breathes an amber ring around the card. */
+  @keyframes ap-swing {
+    0%,
+    100% {
+      transform: rotate(-14deg);
+    }
+    50% {
+      transform: rotate(14deg);
+    }
+  }
+  .ap-swing {
+    animation: ap-swing 2.6s ease-in-out infinite;
+  }
+  @keyframes ap-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 0%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--warning) 16%, transparent);
+    }
+  }
+  .ap-glow {
+    animation: ap-glow 2.6s ease-in-out infinite;
+  }
+  /* A problem shakes once. */
+  @keyframes ap-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20%,
+    60% {
+      transform: translateX(-4px);
+    }
+    40%,
+    80% {
+      transform: translateX(4px);
+    }
+  }
+  .ap-shake {
+    animation: ap-shake 480ms ease-in-out 1;
+  }
+  /* The line between two stages grows downwards as the first one finishes. */
+  @keyframes ap-grow {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+  .ap-grow {
+    transform-origin: top;
+    animation: ap-grow 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(var(--i, 0) * 110ms + 120ms);
+  }
+  /* A bar that is still moving is crossed by a soft light. */
+  @keyframes ap-shimmer {
+    from {
+      background-position: -140% 0;
+    }
+    to {
+      background-position: 240% 0;
+    }
+  }
+  .ap-shimmer {
+    background-image: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, white 45%, transparent) 50%,
+      transparent 70%
+    );
+    background-size: 60% 100%;
+    background-repeat: no-repeat;
+    animation: ap-shimmer 1.7s ease-in-out infinite;
+  }
+  /* Three dots that say "still working". */
+  @keyframes ap-dot {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+  .ap-dot {
+    animation: ap-dot 1.2s ease-in-out infinite;
+    animation-delay: calc(var(--d, 0) * 160ms);
+  }
+  /* The live dot of a status. */
+  @keyframes ap-live {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+  .ap-live {
+    animation: ap-live 1.4s ease-in-out infinite;
+  }
+  /* Bars and fills glide to their new width. */
+  .ap-fill {
+    transition: width 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ap-seg {
+    transition:
+      transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 300ms;
+  }
+  /* A button that leads on: its arrow steps forward when the pointer is near. */
+  .ap-nudge:hover .ap-arrow,
+  .ap-nudge:focus-visible .ap-arrow {
+    transform: translateX(4px);
+  }
+  .ap-arrow {
+    transition: transform 200ms ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ap-draw {
+    stroke-dasharray: none;
+  }
+}
+
+/* The LLM providers page (llm-*.tsx): cards that lift when the pointer is on them, a card that lights up
+   for a moment when its model has changed, and a bar that sweeps while a test request is out. All of it
+   stays still for someone who asks for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .llm-card {
+    transition:
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 220ms ease-out,
+      border-color 220ms;
+  }
+  .llm-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px -16px color-mix(in srgb, var(--foreground) 35%, transparent);
+  }
+  @keyframes llm-lit {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+      background-color: color-mix(in srgb, var(--primary) 10%, var(--card));
+    }
+    100% {
+      box-shadow: 0 0 0 14px color-mix(in srgb, var(--primary) 0%, transparent);
+      background-color: var(--card);
+    }
+  }
+  .llm-lit {
+    animation: llm-lit 1100ms ease-out;
+  }
+  @keyframes llm-sweep {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(320%);
+    }
+  }
+  .llm-sweep {
+    animation: llm-sweep 1.3s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .llm-sweep {
+    width: 100%;
+    opacity: 0.6;
+  }
+}
+
+/* The line behind the five steps of the autopilot page draws from left to right. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ap-grow-x {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  .ap-grow-x {
+    transform-origin: left;
+    animation: ap-grow-x 900ms cubic-bezier(0.22, 1, 0.36, 1) 250ms both;
   }
 }
