@@ -113,6 +113,45 @@ class Trends(BaseModel):
     category: str | None
 
 
+class OverviewStep(BaseModel):
+    """The open findings at one moment of the period, by status."""
+
+    at: datetime
+    new: int
+    requires_confirmation: int
+    confirmed: int
+    reopened: int
+    open: int
+    fixed: int  # fixed and verified from the start of the period up to this moment
+
+
+class HeatColumn(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
+
+
+class HeatCell(BaseModel):
+    new: int  # first seen in this part of the period
+    closed: int  # closed in it
+
+
+class HeatRow(BaseModel):
+    target: TargetRef
+    cells: list[HeatCell]
+
+
+class Overview(BaseModel):
+    """What the dashboard's overview draws over the period: nothing is predicted."""
+
+    steps: list[OverviewStep]
+    columns: list[HeatColumn]
+    rows: list[HeatRow]
+    days_to_confirm: float | None  # first seen to confirmed, for those confirmed in the period
+    confirmed: int
+    days_to_fix: float | None  # first seen to fixed and verified, for those fixed in the period
+    fixed: int
+
+
 class CoverageTarget(BaseModel):
     id: uuid.UUID
     name: str
@@ -306,6 +345,7 @@ class DashboardOut(BaseModel):
     top_findings: TopFindings
     by_category: list[CategoryRow]
     trends: Trends
+    overview: Overview
     changes: Changes
 
 
