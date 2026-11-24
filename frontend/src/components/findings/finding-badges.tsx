@@ -1,4 +1,4 @@
-import { CircleHelp } from "lucide-react"
+import { CircleHelp, TriangleAlert } from "lucide-react"
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { FINDING_STATUS_LABEL, type FindingStatus } from "@/lib/findings"
@@ -27,7 +27,7 @@ export function StatusBadge({ status }: { status: FindingStatus }) {
             {FINDING_STATUS_LABEL[status]}
           </span>
         </TooltipTrigger>
-        <TooltipContent>Only the LLM judge supports this finding, so an analyst has to confirm it.</TooltipContent>
+        <TooltipContent>An analyst has to confirm this finding before it counts towards the risk score.</TooltipContent>
       </Tooltip>
     )
   }
@@ -48,5 +48,27 @@ export function Reproducibility({ value, className }: { value: string | null; cl
         <div className="h-full rounded-full bg-foreground/60" style={{ width: `${Math.max(share * 100, 2)}%` }} />
       </div>
     </div>
+  )
+}
+
+/**
+ * Always in the page, never in a tooltip or a collapsed part: a finding that only the LLM judge
+ * supports is not a proven weakness until an analyst confirms it (NFR-9.3).
+ */
+export function ConfirmationNotice({ judgeOnly, className }: { judgeOnly: boolean; className?: string }) {
+  return (
+    <p
+      role="status"
+      className={cn(
+        "flex items-start gap-2 rounded-[10px] border border-warning/40 bg-warning/5 p-4 text-sm text-warning",
+        className,
+      )}
+    >
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      {judgeOnly
+        ? "Only the LLM judge supports this finding, so it is not confirmed yet. "
+        : "This finding is not confirmed yet. "}
+      An analyst confirms or rejects it before it counts towards the target&apos;s risk score.
+    </p>
   )
 }

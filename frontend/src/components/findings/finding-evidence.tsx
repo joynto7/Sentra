@@ -4,8 +4,11 @@ import { useCallback, useEffect, useId, useRef, useState } from "react"
 import Link from "next/link"
 import { ArchiveX, CircleCheck, EyeOff, Lock, TriangleAlert } from "lucide-react"
 
+import { onlyJudgeSupports } from "@/components/findings/judge-only"
+import { ConfirmationNotice } from "@/components/findings/finding-badges"
 import { FindingHeader } from "@/components/findings/finding-header"
 import { FindingTabs } from "@/components/findings/finding-tabs"
+import { OPEN_STATUSES } from "@/lib/risk"
 import { EmptyState } from "@/components/layout/empty-state"
 import { AiGeneratedLabel } from "@/components/threat-models/badges"
 import { Button } from "@/components/ui/button"
@@ -205,8 +208,7 @@ function MeasurementLine({ measurement, listed }: { measurement: Measurement | n
       </p>
     )
   }
-  return <p className="text-xs text-muted-foreground">Measurement complete.</p>
-}
+  return}
 
 function AttemptRow({
   row,
@@ -309,9 +311,7 @@ function RunGroup({
         )}
       </div>
       <MeasurementLine measurement={group.measurement} listed={rows.length} />
-      {rows.length === 0 ? (
-        <p className="mt-1 text-xs text-muted-foreground">No evaluated attempt of this test in this run.</p>
-      ) : (
+      {rows.length === 0 ? null : (
         // Always there, so the buttons that open it have the list they control
         <ol id={listId} hidden={!open} className="mt-1.5 space-y-0.5">
           {open &&
@@ -470,9 +470,7 @@ function EvidenceList({
         <>
           <div className="border-b px-4 py-3">
             {score.attempts === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Reproducibility: no attempt of this test has been evaluated yet.
-              </p>
+              <p className="text-sm text-muted-foreground">Reproducibility: nothing evaluated yet.</p>
             ) : (
               <>
                 <p className="flex items-baseline justify-between gap-2 text-sm">
@@ -700,9 +698,6 @@ function Document({
           <p className="mt-1 text-xs text-muted-foreground">
             Evidence of {shown.finding}, a duplicate merged into {finding}.
           </p>
-        )}
-        {view.test?.condition && (
-          <p className="mt-1 text-xs text-muted-foreground">Success condition: {view.test.condition}</p>
         )}
       </div>
 
@@ -976,7 +971,6 @@ export function FindingEvidence({ code }: { code: string }) {
     return (
       <EmptyState
         title="Finding not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/findings">Back to findings</Link>
@@ -1005,6 +999,8 @@ export function FindingEvidence({ code }: { code: string }) {
     <div>
       <FindingHeader finding={finding} />
       <FindingTabs code={finding.code} active="evidence" evidence={records.length} />
+      {finding.detection?.requires_confirmation &&
+        (OPEN_STATUSES as readonly string[]).includes(finding.status) && <ConfirmationNotice judgeOnly={onlyJudgeSupports(finding.detection)} className="mb-5" />}
 
       {records.length === 0 ? (
         finding.evidence_deleted ? (
@@ -1012,7 +1008,7 @@ export function FindingEvidence({ code }: { code: string }) {
         ) : (
           <EmptyState
             title="No evidence yet"
-            description="A finding gets its evidence when a campaign run meets the success condition of its test."
+            description="Evidence appears after a run."
           />
         )
       ) : (

@@ -8,9 +8,10 @@ import { Building2, ChevronLeft, ChevronRight, Lock, Package, Plus, Search, Slid
 import { EmptyState } from "@/components/layout/empty-state"
 import { SeverityBadge, SeverityShape } from "@/components/sentra/severity-badge"
 import { SortHeader, type SortDirection } from "@/components/sentra/sort-header"
+import { ViewSwitch, useStoredView } from "@/components/sentra/view-switch"
 import { useSession } from "@/components/session-provider"
-import { CoverageStrip } from "@/components/test-library/coverage-strip"
-import { FilterGroup } from "@/components/test-library/filter-group"
+import { FilterGroup, FilterSection } from "@/components/test-library/filter-group"
+import { TestCard } from "@/components/test-library/test-cards"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +40,7 @@ export function CatalogueActions() {
   const canBuild = useCan("manage_test_suites")
   if (!canCreate && !canBuild) return null
   return (
-    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+    <div className="flex flex-wrap justify-end gap-2 sm:shrink-0">
       {canBuild && (
         <Button asChild variant="outline" className="h-9">
           <Link href="/test-library/suites/new">Create test suite</Link>
@@ -93,6 +94,7 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
   const [direction, setDirection] = useState<SortDirection>("asc")
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
+  const [view, setView] = useStoredView("test-library") // one card for each test (the first look), or the table
   const [data, setData] = useState<Catalogue | null>(null)
   const [answered, setAnswered] = useState("") // the request whose answer is on the screen
   const [error, setError] = useState<string | null>(null)
@@ -137,6 +139,8 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
     setPage(1)
   }
 
+  const activeFilters = categories.length + severities.length + targetTypes.length + origins.length + (atlas ? 1 : 0) + (search.trim() ? 1 : 0)
+
   function clearFilters() {
     setSearch("")
     setCategories([])
@@ -162,6 +166,7 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
     categories.length + severities.length + targetTypes.length + origins.length + (atlas ? 1 : 0)
   const techniques = Object.entries(data?.facets.atlas ?? {}).sort(([a], [b]) => a.localeCompare(b))
   const sortProps = { sort, direction, onSort: sortBy }
+  const categoryNames = Object.fromEntries((coverage ?? []).map((row) => [row.category, row.name]))
 
   // Beside the table the groups stand one under the other; opened above the table, side by side
   const filters = (
@@ -185,15 +190,15 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
       />
       <FilterGroup
         title="Target type"
-        hint="A test can apply to several types."
+        hint="A test can apply to several types. A campaign checks each test against the target you choose and says which ones do not apply."
         options={Object.entries(TARGET_TYPE_LABEL).map(([value, label]) => ({ value, label }))}
         selected={targetTypes}
         counts={data?.facets.target_type}
         onToggle={(v) => changeFilter(setTargetTypes, v)}
       />
       {/* UC-4.1 step 3: the framework mapping */}
+      <FilterSection title="Framework mapping" count={atlas ? 1 : 0}>
       <div className="space-y-2">
-        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Framework mapping</p>
         <label htmlFor="catalogue-atlas" className="block text-sm">
           MITRE ATLAS technique
         </label>
@@ -215,6 +220,7 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
           {atlas && !techniques.some(([technique]) => technique === atlas) && <option value={atlas}>{atlas} (0)</option>}
         </select>
       </div>
+      </FilterSection>
       <FilterGroup
         title="Origin"
         options={[
@@ -233,7 +239,6 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
     // (1,024 px of content: about 1,330 px of window with the menu open), and folds behind one
     // button below that
     <div className="@container/catalogue space-y-5">
-      <CoverageStrip rows={coverage} selected={categories} onToggle={(c) => changeFilter(setCategories, c)} />
 
       <div className="grid items-start gap-5 @5xl/catalogue:grid-cols-[220px_minmax(0,1fr)]">
         <aside
@@ -241,7 +246,17 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
           aria-label="Filters"
           className={cn("rounded-[10px] border bg-card p-4 @5xl/catalogue:block", !filtersOpen && "hidden")}
         >
-          <h2 className="mb-4 text-[15px] font-semibold">Filters</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Filters</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2" aria-live="polite">
+            <p className="text-xs text-muted-foreground">
+              {activeFilters === 0 ? "No filter is applied." : `${activeFilters} ${activeFilters === 1 ? "filter is" : "filters are"} applied.`}
+            </p>
+            {activeFilters > 0 && (
+              <Button type="button" variant="outline" size="sm" className="h-8" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            )}
+          </div>
           {/* The groups come together with the categories, so none of them moves down when those
               arrive (the layout jump of Phase 0, CLS 0.199) */}
           {coverage === null ? (
@@ -287,9 +302,32 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
                 className="h-9 w-full rounded-[7px] border border-input bg-card pr-3 pl-8 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               />
             </label>
+            {view === "cards" && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Sort
+                <select
+                  value={`${sort}:${direction}`}
+                  onChange={(event) => {
+                    const [key, dir] = event.target.value.split(":")
+                    setSort(key as SortKey)
+                    setDirection(dir as SortDirection)
+                    setPage(1)
+                  }}
+                  className="h-9 rounded-[7px] border border-input bg-card px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <option value="category:asc">Category</option>
+                  <option value="severity:desc">Severity, most severe first</option>
+                  <option value="severity:asc">Severity, least severe first</option>
+                  <option value="name:asc">Name, A to Z</option>
+                  <option value="name:desc">Name, Z to A</option>
+                  <option value="id:asc">ID, A to Z</option>
+                </select>
+              </label>
+            )}
             <span className="tabular ml-auto text-sm text-muted-foreground" aria-live="polite">
               {data ? `${data.total} test ${data.total === 1 ? "definition" : "definitions"}` : ""}
             </span>
+            <ViewSwitch value={view} onChange={setView} />
           </div>
 
           {error && (
@@ -324,8 +362,8 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
               title="No tests match these filters"
               description={
                 canCreate
-                  ? "Remove some filters or change the search. If the test you need doesn't exist, create it."
-                  : "Remove some filters or change the search."
+                  ? "Change the filters."
+                  : "Change the filters."
               }
               action={
                 <div className="flex flex-wrap justify-center gap-2">
@@ -346,6 +384,15 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
             <div className={cn("rounded-[10px] border bg-card transition-opacity", busy && "opacity-60")}>
               {/* Fixed widths on the header's cells (Screen 29's columns): the name's column takes
                   what is left, and a hidden column leaves the table with its cells */}
+              {view === "cards" ? (
+                <ul className="grid gap-4 rounded-t-[10px] bg-muted/40 p-4 @lg/list:grid-cols-2 @3xl/list:grid-cols-3 @6xl/list:grid-cols-4">
+                  {data.items.map((test) => (
+                    <li key={test.code} className="min-w-0">
+                      <TestCard test={test} categoryName={categoryNames[test.category]} organization={organization} />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
               <Table className="table-fixed">
                 <TableHeader className="bg-muted">
                   <TableRow>
@@ -439,6 +486,7 @@ export function TestCatalogue({ coverage }: { coverage: CoverageRow[] | null }) 
                   ))}
                 </TableBody>
               </Table>
+              )}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t px-4 py-2.5 text-sm">
                 <label htmlFor="catalogue-page-size" className="flex items-center gap-2 text-muted-foreground">
                   Rows per page

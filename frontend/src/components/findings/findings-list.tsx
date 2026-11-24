@@ -12,9 +12,10 @@ import { TriagePanel } from "@/components/findings/triage-panel"
 import { EmptyState } from "@/components/layout/empty-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { FilterSelect } from "@/components/sentra/filter-select"
+import { GLASS_BUTTON, GLASS_ROUND, GlassCard } from "@/components/sentra/glass-card"
+import { ViewSwitch, useStoredView } from "@/components/sentra/view-switch"
 import { SeverityBadge, type Severity } from "@/components/sentra/severity-badge"
 import { SortHeader, type SortDirection } from "@/components/sentra/sort-header"
-import { useSession } from "@/components/session-provider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -138,6 +139,65 @@ function Owner({ finding }: { finding: FindingItem }) {
   )
 }
 
+/** One dot for each attempt, filled where the weakness reproduced: "4 of 5" as a picture and in words. */
+function ReproDots({ finding }: { finding: FindingItem }) {
+  const measured = finding.repetitions
+  if (finding.reproducibility === null) return <span className="text-xs text-foreground/65">Not rated yet</span>
+  if (!measured) return <span className="tabular text-xs text-foreground/65">{Math.round(Number(finding.reproducibility) * 100)} % reproduced</span>
+  const shown = Math.min(measured.attempts, 10)
+  return (
+    <span className="flex items-center gap-2">
+      <span className="flex gap-1" aria-hidden="true">
+        {Array.from({ length: shown }).map((_, index) => (
+          <span key={index} className={`size-2.5 rounded-full border-[1.5px] border-foreground/60 ${index < measured.successes ? "bg-foreground/70" : ""}`} />
+        ))}
+      </span>
+      <span className="tabular text-xs text-foreground/65">
+        {measured.successes} of {measured.attempts}
+        {measured.status === "incomplete" && " · incomplete"}
+      </span>
+      <span className="sr-only">{measured.label}</span>
+    </span>
+  )
+}
+
+/** A finding as a card: how serious it is and what it is, how often it reproduced, who owns it, and the two ways in. */
+function FindingCard({ finding, selected, onPreview }: { finding: FindingItem; selected: boolean; onPreview: () => void }) {
+  return (
+    <GlassCard label={`${finding.code}: ${finding.title}`} className={selected ? "ring-2 ring-primary" : undefined}>
+      <div className="flex items-center justify-between gap-2">
+        <SeverityBadge severity={finding.severity} />
+        <span className="font-mono text-[13px] text-link">{finding.code}</span>
+      </div>
+      <h3 className="mt-3 line-clamp-3 text-base leading-snug font-medium">{finding.title}</h3>
+      <p className="mt-1 text-sm text-foreground/65">{finding.target.name}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <StatusBadge status={finding.status} />
+        <span className="rounded-full border border-[#e1e7fb] bg-white px-2 py-0.5 font-mono text-xs dark:border-transparent dark:bg-white/10" title={finding.category_name}>
+          {finding.category}
+        </span>
+      </div>
+      {finding.status === "requires_confirmation" && <JudgeOnly />}
+      <div className="mt-3">
+        <ReproDots finding={finding} />
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-foreground/65">
+        <Owner finding={finding} />
+        <span>last seen {formatDate(finding.last_seen_at)}</span>
+      </div>
+      <div className="mt-auto flex items-center gap-2 pt-4">
+        <Link href={`/findings/${finding.code}`} className={GLASS_BUTTON}>
+          Open
+          <span className="sr-only"> {finding.code}</span>
+        </Link>
+        <button type="button" className={GLASS_ROUND} aria-label={`Preview ${finding.code}`} data-preview={finding.code} onClick={onPreview} title="Preview">
+          <PanelRightOpen className="size-5" aria-hidden="true" />
+        </button>
+      </div>
+    </GlassCard>
+  )
+}
+
 /** The mark of UC-6.4, 2b: only the LLM judge supported the finding, so an analyst confirms it.
  * Dashed, like its status, and in words, so it never rests on colour (NFR-4.3). */
 function JudgeOnly() {
@@ -179,11 +239,11 @@ export function FindingsList({ targetId }: { targetId?: string } = {}) {
 }
 
 function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside: () => void }) {
-  const organization = useSession().organization
   const query = useSearchParams()
   // The list starts as its address says: a link from the Risk Dashboard (UC-7.3 step 6), a
   // reload, or a link somebody shared
   const asked = query.get("view") as FindingView | null
+  const [layout, setLayout] = useStoredView("findings") // one card for each finding (the first look), or the table
   const [view, setView] = useState<FindingView>(
     asked && (VIEWS.includes(asked) || LINKED_VIEWS.includes(asked)) ? asked : "open",
   )
@@ -474,14 +534,13 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
           {data ? `${data.total} ${data.total === 1 ? "finding" : "findings"}` : ""}
           {data && <span className="sr-only">, {SORT_WORDS[sort][direction === "asc" ? 0 : 1]}</span>}
         </span>
+        <ViewSwitch value={layout} onChange={setLayout} />
       </div>
 
       <SeverityStrip counts={data?.severity_counts} chosen={severity} onChoose={filter(setSeverity)} />
 
       {data?.mine_first && data.total > 0 && (
-        <p className="border-b px-3 py-2 text-[13px] text-muted-foreground">
-          The findings assigned to you come first, then the most severe.
-        </p>
+        <p className="border-b px-3 py-2 text-[13px] text-muted-foreground">Yours first, then the most severe.</p>
       )}
 
       {error && (
@@ -510,7 +569,7 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
           {filtered ? (
             <EmptyState
               title="No findings match these filters"
-              description="Remove some filters or change the search."
+              description="Change the filters."
               action={
                 <Button variant="outline" className="h-9" onClick={clearFilters}>
                   Clear filters
@@ -518,18 +577,18 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
               }
             />
           ) : view === "closed" ? (
-            <EmptyState title="No closed findings" description="Findings that were fixed, merged or rejected appear here." />
+            <EmptyState title="No closed findings" description="Closed findings appear here." />
           ) : view === "requires_confirmation" ? (
             <EmptyState
               title="Nothing waits for confirmation"
-              description="A finding that only the LLM judge supports appears here until an analyst confirms it."
+              description="Findings only the LLM judge supports appear here."
             />
           ) : view === "assigned" ? (
-            <EmptyState title="Nothing is assigned to you" description="A finding appears here once an analyst makes you its owner." />
+            <EmptyState title="Nothing is assigned to you" description="Findings you own appear here." />
           ) : (
             <EmptyState
               title="No open findings"
-              description="Findings appear here while campaign runs test your targets."
+              description="Findings appear as campaigns run."
               action={
                 <Button asChild variant="outline" className="h-9">
                   <Link href="/campaigns">Go to campaigns</Link>
@@ -540,7 +599,30 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
         </div>
       )}
 
-      {data && data.total > 0 && (
+      {data && data.total > 0 && layout === "cards" && (
+        <>
+          <ul className="grid gap-4 bg-muted/40 p-4 @2xl:grid-cols-2 @5xl:grid-cols-3" aria-label="Findings, one card each">
+            {data.items.map((finding: FindingItem) => (
+              <li key={finding.code} className="min-w-0">
+                <FindingCard finding={finding} selected={finding.code === selected} onPreview={() => preview(finding.code)} />
+              </li>
+            ))}
+          </ul>
+          <nav aria-label="Pages" className="flex items-center justify-end gap-3 border-t px-4 py-2.5 text-sm">
+            <span className="tabular text-muted-foreground">
+              {(data.page - 1) * data.page_size + 1}–{Math.min(data.page * data.page_size, data.total)} of {data.total}
+            </span>
+            <Button variant="outline" size="icon" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              <ChevronLeft aria-hidden="true" />
+            </Button>
+            <Button variant="outline" size="icon" aria-label="Next page" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
+              <ChevronRight aria-hidden="true" />
+            </Button>
+          </nav>
+        </>
+      )}
+
+      {data && data.total > 0 && layout === "list" && (
         <>
           <div className="hidden @4xl:block">
             <Table
@@ -604,7 +686,6 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
                     </TableCell>
                     <TableCell className="py-2 text-[13px]">
                       {formatDate(finding.last_seen_at)}
-                      <span className="block font-mono text-xs text-muted-foreground">{finding.last_run.code}</span>
                     </TableCell>
                     <TableCell className="py-2 text-right">
                       <Button
@@ -712,7 +793,7 @@ function ListFromAddress({ targetId, onOutside }: { targetId?: string; onOutside
       {!targetId && (
         <PageHeader
           title="Findings"
-          description={`Weaknesses found in ${organization?.name ?? "your organization"}'s targets, with evidence.`}
+          description="Weaknesses found, with evidence."
         />
       )}
 

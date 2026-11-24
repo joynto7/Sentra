@@ -126,7 +126,6 @@ export function FindingActivity({ code }: { code: string }) {
     return (
       <EmptyState
         title="Finding not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/findings">Back to findings</Link>
@@ -153,10 +152,7 @@ export function FindingActivity({ code }: { code: string }) {
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <section className="min-w-0 space-y-3 rounded-[10px] border bg-card p-5">
           <h2 className="text-[15px] font-semibold">History</h2>
-          <p className="text-[13px] text-muted-foreground">
-            Every decision about this finding, oldest first. The history is append-only, so a correction is a new
-            entry.
-          </p>
+          <p className="text-[13px] text-muted-foreground">Every decision, oldest first. Corrections are new entries.</p>
           <ul className="flex flex-col">
             {history.map((entry) => (
               <HistoryEntry key={`${entry.finding}-${entry.number}`} entry={entry} code={finding.code} />
@@ -174,9 +170,7 @@ export function FindingActivity({ code }: { code: string }) {
           {finding.merged_in.length > 0 && (
             <section className="space-y-2 rounded-[10px] border bg-card p-5">
               <h2 className="text-[15px] font-semibold">Merged duplicates</h2>
-              <p className="text-[13px] text-muted-foreground">
-                Their evidence and their history count as this finding&apos;s.
-              </p>
+              <p className="text-[13px] text-muted-foreground">Their evidence and history count as this finding&apos;s.</p>
               <ul className="flex flex-wrap gap-2">
                 {finding.merged_in.map((other) => (
                   <li key={other}>

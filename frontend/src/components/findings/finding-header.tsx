@@ -1,11 +1,9 @@
 "use client"
 
-import { Fragment } from "react"
 import Link from "next/link"
 
 import { StatusBadge } from "@/components/findings/finding-badges"
 import { type Crumb, usePageCrumbs } from "@/components/layout/breadcrumbs"
-import { AtlasId, OwaspLink } from "@/components/sentra/framework-ids"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
 import type { FindingDetail } from "@/lib/findings"
 import { formatDateTime } from "@/lib/targets"
@@ -56,18 +54,7 @@ export function FindingHeader({
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-x-1.5 font-mono text-[13px] text-muted-foreground">
-          <span>{finding.code}</span>
-          <span aria-hidden="true">·</span>
-          <OwaspLink code={finding.category} />
-          {finding.atlas.map((technique) => (
-            <Fragment key={technique}>
-              <span aria-hidden="true">·</span>
-              <AtlasId code={technique} />
-            </Fragment>
-          ))}
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{finding.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{finding.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
           <SeverityBadge severity={finding.severity} />
           <StatusBadge status={finding.status} />

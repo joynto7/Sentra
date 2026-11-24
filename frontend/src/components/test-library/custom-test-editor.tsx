@@ -15,6 +15,7 @@ import { TemplateEditor } from "@/components/targets/template-editor"
 import { BuiltInPicker } from "@/components/test-library/built-in-picker"
 import { DetectionPicker, withMethod } from "@/components/test-library/detection-picker"
 import { RuleBuilder } from "@/components/test-library/rule-builder"
+import { definitionChanges } from "@/components/test-library/authoring-changes"
 import { ValidationPanel } from "@/components/test-library/validation-panel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -342,7 +343,7 @@ export function CustomTestEditor({ code, from }: { code?: string; from?: string 
     return (
       <EmptyState
         title="Only Security Analysts create and change custom tests"
-        description="You can browse the Test Library. Ask a Security Analyst of your organization to add the test."
+        description="Ask a Security Analyst."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/test-library">Back to the Test Library</Link>
@@ -355,7 +356,6 @@ export function CustomTestEditor({ code, from }: { code?: string; from?: string 
     return (
       <EmptyState
         title="Test definition not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/test-library">Back to the Test Library</Link>
@@ -376,7 +376,7 @@ export function CustomTestEditor({ code, from }: { code?: string; from?: string 
     return (
       <EmptyState
         title={original.retired ? "This test is retired" : "Built-in tests are read-only"}
-        description={`To adapt ${original.code}, duplicate it as a new custom test of ${organization}.`}
+        description="Duplicate it to adapt it."
         action={
           <Button asChild className="h-9 hover:bg-primary-hover">
             <Link href={`/test-library/new?from=${encodeURIComponent(original.code)}`}>Duplicate as custom test</Link>
@@ -748,6 +748,38 @@ export function CustomTestEditor({ code, from }: { code?: string; from?: string 
           )}
         </form>
 
+        <div className="space-y-5 lg:sticky lg:top-6">
+        <section aria-label="What saving will do" aria-live="polite" className="rounded-[10px] border bg-muted/40 p-4 text-[13px]">
+          <h2 className="text-[13px] font-semibold">What saving will do</h2>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-text-secondary">
+            {editing && original ? (
+              <>
+                <li>
+                  Creates version {original.version + 1} of <span className="font-mono">{original.code}</span>. Version {original.version} stays in the version history.
+                </li>
+                <li>
+                  {mode === "file"
+                    ? "Edited as a file: the changes are checked when it is saved."
+                    : (() => {
+                        const changed = definitionChanges(toDefinition(original), form)
+                        return changed.length ? `Changed since version ${original.version}: ${changed.join(", ")}.` : `Nothing has changed since version ${original.version} yet.`
+                      })()}
+                </li>
+                <li>
+                  {original.suites.length
+                    ? `${original.suites.map((suite) => suite.name).join(", ")} run${original.suites.length === 1 ? "s" : ""} the new version from the next campaign run; earlier runs keep the version they used.`
+                    : "No suite includes it yet, so no campaign runs it until one does."}
+                </li>
+              </>
+            ) : (
+              <>
+                <li>Creates a custom test as version 1, visible only to {organization}. Sentra gives it its ID.</li>
+                <li>Nothing runs it until a suite includes it and a campaign uses that suite.</li>
+              </>
+            )}
+            <li>It is saved only if the checks on this page pass. A failed save creates no version.</li>
+          </ul>
+        </section>
         <ValidationPanel
           result={result}
           checking={checking}
@@ -755,6 +787,7 @@ export function CustomTestEditor({ code, from }: { code?: string; from?: string 
           organization={organization}
           onShowField={showField}
         />
+        </div>
       </div>
 
       <div className="sticky bottom-0 z-10 -mx-4 mt-6 flex justify-end gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur md:-mx-8 md:px-8">

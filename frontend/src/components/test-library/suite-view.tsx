@@ -72,7 +72,6 @@ export function SuiteView({ code, version }: { code: string; version?: number })
     return (
       <EmptyState
         title="Test suite not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/test-library?tab=suites">Back to the test suites</Link>

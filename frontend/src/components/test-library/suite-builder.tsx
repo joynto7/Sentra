@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/layout/empty-state"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { SeverityBadge } from "@/components/sentra/severity-badge"
 import { useSession } from "@/components/session-provider"
+import { suiteChange, suiteSaveImpact } from "@/components/test-library/authoring-changes"
 import { SuiteSummaryCard } from "@/components/test-library/suite-summary-card"
 import { groupByCategory } from "@/components/test-library/suite-view"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -47,7 +48,7 @@ import { cn } from "@/lib/utils"
 
 const SUITES = { label: "Test Suites", href: "/test-library?tab=suites" }
 const FIELD_ORDER = ["name", "purpose", "tests", "reason"]
-type Row = { code: string; name: string; category: string; severity: TestSummary["severity"]; target_types: string[]; retired?: boolean }
+type Row = { code: string; name: string; category: string; severity: TestSummary["severity"]; target_types: string[]; retired?: boolean; version?: number }
 
 const types = (row: Row) => (row.target_types.length === 3 ? "All types" : row.target_types.map((t) => TARGET_TYPE_LABEL[t]).join(", "))
 
@@ -235,7 +236,7 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
     return (
       <EmptyState
         title="Only Security Analysts build test suites"
-        description="You can browse the test suites. Ask a Security Analyst of your organization to build or change one."
+        description="Ask a Security Analyst."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/test-library?tab=suites">Back to the test suites</Link>
@@ -248,7 +249,6 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
     return (
       <EmptyState
         title="Test suite not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/test-library?tab=suites">Back to the test suites</Link>
@@ -269,7 +269,7 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
     return (
       <EmptyState
         title={original.status === "archived" ? "This suite is archived" : "Built-in suites are read-only"}
-        description={`To adapt ${original.name}, duplicate it as a suite of ${organization}.`}
+        description="Duplicate it to adapt it."
         action={
           <Button asChild className="h-9 hover:bg-primary-hover">
             <Link href={`/test-library/suites/new?from=${encodeURIComponent(original.code)}`}>Duplicate as custom suite</Link>
@@ -288,6 +288,17 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
   }
 
   const nextVersion = (original?.version ?? 0) + 1
+  const change = suiteChange(editing ? (original?.test_codes ?? null) : null, tests)
+  const impact = suiteSaveImpact({
+    editing,
+    name,
+    nextVersion,
+    count: tests.length,
+    retired: chosen.filter((row) => row.retired).length,
+    added: change.added,
+    removed: change.removed,
+    campaigns: campaigns.length,
+  })
 
   return (
     <div>
@@ -395,6 +406,7 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
                       <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="font-mono">{row.category}</span>
                         <SeverityBadge severity={row.severity} />
+                        {row.version !== undefined && <span className="font-mono">v{row.version}</span>}
                         <span>{types(row)}</span>
                       </div>
                     </div>
@@ -442,7 +454,7 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
                               <span className="text-sm">{row.name}</span>
                             </div>
                             <p className={cn("text-xs", row.retired ? "text-warning" : "text-muted-foreground")}>
-                              {row.retired ? "Retired: skipped in future runs" : types(row)}
+                              {row.retired ? "Retired: skipped in future runs" : `${row.version !== undefined ? `v${row.version} · ` : ""}${types(row)}`}
                             </p>
                           </div>
                           <Button
@@ -467,6 +479,14 @@ export function SuiteBuilder({ code, from, test }: { code?: string; from?: strin
 
           <div className="space-y-5 xl:sticky xl:top-6">
             <SuiteSummaryCard summary={summary} live />
+            <section aria-label="What saving will do" aria-live="polite" className="rounded-[10px] border bg-muted/40 p-4 text-[13px]">
+              <h2 className="text-[13px] font-semibold">What saving will do</h2>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-text-secondary">
+                {impact.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </section>
           </div>
         </div>
 
