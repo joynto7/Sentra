@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation"
+import type { Metadata } from "next"
 
-/** Administration opens its first page, Members. */
+import { GovernanceOverview } from "@/components/admin/governance-overview"
+
+export const metadata: Metadata = { title: "Administration" }
+
+/** Administration opens its overview: where the organization's setup stands, with a link to each part. */
 export default function AdminPage() {
-  redirect("/admin/members")
+  return <GovernanceOverview />
 }

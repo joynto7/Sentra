@@ -274,7 +274,7 @@ export function AuditLogPage({
     return (
       <EmptyState
         title="Only Organization Administrators review the audit log"
-        description="Ask an Organization Administrator of your organization if you need to know who did what."
+        description="Ask an Organization Administrator."
       />
     )
   }
@@ -400,7 +400,6 @@ export function AuditLogPage({
             ) : query.period !== "all" ? (
               <EmptyState
                 title={`No entries in the ${periodLabel.toLowerCase()}`}
-                description="Older entries are kept for at least one year."
                 action={
                   <Button variant="outline" className="h-9" onClick={() => change({ period: "all" })}>
                     Show all time
@@ -408,7 +407,7 @@ export function AuditLogPage({
                 }
               />
             ) : (
-              <EmptyState title="No entries yet" description={`Actions in ${where} appear here as soon as they happen.`} />
+              <EmptyState title="No entries yet" description="Actions appear here." />
             )}
           </div>
         )}

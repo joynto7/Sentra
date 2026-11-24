@@ -10,20 +10,15 @@ import { EmptyState } from "@/components/layout/empty-state"
 import { DeployDialog } from "@/components/shield/deploy-dialog"
 import { RollbackDialog } from "@/components/shield/rollback-dialog"
 import { RulesDialog } from "@/components/shield/rules-dialog"
+import { GLASS_SURFACE } from "@/components/sentra/glass-card"
+import { type Step, StepJourney } from "@/components/sentra/step-journey"
 import { TargetTabs } from "@/components/targets/target-tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useCan } from "@/lib/permissions"
-import {
-  POSITION_PHRASE,
-  type PolicyPage as Page,
-  type PolicyVersion,
-  STATUS_IS_A_PROBLEM,
-  getPolicy,
-  sinceNow,
-} from "@/lib/shield"
+import { POSITION_PHRASE, type PolicyPage as Page, type PolicyVersion, STATUS_IS_A_PROBLEM, getPolicy, sinceNow } from "@/lib/shield"
 import { formatDateTime } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
@@ -65,10 +60,7 @@ export function PolicyPage({ id }: { id: string }) {
   const [deploying, setDeploying] = useState(false)
   const [rollingBackTo, setRollingBackTo] = useState<number | null>(null)
 
-  usePageCrumbs([
-    { label: page?.target_name ?? "Target", href: `/targets/${id}` },
-    { label: "Sentra Shield" },
-  ])
+  usePageCrumbs([{ label: page?.target_name ?? "Target", href: `/targets/${id}` }, { label: "Sentra Shield" }])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -91,7 +83,6 @@ export function PolicyPage({ id }: { id: string }) {
     return (
       <EmptyState
         title="Target not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/shield">Back to Sentra Shield</Link>
@@ -125,8 +116,125 @@ export function PolicyPage({ id }: { id: string }) {
   const { gateway, active, waiting } = page
   const failed = page.versions.find((one) => one.state === "failed")
   const scheduled = page.versions.find((one) => one.state === "scheduled")
-  const behind =
-    gateway && active && gateway.policy_version !== active.version && gateway.status !== "revoked"
+  const behind = gateway && active && gateway.policy_version !== active.version && gateway.status !== "revoked"
+
+  // How the target comes to be protected, from what this page already knows (UC-8.1, UC-8.4)
+  const gatewayProblem = gateway ? STATUS_IS_A_PROBLEM[gateway.status] : false
+  const enforcing = Boolean(
+    gateway && active && active.source !== "disabled" && gateway.status === "active" && gateway.policy_version === active.version,
+  )
+  const steps: Step[] = [
+    !gateway
+      ? {
+          id: "gateway",
+          title: "Gateway",
+          state: canManage ? "current" : "waiting",
+          status:
+            "No gateway stands in this target's traffic, so approved guardrail, tool and retrieval fixes stay a change inside the application.",
+          who: "AI Application Developer",
+          action: canManage ? { label: "Connect Sentra Shield", href: `/shield/connect/${page.target_id}` } : null,
+        }
+      : gatewayProblem
+        ? {
+            id: "gateway",
+            title: "Gateway",
+            state: "problem",
+            word: gateway.status_label,
+            status: "The gateway is not protecting anything now.",
+            who: "AI Application Developer",
+            action:
+              gateway.status !== "revoked"
+                ? { label: "Troubleshoot", href: `/shield/connect/${page.target_id}?step=3` }
+                : canManage
+                  ? { label: "Connect again", href: `/shield/connect/${page.target_id}` }
+                  : null,
+          }
+        : {
+            id: "gateway",
+            title: "Gateway",
+            state: "done",
+            status: `${gateway.status_label} · ${POSITION_PHRASE[gateway.position]} · last contact ${sinceNow(gateway.last_contact_at)}.`,
+          },
+    page.deployable.length > 0
+      ? {
+          id: "fixes",
+          title: "Approved fixes",
+          state: "current",
+          word: "Ready",
+          status: `${page.deployable.length} ${page.deployable.length === 1 ? "remediation" : "remediations"} a person approved ${page.deployable.length === 1 ? "is" : "are"} not in the policy yet.`,
+          who: "AI Application Developer",
+          action:
+            canManage && gateway?.status === "active"
+              ? { label: "Deploy approved fixes", onClick: () => setDeploying(true) }
+              : { label: "See the remediations", href: "/remediation" },
+        }
+      : active
+        ? { id: "fixes", title: "Approved fixes", state: "done", status: "Every approved fix that a gateway can carry is in the policy." }
+        : {
+            id: "fixes",
+            title: "Approved fixes",
+            state: "upcoming",
+            status: "A fix is approved by a person before it can go into a policy.",
+            action: { label: "Open the remediations", href: "/remediation" },
+          },
+    failed
+      ? {
+          id: "deploy",
+          title: "Deployed",
+          state: "problem",
+          status: `Version ${failed.version} was not activated${failed.failure_reason ? `: ${failed.failure_reason}` : "."}`,
+          who: "AI Application Developer",
+        }
+      : waiting
+        ? {
+            id: "deploy",
+            title: "Deployed",
+            state: "current",
+            working: true,
+            word: "On its way",
+            status: `Version ${waiting.version} (${waiting.rule_count} rules) is on its way to the gateway.`,
+          }
+        : scheduled
+          ? {
+              id: "deploy",
+              title: "Deployed",
+              state: "waiting",
+              status: `Version ${scheduled.version} waits for its maintenance window${scheduled.deploy_at ? ` on ${formatDateTime(scheduled.deploy_at)}` : ""}.`,
+            }
+          : active
+            ? {
+                id: "deploy",
+                title: "Deployed",
+                state: "done",
+                status: `Version ${active.version} ${active.confirmed_at ? `active since ${formatDateTime(active.confirmed_at)}` : `deployed ${formatDateTime(active.created_at)}`}${active.deployed_by ? ` by ${active.deployed_by}` : ""}.`,
+              }
+            : { id: "deploy", title: "Deployed", state: "upcoming", status: "Nothing is deployed yet." },
+    enforcing
+      ? {
+          id: "enforce",
+          title: "Enforcing",
+          state: "done",
+          status: `The gateway enforces version ${active?.version}: ${gateway?.requests_blocked.toLocaleString("en-GB")} requests stopped so far.`,
+          action: active ? { label: "View the rules", onClick: () => setRules(active) } : null,
+        }
+      : behind
+        ? {
+            id: "enforce",
+            title: "Enforcing",
+            state: "current",
+            status: `The gateway last reported version ${gateway?.policy_version}; it takes version ${active?.version} at its next report.`,
+          }
+        : {
+            id: "enforce",
+            title: "Enforcing",
+            state: "upcoming",
+            status:
+              active?.source === "disabled"
+                ? "The policy is switched off: traffic passes unchanged."
+                : "Begins when the gateway confirms the policy.",
+          },
+  ]
+  const firstOpen = steps.find((step) => step.state !== "done" && step.state !== "upcoming") ?? steps[steps.length - 1]
 
   return (
     <div className="pb-24">
@@ -137,8 +245,16 @@ export function PolicyPage({ id }: { id: string }) {
 
       <TargetTabs targetId={page.target_id} active="shield" />
 
+      <StepJourney
+        title="How this target is protected"
+        titleId="shield-journey-heading"
+        fallbackId={firstOpen.id}
+        steps={steps}
+        summary={firstOpen.state === "done" ? "The Shield is enforcing the approved policy." : `Next: ${firstOpen.title.toLowerCase()}.`}
+      />
+
       {/* The gateway in the traffic (UC-8.1) */}
-      <section aria-labelledby="gateway" className="rounded-[10px] border bg-card p-4">
+      <section aria-labelledby="gateway" className={`rounded-2xl border p-4 ${GLASS_SURFACE}`}>
         <h2 id="gateway" className="text-[15px] font-semibold">
           Gateway
         </h2>
@@ -151,9 +267,7 @@ export function PolicyPage({ id }: { id: string }) {
                   STATUS_IS_A_PROBLEM[gateway.status] ? "text-warning" : "text-text-secondary",
                 )}
               >
-                {STATUS_IS_A_PROBLEM[gateway.status] && (
-                  <TriangleAlert className="size-3.5" aria-hidden="true" />
-                )}
+                {STATUS_IS_A_PROBLEM[gateway.status] && <TriangleAlert className="size-3.5" aria-hidden="true" />}
                 {gateway.status_label}
               </span>
               <span className="text-muted-foreground">·</span>
@@ -169,15 +283,26 @@ export function PolicyPage({ id }: { id: string }) {
                 </>
               )}
             </p>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              {gateway.requests_seen.toLocaleString("en-GB")} requests through it ·{" "}
-              {gateway.requests_blocked.toLocaleString("en-GB")} stopped by its policy ·{" "}
-              {gateway.requests_changed.toLocaleString("en-GB")} changed
-              {Object.keys(gateway.retrieval_sightings).length > 0 &&
-                ` · watched sources seen: ${Object.entries(gateway.retrieval_sightings)
+            <dl className="mt-3 grid grid-cols-3 divide-x divide-foreground/10 rounded-xl bg-white/70 py-2 text-center dark:bg-white/5">
+              {[
+                ["Through it", gateway.requests_seen],
+                ["Stopped by its policy", gateway.requests_blocked],
+                ["Changed", gateway.requests_changed],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="px-2">
+                  <dd className="tabular text-xl leading-7 font-semibold">{Number(value).toLocaleString("en-GB")}</dd>
+                  <dt className="text-xs text-foreground/65">{label}</dt>
+                </div>
+              ))}
+            </dl>
+            {Object.keys(gateway.retrieval_sightings).length > 0 && (
+              <p className="mt-2 text-[13px] text-muted-foreground">
+                Watched sources seen:{" "}
+                {Object.entries(gateway.retrieval_sightings)
                   .map(([source, count]) => `${source} (${count})`)
-                  .join(", ")}`}
-            </p>
+                  .join(", ")}
+              </p>
+            )}
             {STATUS_IS_A_PROBLEM[gateway.status] && gateway.status !== "revoked" && (
               <Button asChild variant="outline" size="sm" className="mt-3 h-8">
                 <Link href={`/shield/connect/${page.target_id}?step=3`}>Troubleshoot</Link>
@@ -188,8 +313,8 @@ export function PolicyPage({ id }: { id: string }) {
           <>
             <p className="mt-1.5 flex items-start gap-2 text-sm">
               <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              No gateway stands in this target&apos;s traffic, so approved guardrail, tool and
-              retrieval fixes stay a change inside the application.
+              No gateway stands in this target&apos;s traffic, so approved guardrail, tool and retrieval fixes stay a change inside the
+              application.
             </p>
             {canManage && (
               <Button asChild variant="outline" size="sm" className="mt-3 h-8">
@@ -202,14 +327,11 @@ export function PolicyPage({ id }: { id: string }) {
 
       {/* What is on its way, and what never arrived (UC-8.4, 1a and 4a1) */}
       {waiting && (
-        <p
-          className="mt-4 flex items-start gap-2 rounded-[10px] border bg-card p-4 text-sm"
-          aria-live="polite"
-        >
+        <p className="mt-4 flex items-start gap-2 rounded-[10px] border bg-card p-4 text-sm" aria-live="polite">
           <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span>
-            Version {waiting.version} ({waiting.rule_count} rules) is on its way to the gateway. It
-            becomes active when the gateway confirms that it is enforcing it.
+            Version {waiting.version} ({waiting.rule_count} rules) is on its way to the gateway. It becomes active when the gateway confirms
+            that it is enforcing it.
           </span>
         </p>
       )}
@@ -229,8 +351,8 @@ export function PolicyPage({ id }: { id: string }) {
         >
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <span>
-            Version {failed.version} was not activated: {failed.failure_reason} Version{" "}
-            {active?.version ?? "—"} is still what the gateway enforces.
+            Version {failed.version} was not activated: {failed.failure_reason} Version {active?.version ?? "—"} is still what the gateway
+            enforces.
           </span>
         </p>
       )}
@@ -238,24 +360,18 @@ export function PolicyPage({ id }: { id: string }) {
         <p className="mt-4 flex items-start gap-2 rounded-[10px] border bg-card p-4 text-sm">
           <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span>
-            The gateway last reported version {gateway?.policy_version}; it takes version{" "}
-            {active?.version} at its next report.
+            The gateway last reported version {gateway?.policy_version}; it takes version {active?.version} at its next report.
           </span>
         </p>
       )}
 
       {/* The active version (UC-8.4 step 5) */}
-      <section
-        aria-labelledby="active-policy"
-        className="mt-4 min-w-0 rounded-[10px] border bg-card p-4"
-      >
+      <section aria-labelledby="active-policy" className={`mt-4 min-w-0 rounded-2xl border p-4 ${GLASS_SURFACE}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="active-policy" className="text-[15px] font-semibold">
               {active
-                ? `Shield Policy v${active.version} — ${
-                    active.source === "disabled" ? "the policy is switched off" : "active"
-                  }`
+                ? `Shield Policy v${active.version} — ${active.source === "disabled" ? "the policy is switched off" : "active"}`
                 : "No Shield Policy yet"}
             </h2>
             {active && (
@@ -278,17 +394,12 @@ export function PolicyPage({ id }: { id: string }) {
         {active ? (
           <>
             {active.source === "disabled" && (
-              <p className="mt-3 text-[13px] text-text-secondary">
-                The gateway forwards all traffic unchanged. Deploy an approved remediation to
-                protect the target again.
-              </p>
+              <p className="mt-3 text-[13px] text-text-secondary">Traffic passes unchanged. Deploy an approved fix to protect it.</p>
             )}
             {active.reason && (
               <p className="mt-3 text-[13px] text-text-secondary">
                 Reason given: &ldquo;{active.reason}&rdquo;
-                {active.rolled_back_from
-                  ? ` (it replaced version ${active.rolled_back_from})`
-                  : ""}
+                {active.rolled_back_from ? ` (it replaced version ${active.rolled_back_from})` : ""}
               </p>
             )}
             {active.remediations.length > 0 && (
@@ -306,8 +417,7 @@ export function PolicyPage({ id }: { id: string }) {
                       {one.finding_title ? ` ${one.finding_title}` : ""}
                       <span className="text-muted-foreground">
                         {" "}
-                        · proposal version {one.version} · {one.fixes.length}{" "}
-                        {one.fixes.length === 1 ? "fix" : "fixes"}
+                        · proposal version {one.version} · {one.fixes.length} {one.fixes.length === 1 ? "fix" : "fixes"}
                       </span>
                     </li>
                   ))}
@@ -324,34 +434,24 @@ export function PolicyPage({ id }: { id: string }) {
             </dl>
           </>
         ) : (
-          <p className="mt-2 text-[13px] text-text-secondary">
-            Nothing is enforced yet. A policy version is written when a remediation whose fixes
-            this gateway can carry is approved, or when you deploy one here.
-          </p>
+          <p className="mt-2 text-[13px] text-text-secondary">Nothing enforced yet.</p>
         )}
       </section>
 
       {/* UC-8.4 step 1: what could go in next */}
       {page.deployable.length > 0 && (
-        <section
-          aria-labelledby="deployable"
-          className="mt-4 min-w-0 rounded-[10px] border bg-card p-4"
-        >
+        <section aria-labelledby="deployable" className="mt-4 min-w-0 rounded-[10px] border bg-card p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 id="deployable" className="text-[15px] font-semibold">
                 Approved fixes not in the policy yet
               </h2>
               <p className="mt-1 text-[13px] text-muted-foreground">
-                {page.deployable.length}{" "}
-                {page.deployable.length === 1 ? "remediation" : "remediations"} a person approved.
+                {page.deployable.length} {page.deployable.length === 1 ? "remediation" : "remediations"} a person approved.
               </p>
             </div>
             {canManage && gateway?.status === "active" && (
-              <Button
-                className="h-9 hover:bg-primary-hover"
-                onClick={() => setDeploying(true)}
-              >
+              <Button className="h-9 hover:bg-primary-hover" onClick={() => setDeploying(true)}>
                 Deploy approved fixes
               </Button>
             )}
@@ -398,8 +498,7 @@ export function PolicyPage({ id }: { id: string }) {
               tabIndex: 0,
               role: "group",
               "aria-label": "Shield Policy versions",
-              className:
-                "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              className: "rounded-[7px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             }}
           >
             <TableHeader className="bg-muted">
@@ -431,9 +530,7 @@ export function PolicyPage({ id }: { id: string }) {
                     v{one.version}
                     {one.source !== "remediation" && (
                       <span className="block text-xs font-normal text-muted-foreground">
-                        {one.source === "rollback"
-                          ? `rollback to v${one.based_on_version}`
-                          : "policy switched off"}
+                        {one.source === "rollback" ? `rollback to v${one.based_on_version}` : "policy switched off"}
                       </span>
                     )}
                   </TableCell>
@@ -448,19 +545,11 @@ export function PolicyPage({ id }: { id: string }) {
                       {one.state_label}
                     </span>
                     {one.rolled_back_reason && (
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        reason: {one.rolled_back_reason}
-                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">reason: {one.rolled_back_reason}</span>
                     )}
-                    {one.failure_reason && (
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {one.failure_reason}
-                      </span>
-                    )}
+                    {one.failure_reason && <span className="mt-0.5 block text-xs text-muted-foreground">{one.failure_reason}</span>}
                     {one.reason && one.state !== "rolled_back" && (
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        reason: {one.reason}
-                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">reason: {one.reason}</span>
                     )}
                   </TableCell>
                   <TableCell className="max-w-[12rem] text-[13px] whitespace-normal">
@@ -468,22 +557,11 @@ export function PolicyPage({ id }: { id: string }) {
                   </TableCell>
                   <TableCell className="text-[13px]">
                     {formatDateTime(one.confirmed_at ?? one.created_at)}
-                    {one.deployed_by && (
-                      <span className="block text-xs text-muted-foreground">
-                        by {one.deployed_by}
-                      </span>
-                    )}
+                    {one.deployed_by && <span className="block text-xs text-muted-foreground">by {one.deployed_by}</span>}
                   </TableCell>
-                  <TableCell className="text-[13px]">
-                    {one.approved_by ?? <span className="text-muted-foreground">—</span>}
-                  </TableCell>
+                  <TableCell className="text-[13px]">{one.approved_by ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="space-x-2 text-right whitespace-nowrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => setRules(one)}
-                    >
+                    <Button variant="outline" size="sm" className="h-8" onClick={() => setRules(one)}>
                       View rules
                       <span className="sr-only"> of version {one.version}</span>
                     </Button>
@@ -492,12 +570,7 @@ export function PolicyPage({ id }: { id: string }) {
                       one.version !== active.version &&
                       one.rule_count > 0 &&
                       (one.state === "superseded" || one.state === "rolled_back") && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          onClick={() => setRollingBackTo(one.version)}
-                        >
+                        <Button variant="outline" size="sm" className="h-8" onClick={() => setRollingBackTo(one.version)}>
                           Roll back to v{one.version}
                         </Button>
                       )}
@@ -507,8 +580,7 @@ export function PolicyPage({ id }: { id: string }) {
             </TableBody>
           </Table>
           <p className="border-t p-3 text-[13px] text-muted-foreground">
-            No version is ever changed: every deployment and every rollback writes a new one, so
-            you can always go back to the version that worked.
+            Versions are never changed. Each deploy or rollback writes a new one.
           </p>
         </section>
       )}
@@ -523,9 +595,7 @@ export function PolicyPage({ id }: { id: string }) {
           >
             Disable Shield Policy
           </Button>
-          <p className="text-[13px] text-muted-foreground">
-            The gateway will forward all traffic unchanged.
-          </p>
+          <p className="text-[13px] text-muted-foreground">The gateway will forward all traffic unchanged.</p>
         </div>
       )}
 
@@ -538,15 +608,12 @@ export function PolicyPage({ id }: { id: string }) {
         onClose={() => setDeploying(false)}
         onDone={(result) => {
           setDeploying(false)
-          toast.success(
-            `Version ${result.policy.version} (${result.policy.rule_count} rules) is on its way to the gateway.`,
-            {
-              description:
-                result.open_in_application.length > 0
-                  ? `${result.open_in_application.length} fix(es) stay a change in the application.`
-                  : undefined,
-            },
-          )
+          toast.success(`Version ${result.policy.version} (${result.policy.rule_count} rules) is on its way to the gateway.`, {
+            description:
+              result.open_in_application.length > 0
+                ? `${result.open_in_application.length} fix(es) stay a change in the application.`
+                : undefined,
+          })
           reload()
         }}
       />

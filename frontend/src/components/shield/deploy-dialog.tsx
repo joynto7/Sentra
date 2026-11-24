@@ -163,10 +163,7 @@ export function DeployDialog({
                   <h3 id={`fix-${fix.fix}`} className="text-sm font-semibold">
                     {fix.title}
                   </h3>
-                  <p className="mt-1 text-[13px] text-text-secondary">
-                    This guardrail needs the exact terms it should match. Sentra never writes them:
-                    write one term per line, in the words of your own application.
-                  </p>
+                  <p className="mt-1 text-[13px] text-text-secondary">Write the exact terms, one per line. Sentra never writes them.</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <FormField id={`applies-${fix.fix}`} label="It looks at">
                       <select

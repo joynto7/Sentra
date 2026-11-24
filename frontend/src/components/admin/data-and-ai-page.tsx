@@ -82,7 +82,7 @@ export function DataAndAiPage() {
     return (
       <EmptyState
         title="Only Organization Administrators manage data and AI"
-        description="Ask an Organization Administrator of your organization which models process its data."
+        description="Ask an Organization Administrator."
       />
     )
   }
@@ -187,9 +187,7 @@ export function DataAndAiPage() {
               <h2 id="local-only-heading" className="text-[15px] font-semibold">
                 <label htmlFor="local-only">Local models only</label>
               </h2>
-              <p id="local-only-help" className="text-sm text-text-secondary">
-                Send no data to external providers. Tasks without a local model become unavailable.
-              </p>
+              <p id="local-only-help" className="text-sm text-text-secondary">No data goes to external providers. Tasks without a local model stop.</p>
               <p className="text-sm text-muted-foreground" aria-live="polite">
                 {data.local_models_only ? "On" : "Off"}
                 {changed ? ` since ${changed}` : ""}.

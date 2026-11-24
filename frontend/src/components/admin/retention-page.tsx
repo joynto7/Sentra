@@ -117,7 +117,7 @@ export function RetentionPage() {
     return (
       <EmptyState
         title="Only Organization Administrators set the retention periods"
-        description="Ask an Organization Administrator of your organization how long Sentra keeps its data."
+        description="Ask an Organization Administrator."
       />
     )
   }

@@ -17,6 +17,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { ApiError, fieldErrors } from "@/lib/api"
+import { useSession } from "@/components/session-provider"
+import { OutcomeNote } from "@/components/wizard/summary"
 import { type Invitation, invite } from "@/lib/members"
 import { type RoleInfo, loadRoles } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
@@ -39,6 +41,9 @@ export function InviteDialog({
   const [role, setRole] = useState(initialRole)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [pending, setPending] = useState(false)
+  const organization = useSession().organization?.name ?? "your organization"
+  const chosen = roles.find((r) => r.role === role)
+  const addressOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
   useEffect(() => {
     loadRoles().then(setRoles).catch(() => undefined)
@@ -121,6 +126,15 @@ export function InviteDialog({
               </p>
             )}
           </fieldset>
+          {/* Reviewed before the explicit send: who is told, the role, what it allows, how long the link lives. Typing here sends nothing. */}
+          {addressOk && chosen ? (
+            <OutcomeNote
+              operation="Send invitation"
+              effect={`An e-mail with a one-time link goes to ${email.trim().toLowerCase()}. They join ${organization} as ${/^[AEIOU]/.test(chosen.label) ? "an" : "a"} ${chosen.label}: ${chosen.description.charAt(0).toLowerCase()}${chosen.description.slice(1)} The link works for 7 days.`}
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground" role="status">Nothing is sent until you press Send invitation.</p>
+          )}
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
             <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
             The invitation link works once, only for this e-mail address, and expires in 7 days.
