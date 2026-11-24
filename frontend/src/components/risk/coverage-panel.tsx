@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { ArrowUpRight, CircleCheck, CircleDashed, History, Layers, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 
+import { TargetMark } from "@/components/sentra/target-picker"
 import { AcceptGapDialog } from "@/components/threat-models/accept-gap-dialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
 import { useCan } from "@/lib/permissions"
-import { COVERAGE_SYMBOL, type CoverageDetail, getCoverageCell } from "@/lib/risk"
+import { type CoverageDetail, getCoverageCell } from "@/lib/risk"
 import { formatDate } from "@/lib/targets"
 import { acceptThreatGap } from "@/lib/threat-models"
+import { cn } from "@/lib/utils"
 
 /** What the cell says, with the dates the page knows how to write (UC-7.4 steps 3-4). */
 function sentence(detail: CoverageDetail): string {
@@ -24,6 +27,20 @@ function sentence(detail: CoverageDetail): string {
     return `The target changed on ${formatDate(cell.changed_at)}, after the last test in ${cell.run.code} (${formatDate(cell.run.ended_at)}).`
   }
   return cell.reason
+}
+
+const STATUS_ICON = { tested: CircleCheck, stale: History, gap: CircleDashed } as const
+const STATUS_TONE: Record<string, string> = {
+  tested: "bg-success/10 text-success border-success/30",
+  stale: "bg-[var(--severity-medium-bg)] text-[var(--severity-medium-text)] border-[var(--severity-medium)]/50",
+  gap: "bg-muted text-text-secondary border-border-strong",
+}
+
+/** The risk of a threat (likelihood times impact), toned by how high it is; the number is always written. */
+function riskTone(risk: number): string {
+  if (risk >= 15) return "bg-[var(--severity-critical-bg)] text-[var(--severity-critical-text)]"
+  if (risk >= 9) return "bg-[var(--severity-medium-bg)] text-[var(--severity-medium-text)]"
+  return "bg-muted text-text-secondary"
 }
 
 /**
@@ -96,73 +113,107 @@ export function CoveragePanel({
       <SheetContent className="w-full gap-0 sm:max-w-[480px]">
         {shown ? (
           <>
-            <SheetHeader>
-              <SheetTitle className="text-left">
-                {shown.code} {shown.name}
-              </SheetTitle>
-              <SheetDescription className="text-left">{shown.target.name}</SheetDescription>
-            </SheetHeader>
-            <div className="space-y-4 overflow-y-auto px-4 pb-4 text-sm">
-              <p className="rounded-[7px] border bg-muted/40 p-3">
-                <span className="font-medium">
-                  <span aria-hidden="true">{COVERAGE_SYMBOL[shown.cell.status]} </span>
-                  {shown.cell.label}
+            <SheetHeader className="border-b bg-[linear-gradient(160deg,#dbe4ff_0%,#f3f6ff_60%,#ffffff_100%)] pb-4 dark:bg-[linear-gradient(160deg,#27346e_0%,#151b30_80%)]">
+              <div className="pr-8">
+                <span className="inline-block rounded-full border border-[#c9d4f7] bg-white px-2.5 py-0.5 font-mono text-xs font-bold dark:border-white/15 dark:bg-white/10">
+                  {shown.code}
                 </span>
-                <span className="mt-1 block text-text-secondary">{sentence(shown)}</span>
-                {shown.cell.open_findings > 0 && (
-                  <Link
-                    href={`/findings?view=open&category=${shown.code}&target_id=${shown.target.id}`}
-                    className="mt-2 inline-block py-1 text-link hover:underline"
+                <SheetTitle className="mt-2 text-left text-xl leading-tight">{shown.name}</SheetTitle>
+                <SheetDescription className="mt-2 flex items-center gap-2 text-left">
+                  <TargetMark name={shown.target.name} className="size-6 text-[10px]" />
+                  {shown.target.name}
+                </SheetDescription>
+              </div>
+              {(() => {
+                const Icon = STATUS_ICON[shown.cell.status as keyof typeof STATUS_ICON] ?? CircleDashed
+                return (
+                  <span
+                    className={cn(
+                      "mt-3 inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium",
+                      STATUS_TONE[shown.cell.status] ?? STATUS_TONE.gap,
+                    )}
                   >
-                    {shown.cell.open_findings} open{" "}
-                    {shown.cell.open_findings === 1 ? "finding" : "findings"} in this category
-                  </Link>
-                )}
-              </p>
+                    <Icon className="size-4" aria-hidden="true" />
+                    {shown.cell.label}
+                  </span>
+                )
+              })()}
+            </SheetHeader>
+
+            <div className="flex-1 space-y-5 overflow-y-auto bg-muted/30 px-4 py-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border bg-card p-3">
+                  <p className="text-xs text-muted-foreground">Last test</p>
+                  <p className="mt-1 leading-snug text-text-secondary">{sentence(shown)}</p>
+                </div>
+                <div className="rounded-2xl border bg-card p-3">
+                  <p className="text-xs text-muted-foreground">Open findings</p>
+                  <p className="tabular mt-0.5 text-3xl leading-tight font-semibold">{shown.cell.open_findings}</p>
+                  {shown.cell.open_findings > 0 && (
+                    <Link
+                      href={`/findings?view=open&category=${shown.code}&target_id=${shown.target.id}`}
+                      className="mt-1 inline-flex items-center gap-0.5 rounded-md py-0.5 text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`${shown.cell.open_findings} open ${shown.cell.open_findings === 1 ? "finding" : "findings"} in this category: see them`}
+                    >
+                      See them
+                      <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                    </Link>
+                  )}
+                </div>
+              </div>
 
               {shown.accepted_gap && (
-                <p className="rounded-[7px] border border-warning/40 bg-warning/5 p-3">
-                  <span className="font-medium">Gap accepted</span>
-                  <span className="mt-1 block text-text-secondary">
-                    Threat {shown.accepted_gap.threat}: {shown.accepted_gap.reason} (
-                    {formatDate(shown.accepted_gap.accepted_at)})
-                  </span>
-                </p>
+                <div className="rounded-2xl border border-warning/40 bg-warning/5 p-3">
+                  <p className="font-medium">Gap accepted</p>
+                  <p className="mt-1 text-text-secondary">
+                    Threat {shown.accepted_gap.threat}: {shown.accepted_gap.reason} ({formatDate(shown.accepted_gap.accepted_at)})
+                  </p>
+                </div>
               )}
 
               <section aria-labelledby="panel-threats">
-                <h3 id="panel-threats" className="text-[13px] font-medium text-muted-foreground">
-                  {shown.threats.length > 0
-                    ? `Why it applies — threat model v${shown.threat_model_version}`
-                    : "Why it applies"}
-                </h3>
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 id="panel-threats" className="flex items-center gap-2 text-[13px] font-semibold">
+                    <ShieldAlert className="size-4 text-muted-foreground" aria-hidden="true" />
+                    Why it applies
+                    {shown.threats.length > 0 && (
+                      <span className="tabular rounded-full bg-muted px-1.5 text-xs font-normal text-text-secondary">
+                        {shown.threats.length}
+                      </span>
+                    )}
+                  </h3>
+                  {shown.threat_model_version !== null && shown.threats.length > 0 && (
+                    <span className="text-xs text-muted-foreground">threat model v{shown.threat_model_version}</span>
+                  )}
+                </div>
                 {shown.threats.length === 0 ? (
-                  <p className="mt-1 text-text-secondary">
+                  <p className="mt-2 rounded-2xl border border-dashed p-3 text-text-secondary">
                     No threat of the approved threat model names this category.{" "}
-                    {shown.cell.status === "gap"
-                      ? "Sentra's library can test it for this kind of target, so it is still a gap."
-                      : ""}
+                    {shown.cell.status === "gap" ? "Sentra's library can test it for this kind of target, so it is still a gap." : ""}
                   </p>
                 ) : (
-                  <ul className="mt-1 space-y-2">
+                  <ul className="mt-2 space-y-2">
                     {shown.threats.map((threat) => (
-                      <li key={threat.number} className="flex items-start justify-between gap-3">
-                        <span>
-                          {threat.title}
-                          <span className="block text-xs text-muted-foreground">
-                            {threat.component} · risk {threat.risk}
+                      <li key={threat.number} className="rounded-2xl border bg-card p-3">
+                        <p className="leading-snug font-medium">{threat.title}</p>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                          <span className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-text-secondary">{threat.component}</span>
+                            <span className={cn("tabular rounded-full px-2 py-0.5 font-medium", riskTone(threat.risk))}>
+                              Risk {threat.risk}
+                            </span>
                           </span>
-                        </span>
-                        {canManage && shown.threat_model_version !== null && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 shrink-0"
-                            onClick={() => setAccepting(threat.number)}
-                          >
-                            Accept gap…
-                          </Button>
-                        )}
+                          {canManage && shown.threat_model_version !== null && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 rounded-full px-3 text-link hover:text-link"
+                              onClick={() => setAccepting(threat.number)}
+                            >
+                              Accept gap…
+                            </Button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -170,20 +221,26 @@ export function CoveragePanel({
               </section>
 
               <section aria-labelledby="panel-suites">
-                <h3 id="panel-suites" className="text-[13px] font-medium text-muted-foreground">
+                <h3 id="panel-suites" className="flex items-center gap-2 text-[13px] font-semibold">
+                  <Layers className="size-4 text-muted-foreground" aria-hidden="true" />
                   Test suites that cover it
+                  {shown.suites.length > 0 && (
+                    <span className="tabular rounded-full bg-muted px-1.5 text-xs font-normal text-text-secondary">
+                      {shown.suites.length}
+                    </span>
+                  )}
                 </h3>
                 {shown.suites.length === 0 ? (
-                  <p className="mt-1 text-text-secondary">
-                    No test of Sentra&apos;s library covers this for a {shown.target.type.replace(/_/g, " ")}.
-                    Write a custom test for it, or record why the gap is accepted.
+                  <p className="mt-2 rounded-2xl border border-dashed p-3 text-text-secondary">
+                    No test of Sentra&apos;s library covers this for a {shown.target.type.replace(/_/g, " ")}. Write a custom test for it,
+                    or record why the gap is accepted.
                   </p>
                 ) : (
-                  <ul className="mt-1 space-y-1">
+                  <ul className="mt-2 divide-y overflow-hidden rounded-2xl border bg-card">
                     {shown.suites.map((suite) => (
-                      <li key={suite.code} className="flex justify-between gap-3">
-                        <span>{suite.name}</span>
-                        <span className="tabular text-xs whitespace-nowrap text-muted-foreground">
+                      <li key={suite.code} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                        <span className="min-w-0 leading-snug">{suite.name}</span>
+                        <span className="tabular shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-text-secondary">
                           {suite.covering} of {suite.tests} tests
                         </span>
                       </li>
@@ -191,19 +248,17 @@ export function CoveragePanel({
                   </ul>
                 )}
               </section>
+            </div>
 
-              {shown.suites.length > 0 && canCampaign && (
-                <Button asChild className="h-9 w-full hover:bg-primary-hover">
-                  <Link
-                    href={`/campaigns/new?target=${shown.target.id}&suite=${shown.suites
-                      .map((suite) => suite.code)
-                      .join(",")}`}
-                  >
+            {shown.suites.length > 0 && canCampaign && (
+              <div className="border-t bg-card p-4">
+                <Button asChild className="h-10 w-full rounded-full hover:bg-primary-hover">
+                  <Link href={`/campaigns/new?target=${shown.target.id}&suite=${shown.suites.map((suite) => suite.code).join(",")}`}>
                     Create campaign with these suites
                   </Link>
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
             <AcceptGapDialog
               gap={
                 gap

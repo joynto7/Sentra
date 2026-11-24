@@ -11,22 +11,24 @@ type State = "idle" | "done" | "current" | "next"
 export function StepFindings({ step }: { step: PathStep }) {
   if (step.findings.length === 0) return null
   return (
-    <ul className="mt-1.5 space-y-1">
+    <ul className="mt-2 space-y-1.5">
       {step.findings.map((finding) => (
-        <li key={finding.code} className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/findings/${finding.code}`}
-            className="inline-block py-0.5 text-[13px] font-medium text-link hover:underline"
-          >
-            {finding.code}
-          </Link>
-          <span className="text-[13px]">{finding.title}</span>
-          <SeverityBadge severity={finding.severity} />
-          {finding.unconfirmed && (
-            <span className="rounded border border-dashed border-warning/60 px-1.5 py-0.5 text-xs text-warning">
-              Unconfirmed
-            </span>
-          )}
+        <li key={finding.code} className="rounded-[7px] bg-muted/60 px-2.5 py-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/findings/${finding.code}`}
+              className="inline-block py-0.5 text-[13px] font-medium text-link hover:underline"
+            >
+              {finding.code}
+            </Link>
+            <SeverityBadge severity={finding.severity} />
+            {finding.unconfirmed && (
+              <span className="rounded border border-dashed border-warning/60 px-1.5 py-0.5 text-xs text-warning">
+                Unconfirmed
+              </span>
+            )}
+          </div>
+          <p className="text-[13px]">{finding.title}</p>
         </li>
       ))}
     </ul>
