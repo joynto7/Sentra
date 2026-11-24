@@ -25,7 +25,7 @@ from app.modules.m04_tests.schema import Severity
 from app.modules.m05_campaigns.models import ACTIVE, ENDED, Campaign, CampaignRun, RunStatus
 from app.modules.m06_findings.models import CLOSED, OPEN, Finding, FindingStatus
 from app.modules.m06_findings.service import SEVERITY_RANK, finding_row
-from app.modules.m07_risk import coverage, rating, scoring, trends
+from app.modules.m07_risk import coverage, overview, rating, scoring, trends
 from app.modules.m07_risk.models import RiskScore
 
 DEFAULT_PERIOD_DAYS = 90  # the period filter of Screen 42
@@ -258,6 +258,7 @@ def dashboard(
         "top_findings": _top_findings(db, organization_id, target_id, mine, category),
         "by_category": coverage.by_category(db, organization_id, targets),
         "trends": trends.of(db, organization_id, rows, days=days, until=now, category=category),
+        "overview": overview.of(db, organization_id, rows, days=days, until=now, category=category),
         "changes": _changes(db, organization_id, targets, then, cutoff, days, category),
     }
 

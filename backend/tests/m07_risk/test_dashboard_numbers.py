@@ -261,3 +261,31 @@ def test_an_archived_targets_findings_stay_out_of_every_number(team, history):
         listed(team.client, view="open", target_id=str(target)) for target in on_page
     )
     assert listed(team.client, view="open") == shown["open_total"] + 1
+
+
+def test_the_overview_ends_at_what_the_page_counts_now(team, history):
+    """The history behind the sparklines is rebuilt from each finding's own record, and its newest
+    step must be exactly what the tiles show; the heatmap's cells add up to the bars."""
+    shown = dashboard(team.client)
+    overview = shown["overview"]
+    now = overview["steps"][-1]
+    assert now["open"] == shown["open_total"]
+    assert now["new"] + now["requires_confirmation"] == shown["awaiting_triage"]
+    assert now["confirmed"] + now["reopened"] == shown["awaiting_remediation"]
+    assert now["fixed"] == shown["fixed_and_verified"]
+    assert len(overview["steps"]) == len(overview["columns"]) + 1
+    # No step has more findings than were ever recorded, and the start is the period's first moment
+    assert overview["steps"][0]["at"] == overview["columns"][0]["starts_at"]
+    bars = shown["trends"]["buckets"]
+    cells = [cell for row in overview["rows"] for cell in row["cells"]]
+    assert sum(cell["new"] for cell in cells) == sum(bar["new"] for bar in bars)
+    assert sum(cell["closed"] for cell in cells) == sum(bar["closed"] for bar in bars)
+    assert {row["target"]["id"] for row in overview["rows"]} == {
+        row["id"] for row in shown["targets"]
+    }
+
+
+def test_the_overview_follows_the_category(team, history):
+    shown = dashboard(team.client, category="LLM01")
+    now = shown["overview"]["steps"][-1]
+    assert now["open"] == shown["open_total"]
