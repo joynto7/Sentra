@@ -34,6 +34,7 @@ FUNCTIONS = {
     LLMTask.LLM_JUDGE: "LLM judge",
     LLMTask.THREAT_MODELING: "Threat Model generation",
     LLMTask.REMEDIATION: "Remediation generation",
+    LLMTask.ASSISTANT: "Assistant",
 }
 # Only the data a task needs reaches its model, masked first (NFR-9.6, UC-10.5 quality req. 1).
 RECEIVES = {
@@ -41,6 +42,7 @@ RECEIVES = {
     LLMTask.LLM_JUDGE: "Masked attempts and replies",
     LLMTask.THREAT_MODELING: "Masked Target Profiles",
     LLMTask.REMEDIATION: "Masked findings and evidence",
+    LLMTask.ASSISTANT: "Masked chat messages and the lists and records the assistant reads for you",
 }
 # What a function does without a model, as when the LLM Provider is unavailable (UC-10.5, 4a1):
 # UC-5.5 2a, UC-6.1 3a, UC-3.1 4a and UC-8.2 4a.
@@ -49,6 +51,7 @@ WITHOUT_MODEL = {
     LLMTask.LLM_JUDGE: "Attempts are evaluated by the other detection methods only.",
     LLMTask.THREAT_MODELING: "Threat models are created with the baseline threats only.",
     LLMTask.REMEDIATION: "Remediation proposals are built from the test's recommended mitigation.",
+    LLMTask.ASSISTANT: "The assistant answers from the product guide and links to the pages.",
 }
 PROVIDERS = {
     "anthropic": "Anthropic",

@@ -6,8 +6,10 @@ from app.llm.layer import (
     LLMError,
     LLMOutputError,
     LLMUnavailable,
+    ToolCall,
     complete,
     connection_test,
+    converse,
 )
 
 __all__ = [
@@ -18,7 +20,9 @@ __all__ = [
     "LLMTask",
     "LLMUnavailable",
     "ModelChoice",
+    "ToolCall",
     "complete",
     "connection_test",
+    "converse",
     "model_for",
 ]
