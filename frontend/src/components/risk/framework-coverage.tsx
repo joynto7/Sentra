@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { AtlasId, OwaspId } from "@/components/sentra/framework-ids"
+import { CategoryChart } from "@/components/risk/breakdown-charts"
+import { CategoryTable } from "@/components/risk/category-table"
 import { CoveragePanel } from "@/components/risk/coverage-panel"
+import { DEFAULT_DAYS } from "@/components/risk/dashboard-filters"
 import { PageHeader } from "@/components/layout/page-header"
 import { FilterSelect } from "@/components/sentra/filter-select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -16,7 +19,9 @@ import {
   type Coverage,
   type CoverageCell,
   type CoverageStatus,
+  type RiskDashboard,
   getCoverage,
+  getRiskDashboard,
 } from "@/lib/risk"
 import { ATLAS_VERSION } from "@/lib/frameworks"
 import { formatDate } from "@/lib/targets"
@@ -57,6 +62,9 @@ export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: stri
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [selected, setSelected] = useState<{ code: string; targetId: string } | null>(null)
+  // The open findings by OWASP category, which the dashboard's own numbers give
+  const [findings, setFindings] = useState<RiskDashboard | null>(null)
+  const [findingsError, setFindingsError] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -69,6 +77,24 @@ export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: stri
         if (!target) setOptions(found.targets.map((one) => ({ id: one.id, name: one.name })))
       })
       .catch(() => !controller.signal.aborted && setError(true))
+    return () => controller.abort()
+  }, [framework, target, attempt])
+
+  useEffect(() => {
+    if (framework !== "owasp") return
+    const controller = new AbortController()
+    const params = new URLSearchParams({ days: DEFAULT_DAYS })
+    if (target) params.set("target_id", target)
+    getRiskDashboard(params, controller.signal)
+      .then((found) => {
+        setFindings(found)
+        setFindingsError(false)
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setFindings(null)
+        setFindingsError(true)
+      })
     return () => controller.abort()
   }, [framework, target, attempt])
 
@@ -218,6 +244,29 @@ export function FrameworkCoverage({ initialTarget = "" }: { initialTarget?: stri
             campaign run that ended — never because a campaign planned it.
           </p>
         </section>
+      )}
+
+      {framework === "owasp" && findingsError && (
+        <Alert variant="destructive" role="alert" className="mt-3">
+          <AlertDescription className="flex items-center justify-between gap-4">
+            The open findings by category could not be loaded.
+            <Button variant="outline" size="sm" onClick={again}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {framework === "owasp" && findings && (
+        <div className="mt-3 grid gap-3 xl:grid-cols-12">
+          <CategoryTable className="xl:col-span-7" rows={findings.by_category} targetQuery={target ? `&target_id=${target}` : ""} />
+          <CategoryChart
+            key={target}
+            className="xl:col-span-5"
+            data={findings}
+            targetQuery={target ? `&target_id=${target}` : ""}
+          />
+        </div>
       )}
 
         </TabsContent>
