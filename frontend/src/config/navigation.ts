@@ -15,6 +15,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  Sparkles,
   Target,
   UsersRound,
   Waypoints,
@@ -57,6 +58,7 @@ export const navigation: NavGroup[] = [
       { title: "Threat Models", href: "/threat-models", icon: ShieldCheck, module: "M3" },
       { title: "Test Library", href: "/test-library", icon: Library, module: "M4" },
       { title: "Campaigns", href: "/campaigns", icon: Rocket, module: "M5" },
+      { title: "Autopilot", href: "/autopilot", icon: Sparkles, module: "M5", roles: ["security_analyst", "security_manager", "org_admin"] },
     ],
   },
   {
@@ -91,6 +93,7 @@ export const platformNavigation: NavGroup[] = [
   {
     label: "Platform",
     items: [
+      { title: "Overview", href: "/platform", icon: Gauge, module: "M10" },
       { title: "Organizations", href: "/platform/organizations", icon: Building2, module: "M10" },
       { title: "Accounts", href: "/platform/accounts", icon: UsersRound, module: "M10" },
       { title: "LLM Providers", href: "/platform/llm-providers", icon: Bot, module: "M10" },
@@ -110,11 +113,13 @@ export function visibleNavigation(role: Role): NavGroup[] {
 }
 
 export function findNavItem(pathname: string): { group: NavGroup; item: NavItem } | undefined {
+  // The most specific address wins: "/platform" is the Overview, "/platform/health" is System Health
+  let best: { group: NavGroup; item: NavItem } | undefined
   for (const group of [...navigation, ...platformNavigation]) {
-    const item = group.items.find(
-      (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
-    )
-    if (item) return { group, item }
+    for (const item of group.items) {
+      const matches = pathname === item.href || pathname.startsWith(`${item.href}/`)
+      if (matches && (!best || item.href.length > best.item.href.length)) best = { group, item }
+    }
   }
-  return undefined
+  return best
 }
