@@ -3,7 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, Archive, ChevronLeft, ChevronRight, CircleAlert, Plus, RefreshCw, Sparkles } from "lucide-react"
+import {
+  AlertTriangle,
+  Archive,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Cpu,
+  Database,
+  Layers,
+  type LucideIcon,
+  MessageSquareText,
+  Plus,
+  RefreshCw,
+  ScrollText,
+  Sparkles,
+  Wrench,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
@@ -13,12 +30,15 @@ import { TargetTabs } from "@/components/targets/target-tabs"
 import { AddThreatDialog } from "@/components/threat-models/add-threat-dialog"
 import { NewerVersionDialog } from "@/components/threat-models/newer-version-dialog"
 import { RemoveThreatDialog } from "@/components/threat-models/remove-threat-dialog"
+import { ModelJourney } from "@/components/threat-models/model-journey-view"
 import { type ReviewCounts, ReviewPanel } from "@/components/threat-models/review-panel"
 import { type ThreatForm, atlasOf } from "@/components/threat-models/threat-fields"
-import { COLUMNS, type ShownThreat, ThreatItem } from "@/components/threat-models/threat-item"
+import { type ShownThreat, ThreatItem } from "@/components/threat-models/threat-item"
+import { ThreatMap } from "@/components/threat-models/threat-map"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
@@ -148,11 +168,19 @@ function shownThreats(threats: Threat[], pending: Pending): ShownThreat[] {
   return [...added, ...stored]
 }
 
+const KIND_ICON: Record<string, LucideIcon> = {
+  model: Cpu,
+  system_prompt: ScrollText,
+  knowledge_source: Database,
+  tool: Wrench,
+  output: MessageSquareText,
+}
+
 function FilterItem({
   value,
   label,
   note,
-  nested,
+  icon: Icon,
   pressed,
   threats,
   onFilter,
@@ -160,7 +188,7 @@ function FilterItem({
   value: string
   label: string
   note?: string
-  nested?: boolean
+  icon: LucideIcon
   pressed: boolean
   threats: number
   onFilter: (filter: string) => void
@@ -172,16 +200,32 @@ function FilterItem({
       aria-label={`${label}, ${threats} ${threats === 1 ? "threat" : "threats"}${note ? `. ${note}` : ""}`}
       onClick={() => onFilter(value)}
       className={cn(
-        "flex w-full items-start justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
-        nested && "pl-5",
-        pressed && "bg-accent font-medium text-accent-foreground hover:bg-accent",
+        "group flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-sm outline-none transition-colors",
+        "hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+        pressed && "bg-primary/10 font-medium text-foreground hover:bg-primary/10",
       )}
     >
-      <span className="min-w-0">
-        <span className="break-words">{label}</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors",
+          pressed && "bg-primary text-primary-foreground",
+        )}
+      >
+        <Icon className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words">{label}</span>
         {note && <span className="block text-xs font-normal text-muted-foreground">{note}</span>}
       </span>
-      <span className="tabular shrink-0 rounded-full bg-muted px-1.5 text-xs text-text-secondary">{threats}</span>
+      <span
+        className={cn(
+          "tabular shrink-0 rounded-full px-1.5 py-0.5 text-xs",
+          pressed ? "bg-primary text-primary-foreground" : "bg-muted text-text-secondary",
+        )}
+      >
+        {threats}
+      </span>
     </button>
   )
 }
@@ -203,51 +247,84 @@ function ComponentsPanel({
   const groups = KIND_ORDER.map((kind) => ({ kind, items: components.filter((c) => c.kind === kind) })).filter(
     (g) => g.items.length > 0,
   )
-  const item = (c: ThreatComponent, nested: boolean) => {
-    const key = componentKey(c.kind, c.name)
-    return (
-      <FilterItem
-        value={key}
-        label={c.name}
-        note={c.note}
-        nested={nested}
-        pressed={filter === key}
-        threats={countOf(key)}
-        onFilter={onFilter}
-      />
-    )
+  const current = components.find((c) => componentKey(c.kind, c.name) === filter)
+  const CurrentIcon = current ? (KIND_ICON[current.kind] ?? Layers) : Layers
+  const [open, setOpen] = useState(false)
+  const choose = (value: string) => {
+    onFilter(value)
+    setOpen(false)
   }
 
   return (
-    <section aria-labelledby="components-heading" className="self-start rounded-[10px] border bg-card p-3">
-      <h2 id="components-heading" className="px-2 pb-2 text-[15px] font-semibold">
+    <section aria-labelledby="components-heading" className="self-start rounded-[14px] border bg-card p-4">
+      <h2 id="components-heading" className="text-[15px] font-semibold">
         Components
       </h2>
-      <ul className="space-y-0.5">
-        <li>
-          <FilterItem
-            value="all"
-            label="All components"
-            pressed={filter === "all"}
-            threats={active.length}
-            onFilter={onFilter}
-          />
-        </li>
-        {groups.map((group) =>
-          group.kind === "model" || group.kind === "system_prompt" ? (
-            group.items.map((c) => <li key={componentKey(c.kind, c.name)}>{item(c, false)}</li>)
-          ) : (
-            <li key={group.kind}>
-              <p className="px-2 pt-2 pb-0.5 text-xs font-medium text-muted-foreground">{KIND_GROUP[group.kind]}</p>
-              <ul>
-                {group.items.map((c) => (
-                  <li key={componentKey(c.kind, c.name)}>{item(c, true)}</li>
-                ))}
-              </ul>
-            </li>
-          ),
-        )}
-      </ul>
+      <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
+        {active.length} {active.length === 1 ? "threat" : "threats"} in {components.length}{" "}
+        {components.length === 1 ? "component" : "components"}
+      </p>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className="h-12 w-full justify-between gap-2 px-2.5 font-normal"
+            aria-label={`Component: ${current?.name ?? "All components"}. Choose another.`}
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+                <CurrentIcon className="size-4" />
+              </span>
+              <span className="truncate font-medium">{current?.name ?? "All components"}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <span className="tabular rounded-full bg-muted px-2 py-0.5 text-xs text-text-secondary">
+                {current ? countOf(filter) : active.length}
+              </span>
+              <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden="true" />
+            </span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-64 p-2">
+          <div className="max-h-96 overflow-y-auto">
+            <FilterItem
+              value="all"
+              label="All components"
+              icon={Layers}
+              pressed={filter === "all"}
+              threats={active.length}
+              onFilter={choose}
+            />
+            <div className="mt-3 space-y-3">
+              {groups.map((group) => (
+                <div key={group.kind}>
+                  <p className="mb-1 px-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                    {KIND_GROUP[group.kind]}
+                  </p>
+                  <ul className="space-y-0.5">
+                    {group.items.map((c) => {
+                      const key = componentKey(c.kind, c.name)
+                      return (
+                        <li key={key}>
+                          <FilterItem
+                            value={key}
+                            label={c.name}
+                            note={c.note}
+                            icon={KIND_ICON[c.kind] ?? Layers}
+                            pressed={filter === key}
+                            threats={countOf(key)}
+                            onFilter={choose}
+                          />
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
     </section>
   )
 }
@@ -697,6 +774,19 @@ export function ThreatModelReview({
       </div>
       {inTarget && <TargetTabs targetId={targetId} active="threat-model" />}
 
+      <ModelJourney
+        onGenerate={canGenerate && !generating ? () => void generate() : undefined}
+        input={{
+          targetId,
+          blockerCode: page.blocker_code,
+          blocker: page.blocker,
+          job: page.job ? { status: page.job.status, message: page.job.message } : null,
+          versions: page.versions,
+          baselineOnly: Boolean(current?.baseline_only),
+          canManage: Boolean(canManage),
+        }}
+      />
+
       {archived && (
         <Alert className="mb-4">
           <Archive aria-hidden="true" />
@@ -728,9 +818,7 @@ export function ThreatModelReview({
             title="No threat model yet"
             description={
               page.blocker ??
-              `It is generated from the reviewed Target Profile: baseline threats for each component, plus threats an LLM suggests for this target.${
-                canManage ? "" : " A Security Analyst can generate it."
-              }`
+              canManage ? "Generated from the reviewed profile." : "A Security Analyst can generate it."
             }
             action={
               canGenerate && (
@@ -769,6 +857,18 @@ export function ThreatModelReview({
             </Alert>
           )}
 
+          <div className="mb-5">
+            <ThreatMap
+              targetName={target.name}
+              components={components}
+              threats={threats}
+              onPick={(picked) => {
+                setFilter(picked ?? "all")
+                setPageIndex(0)
+              }}
+            />
+          </div>
+
           {/* Components, threats and the review panel stand beside each other only from 1280 px
               on; below that they stand under each other, so the threats keep their width. */}
           <div className="grid gap-5 xl:grid-cols-[232px_minmax(0,1fr)_264px]">
@@ -782,7 +882,7 @@ export function ThreatModelReview({
               }}
             />
 
-            <section aria-labelledby="threats-heading" className="@container min-w-0 self-start rounded-[10px] border bg-card">
+            <section aria-labelledby="threats-heading" className="@container min-w-0 self-start overflow-hidden rounded-2xl border bg-card">
               <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4 pb-3">
                 <div>
                   <h2 id="threats-heading" className="flex items-center gap-2 text-[15px] font-semibold">
@@ -801,20 +901,6 @@ export function ThreatModelReview({
                     Add threat
                   </Button>
                 )}
-              </div>
-              <div
-                className={cn(
-                  "hidden gap-x-3 border-t bg-muted/60 px-4 py-2 text-xs font-medium text-muted-foreground @xl:grid",
-                  COLUMNS,
-                )}
-                aria-hidden="true"
-              >
-                <span>OWASP</span>
-                <span>MITRE ATLAS</span>
-                <span>Likelihood</span>
-                <span>Impact</span>
-                <span>Risk</span>
-                <span>Source</span>
               </div>
               {pageThreats.length === 0 ? (
                 <p className="border-t px-4 py-8 text-center text-sm text-muted-foreground">

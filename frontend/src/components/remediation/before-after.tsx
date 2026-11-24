@@ -253,10 +253,7 @@ export function BeforeAfter({ figures }: { figures: Figures }) {
         ) : (
           <Chart rows={rows} />
         )}
-        <p className="mt-2 text-[13px] text-muted-foreground">
-          Both halves are rates over repeated attempts, measured with the same test and the same
-          number of repetitions, so they can be read against each other.
-        </p>
+        <p className="mt-2 text-[13px] text-muted-foreground">Both are rates over the same repeated test.</p>
       </div>
     </section>
   )

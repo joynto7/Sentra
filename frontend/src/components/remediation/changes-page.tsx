@@ -229,7 +229,7 @@ export function ChangesPage() {
     <>
       <PageHeader
         title="Application changes"
-        description="Changes that must be made inside your application. Sentra retests automatically when all fixes of a remediation are in effect."
+        description="Changes to make in your application."
       />
       <RemediationTabs active="changes" counts={data ? { open_changes: data.open_changes } : {}} />
 
@@ -254,7 +254,7 @@ export function ChangesPage() {
       {data && data.rows.length === 0 && (
         <EmptyState
           title="No application change is waiting"
-          description="When a proposal is approved, every fix a Sentra Shield gateway cannot carry appears here as a task for the application's own developers."
+          description="Approved fixes for your developers appear here."
           action={
             <Button asChild variant="outline" className="h-9">
               <Link href="/remediation">Go to the proposals</Link>

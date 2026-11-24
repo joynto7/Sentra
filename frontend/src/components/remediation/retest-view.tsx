@@ -86,10 +86,7 @@ function Verdict({ retest }: { retest: Retest }) {
               : "the measurement does not support a conclusion"}
         </h2>
         {retest.out_of_date && (
-          <p className="mt-1 text-[13px] text-warning">
-            A rollback has since taken what this retest proved out of the traffic, so it no longer
-            describes the application as it runs now.
-          </p>
+          <p className="mt-1 text-[13px] text-warning">A rollback has removed this fix from the traffic.</p>
         )}
       </div>
     </div>

@@ -7,7 +7,7 @@ import { AtlasId } from "@/components/sentra/framework-ids"
 import { CHIP, SourceChip } from "@/components/threat-models/badges"
 import { ThreatFields, type ThreatForm, formOf, formProblems } from "@/components/threat-models/threat-fields"
 import { Button } from "@/components/ui/button"
-import type { FrameworkRef, ThreatSource } from "@/lib/threat-models"
+import { type FrameworkRef, type ThreatSource } from "@/lib/threat-models"
 import { cn } from "@/lib/utils"
 
 /** A threat as shown: stored, or with the analyst's changes that aren't saved yet. */
@@ -32,19 +32,26 @@ export type ShownThreat = {
   change: "edited" | "removed" | "restored" | "added" | null
 }
 
-/** Column widths shared with the header above the list (Screen 26). The threats card is a
- * container (`@container`), so the columns appear when the card itself is wide enough for them
- * (@xl = 576 px), not when the window is: from 1280 px on, the components and the review panel
- * stand beside the card and make it narrow again until about 1416 px. While the card is narrower,
- * each threat shows its fields as label and value, one under the other (NFR-4.4). */
-export const COLUMNS = "@xl:grid-cols-[minmax(4.5rem,auto)_7rem_3.75rem_3.25rem_2.5rem_minmax(0,1fr)]"
+/** The risk of a threat (likelihood times impact), toned by how high it is; the number is always written. */
+function riskTone(risk: number): string {
+  if (risk >= 15) return "bg-[var(--severity-critical-bg)] text-[var(--severity-critical-text)]"
+  if (risk >= 9) return "bg-[var(--severity-medium-bg)] text-[var(--severity-medium-text)]"
+  return "bg-muted text-text-secondary"
+}
 
-function Value({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+/** A rating from 1 to 5 as five dots, filled up to the rating; the words are for screen readers. */
+function Rating({ label, value }: { label: string; value: number }) {
   return (
-    <div className={cn("flex gap-2 @xl:block", className)}>
-      <dt className="w-24 shrink-0 text-xs text-muted-foreground @xl:sr-only">{label}</dt>
-      <dd className="text-sm">{children}</dd>
-    </div>
+    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      {label}
+      <span className="flex gap-0.5" aria-hidden="true">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <span key={n} className={cn("size-2 rounded-full border border-foreground/50", n <= value && "bg-foreground/70")} />
+        ))}
+      </span>
+      <span className="tabular text-foreground">{value}</span>
+      <span className="sr-only"> of 5</span>
+    </span>
   )
 }
 
@@ -143,23 +150,60 @@ export function ThreatItem({
     </>
   )
 
+  const risk = threat.likelihood * threat.impact
+
   return (
     <li
       className={cn(
-        "border-t px-4 py-3",
-        threat.change && "bg-accent/40",
+        "group border-t px-4 py-3.5 transition-colors hover:bg-muted/30 motion-safe:animate-in motion-safe:duration-300 motion-safe:fade-in motion-safe:slide-in-from-bottom-1",
+        threat.change && "border-l-2 border-l-primary bg-accent/40",
         editing && "bg-accent/60",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <h3 id={`${id}-title`} className={cn("text-sm font-medium", struck && "text-muted-foreground line-through")}>
-            {threat.title}
-          </h3>
-          {chips}
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex size-12 shrink-0 flex-col items-center justify-center rounded-xl leading-none",
+            struck ? "bg-muted text-muted-foreground" : riskTone(risk),
+          )}
+          title={`Risk ${risk}: likelihood ${threat.likelihood} times impact ${threat.impact}`}
+        >
+          <span className="tabular text-lg font-semibold">{risk}</span>
+          <span className="mt-0.5 text-[10px] font-medium tracking-wide uppercase">Risk</span>
+          <span className="sr-only">
+            : likelihood {threat.likelihood} times impact {threat.impact}
+          </span>
         </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 id={`${id}-title`} className={cn("text-sm font-medium", struck && "text-muted-foreground line-through")}>
+              {threat.title}
+            </h3>
+            {chips}
+          </div>
+
+          {!editing && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+              <SourceChip source={threat.source} />
+              {threat.owasp.map((o) => (
+                <abbr key={o.code} title={o.name ?? undefined} className="rounded-full bg-muted px-2 py-0.5 font-mono text-xs no-underline">
+                  {o.code}
+                </abbr>
+              ))}
+              {threat.atlas && (
+                <abbr title={threat.atlas.name ?? undefined} className="text-xs no-underline">
+                  <AtlasId code={threat.atlas.code} />
+                </abbr>
+              )}
+              <Rating label="Likelihood" value={threat.likelihood} />
+              <Rating label="Impact" value={threat.impact} />
+            </div>
+          )}
+        </div>
+
         {editable && !editing && (
-          <div className="-mt-1 -mr-2 flex shrink-0 gap-1">
+          <div className="-mt-1 -mr-2 flex shrink-0 gap-1 opacity-80 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             {threat.change ? (
               <Button variant="ghost" size="icon" className="size-8" onClick={onUndo} aria-label={`Undo your change to ${threat.title}`}>
                 <Undo2 aria-hidden="true" />
@@ -171,10 +215,16 @@ export function ThreatItem({
               </Button>
             ) : (
               <>
-                <Button variant="ghost" size="icon" className="size-8" onClick={onEdit} aria-label={`Edit ${threat.title}`}>
+                <Button variant="ghost" size="icon" className="size-8 rounded-full" onClick={onEdit} aria-label={`Edit ${threat.title}`}>
                   <Pencil aria-hidden="true" />
                 </Button>
-                <Button variant="ghost" size="icon" className="size-8" onClick={onRemove} aria-label={`Remove ${threat.title}`}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 rounded-full"
+                  onClick={onRemove}
+                  aria-label={`Remove ${threat.title}`}
+                >
                   <Trash2 aria-hidden="true" />
                 </Button>
               </>
@@ -183,63 +233,27 @@ export function ThreatItem({
         )}
       </div>
 
-      {editing ? (
-        <ThreatEditForm threat={threat} id={id} onCancel={onCancel} onSave={onSave} />
-      ) : (
-        <dl className={cn("mt-2 grid gap-x-3 gap-y-1 @xl:items-center", COLUMNS)}>
-          <Value label="OWASP">
-            <span className="font-mono text-xs">
-              {threat.owasp.map((o, index) => (
-                <span key={o.code}>
-                  {index > 0 && ", "}
-                  <abbr title={o.name ?? undefined} className="no-underline">
-                    {o.code}
-                  </abbr>
-                </span>
-              ))}
-            </span>
-          </Value>
-          <Value label="MITRE ATLAS">
-            {threat.atlas ? (
-              <abbr title={threat.atlas.name ?? undefined} className="text-xs no-underline">
-                <AtlasId code={threat.atlas.code} />
-              </abbr>
-            ) : (
-              <>
-                <span aria-hidden="true">—</span>
-                <span className="sr-only">None applies</span>
-              </>
-            )}
-          </Value>
-          <Value label="Likelihood">
-            <span className="tabular">{threat.likelihood}</span>
-          </Value>
-          <Value label="Impact">
-            <span className="tabular">{threat.impact}</span>
-          </Value>
-          <Value label="Risk">
-            <span className="tabular font-semibold">{threat.likelihood * threat.impact}</span>
-          </Value>
-          <Value label="Source">
-            <SourceChip source={threat.source} />
-          </Value>
-        </dl>
-      )}
+      {editing && <ThreatEditForm threat={threat} id={id} onCancel={onCancel} onSave={onSave} />}
 
       {!editing && threat.removed && threat.removalReason && (
-        <p className="mt-2 text-sm text-text-secondary">
+        <p className="mt-2 pl-15 text-sm text-text-secondary">
           <span className="text-muted-foreground">Reason </span>
           {threat.removalReason}
         </p>
       )}
       {!editing && !threat.removed && threat.changeReason && (threat.change === "edited" || threat.editedBy) && (
-        <p className="mt-2 text-sm text-text-secondary">
+        <p className="mt-2 pl-15 text-sm text-text-secondary">
           <span className="text-muted-foreground">Reason for the change </span>
           {threat.changeReason}
         </p>
       )}
       {!editing && threat.source === "ai_suggested" && threat.rationale && (
-        <p className="mt-1 text-xs text-muted-foreground">Why the LLM suggests it: {threat.rationale}</p>
+        <p className="mt-1 pl-15 text-xs text-muted-foreground">{threat.rationale}</p>
+      )}
+      {!editing && threat.source === "analyst" && (
+        <p className="mt-1 pl-15 text-xs text-muted-foreground">
+          Added by an analyst{threat.changeReason ? `: ${threat.changeReason}` : ""}.
+        </p>
       )}
     </li>
   )

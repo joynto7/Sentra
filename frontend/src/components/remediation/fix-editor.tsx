@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { EnforcementChip } from "@/components/remediation/badges"
@@ -153,6 +153,23 @@ export function ProposalEditor({
 
   const kept = current.fixes.filter((fix) => drafts[fix.position]?.kept)
 
+  // The edit lives only in this page: nothing is kept anywhere until it is saved as the next version
+  // (the content can hold a system prompt, so it is not copied to browser storage). Leaving or
+  // reloading with unsaved changes asks first.
+  const dirty =
+    rootCause !== current.root_cause ||
+    summary !== current.summary ||
+    current.fixes.some((fix) => {
+      const draft = drafts[fix.position]
+      return !draft?.kept || draft.title !== fix.title || draft.description !== fix.description || JSON.stringify(draft.detail) !== JSON.stringify(detailDraft(fix))
+    })
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [dirty])
+
   function change(position: number, next: Partial<Draft>) {
     setDrafts((before) => ({ ...before, [position]: { ...before[position], ...next } }))
   }
@@ -202,7 +219,8 @@ export function ProposalEditor({
         </h2>
         <p className="mt-1 text-[13px] text-text-secondary">
           Your changes are saved as version {current.version + 1} and go to the approvers at once.
-          Version {current.version} stays as it is. The kind of a fix and where it takes effect are
+          Version {current.version} stays as it is. Nothing is saved until you press the button below, and saving
+          applies nothing: the new version still needs somebody else&apos;s approval. {dirty ? "You have unsaved changes." : ""} The kind of a fix and where it takes effect are
           Sentra&apos;s; remove a fix that does not apply to your application.
         </p>
         <div className="mt-3 space-y-1.5">

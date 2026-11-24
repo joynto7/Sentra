@@ -130,6 +130,20 @@ export function ApprovalPanel({
             </>
           )}
 
+          {waiting && review.can_approve && (
+            <section aria-label="What you are approving" className="mt-3 rounded-[7px] border bg-muted/30 p-3 text-[13px]">
+              <h3 className="font-medium">You are approving version {current.version}</h3>
+              <ul className="mt-1 space-y-1 text-text-secondary">
+                {current.fixes.map((fix) => (
+                  <li key={fix.position}>
+                    {fix.title} <span className="text-muted-foreground">· {fix.kind_label} · takes effect {fix.enforcement === "gateway" ? "at the gateway, through a Shield policy" : "inside the application, by its developers"}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-muted-foreground">Expected, not proven until the retest. Approving applies nothing.</p>
+            </section>
+          )}
+
           {waiting && !review.can_approve && review.cannot_approve && (
             <p className="mt-3 rounded-[7px] border bg-muted/40 p-3 text-[13px]">
               {review.cannot_approve}
@@ -150,7 +164,7 @@ export function ApprovalPanel({
                     )
                   }
                 >
-                  {busy === "approve" ? "Approving…" : "Approve"}
+                  {busy === "approve" ? "Approving…" : `Approve version ${current.version}`}
                 </Button>
                 <Button variant="outline" className="h-9" onClick={() => setRejecting(true)}>
                   Reject…
