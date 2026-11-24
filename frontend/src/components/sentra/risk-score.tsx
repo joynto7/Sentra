@@ -21,6 +21,15 @@ const BAND_CHIP: Record<RiskBand, string> = {
   none: "bg-muted text-muted-foreground",
 }
 
+/** The band's name on its own, in the band's tint: the words carry it, the colour only helps. */
+export function RiskBandChip({ band, className }: { band: RiskBand; className?: string }) {
+  return (
+    <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", BAND_CHIP[band], className)}>
+      {BAND_LABEL[band]}
+    </span>
+  )
+}
+
 /**
  * A risk score from 0 to 100 with its band: the number, a bar and the band's name, so that the
  * score never depends on colour alone (NFR-4.3). "lg" is the risk card of Screen 20.
