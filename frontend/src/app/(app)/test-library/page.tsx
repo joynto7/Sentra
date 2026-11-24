@@ -12,7 +12,7 @@ export default async function TestLibraryPage({ searchParams }: PageProps<"/test
     <>
       <PageHeader
         title="Test Library"
-        description="Declarative security tests and suites, mapped to OWASP and MITRE ATLAS."
+        description="Security tests and suites."
         action={<CatalogueActions />}
       />
       <TestLibrary tab={tab === "suites" ? "suites" : "tests"} />

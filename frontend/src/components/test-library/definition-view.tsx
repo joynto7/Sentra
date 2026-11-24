@@ -64,7 +64,6 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
     return (
       <EmptyState
         title="Test definition not found"
-        description="It may have been removed, or the address is wrong."
         action={
           <Link href="/test-library" className={cn(buttonVariants({ variant: "outline" }), "h-9")}>
             Back to the Test Library
@@ -226,9 +225,6 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
                 <AtlasId key={technique} code={technique} className="block text-[13px]" />
               ))}
             </div>
-            {test.atlas.length === 0 && (
-              <p className="mt-2 text-xs text-muted-foreground">No MITRE ATLAS technique applies.</p>
-            )}
           </section>
 
           <section className="rounded-[10px] border bg-card p-5">
@@ -249,7 +245,6 @@ export function TestDefinitionView({ code, version }: { code: string; version?: 
             ) : (
               <p className="text-sm text-muted-foreground">No test suite includes it yet.</p>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">Campaign runs that used it appear here once campaigns run.</p>
           </section>
 
           <section className="rounded-[10px] border bg-card p-5">

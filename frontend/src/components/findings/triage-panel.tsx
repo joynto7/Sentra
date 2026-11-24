@@ -1,5 +1,6 @@
 "use client"
 
+import { onlyJudgeSupports } from "@/components/findings/judge-only"
 import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { fieldErrors } from "@/lib/api"
+import { ApiError, fieldErrors } from "@/lib/api"
 import {
   DECISION_LABEL,
   type Decision,
@@ -37,18 +38,12 @@ import {
 } from "@/lib/findings"
 import { cn } from "@/lib/utils"
 
+import { type TriageDraft, triagePreview } from "./triage-preview"
+
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"]
 const KEPT = "False positives are kept, so that the quality of Sentra's detection can be measured."
 
-type Draft = {
-  decision: Decision
-  reason: string
-  mergeInto: string
-  severity: Severity
-  justification: string
-  ownerId: string
-  comment: string
-}
+type Draft = TriageDraft
 
 /**
  * Screen 41: triaging a finding. One save carries the decision, the severity, the owner
@@ -82,7 +77,9 @@ export function TriagePanel({
       .then((found) => {
         setOptions(found)
         setDraft({
-          decision: "confirm",
+          // Nothing is decided for the person: a finding that only the LLM judge supports is not
+          // confirmed by a default, and a comment or an owner change is not a decision.
+          decision: "",
           reason: "",
           mergeInto: found.duplicates[0]?.code ?? "",
           severity: found.severity,
@@ -109,17 +106,30 @@ export function TriagePanel({
 
   const set = (changes: Partial<Draft>) => setDraft((old) => (old ? { ...old, ...changes } : old))
 
+  const preview = draft && options ? triagePreview(finding.code, options, draft) : null
+
   const save = async () => {
-    if (!draft || !options) return
+    if (!draft || !options || !preview) return
+    // What is missing is said at its field, nothing is sent, and nothing is recorded.
+    const local: Record<string, string> = {}
+    if (preview.missing.reason) local.reason = preview.missing.reason
+    if (preview.missing.mergeInto) local.merge_into = preview.missing.mergeInto
+    if (preview.missing.justification) local.justification = preview.missing.justification
+    if (preview.missing.decision) local.decision = preview.missing.decision
+    if (Object.keys(local).length) {
+      setErrors(local)
+      setProblem("")
+      return
+    }
     setBusy(true)
     setErrors({})
     setProblem("")
     try {
       const saved = await saveTriage(finding.code, {
-        decision: draft.decision,
+        decision: draft.decision || null,
         reason: draft.reason,
         merge_into: draft.mergeInto,
-        severity: draft.severity === options.severity ? null : draft.severity,
+        severity: draft.severity === options.severity ? null : (draft.severity as Severity),
         justification: draft.justification,
         owner_id: draft.ownerId || null,
         comment: draft.comment,
@@ -132,7 +142,11 @@ export function TriagePanel({
     } catch (error) {
       const named = fieldErrors(error)
       if (Object.keys(named).length) setErrors(named)
-      else setProblem(error instanceof Error ? error.message : String(error))
+      else if (error instanceof ApiError && error.code === "finding_closed") {
+        // Someone else triaged it while this panel was open: nothing was saved; show the real state.
+        setProblem(`${error.message} Nothing you entered was saved.`)
+        getTriageOptions(finding.code).then(setOptions).catch(() => undefined)
+      } else setProblem(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
@@ -186,13 +200,15 @@ export function TriagePanel({
                 role="status"
                 className="rounded-[7px] border border-confirm/40 bg-confirm/5 p-3 text-[13px] text-confirm"
               >
-                Only the LLM judge supports this finding. It counts towards the target&apos;s risk score after you
-                confirm it.
+                {onlyJudgeSupports(finding.detection)
+                  ? "Only the LLM judge supports this finding. "
+                  : "This finding is waiting for confirmation. "}
+                It counts towards the target&apos;s risk score after you confirm it.
               </p>
             )}
 
             <fieldset className="space-y-2">
-              <legend className="text-[13px] font-medium">Decision</legend>
+              <legend className="text-[13px] font-medium">Decision (optional)</legend>
               <RadioGroup
                 value={draft.decision}
                 onValueChange={(value) => set({ decision: value as Decision })}
@@ -213,6 +229,12 @@ export function TriagePanel({
                   </div>
                 ))}
               </RadioGroup>
+
+              {errors.decision && (
+                <p role="alert" className="text-[13px] text-destructive">
+                  {errors.decision}
+                </p>
+              )}
 
               {draft.decision === "false_positive" && (
                 <div>
@@ -242,9 +264,7 @@ export function TriagePanel({
                 <div>
                   <Label htmlFor="triage-merge">The finding this one duplicates</Label>
                   {options.duplicates.length === 0 ? (
-                    <p className="mt-1.5 text-[13px] text-muted-foreground">
-                      This target has no other open finding to merge into.
-                    </p>
+                    <p className="mt-1.5 text-[13px] text-muted-foreground">No other open finding to merge into.</p>
                   ) : (
                     <Select value={draft.mergeInto} onValueChange={(value) => set({ mergeInto: value })}>
                       <SelectTrigger id="triage-merge" className="mt-1.5 h-9 w-full">
@@ -264,9 +284,6 @@ export function TriagePanel({
                       {errors.merge_into}
                     </p>
                   )}
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    Evidence is never moved, so both keep their own records and are read together.
-                  </p>
                 </div>
               )}
             </fieldset>
@@ -315,10 +332,7 @@ export function TriagePanel({
                       {errors.justification}
                     </p>
                   )}
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    A severity you set is never overwritten by the rating again; the calculated one stays beside
-                    it.
-                  </p>
+                  <p className="mt-1.5 text-xs text-muted-foreground">A severity you set is never overwritten.</p>
                 </div>
               )}
             </div>
@@ -358,21 +372,34 @@ export function TriagePanel({
               />
             </div>
 
+            {preview && (
+              <section
+                aria-label="What saving will do"
+                aria-live="polite"
+                className="rounded-[7px] border bg-muted/40 p-3 text-[13px]"
+              >
+                <h3 className="text-[13px] font-medium">What saving will do</h3>
+                {preview.effects.length === 0 ? (
+                  <p className="mt-1 text-muted-foreground">Nothing yet. Nothing is recorded until you press Save triage.</p>
+                ) : (
+                  <ul className="mt-1 list-disc space-y-1 pl-4 text-text-secondary">
+                    {preview.effects.map((effect) => (
+                      <li key={effect}>{effect}</li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
             {problem && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" role="alert">
                 <AlertDescription>{problem}</AlertDescription>
               </Alert>
             )}
           </div>
         )}
 
-        <SheetFooter className="border-t">
-          {options?.open && (
-            <p className="text-xs text-muted-foreground">
-              Recorded in the finding&apos;s history and the audit log. The owner is notified, and the target&apos;s
-              risk score is recalculated.
-            </p>
-          )}
+        <SheetFooter className="sticky bottom-0 border-t bg-background">
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => close(false)}>
               Cancel

@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CircleCheck, CircleX, TriangleAlert } from "lucide-react"
+import { CircleCheck, CircleX } from "lucide-react"
 import { toast } from "sonner"
 
 import { HistoryEntry } from "@/components/findings/finding-activity"
-import { Reproducibility } from "@/components/findings/finding-badges"
+import { onlyJudgeSupports } from "@/components/findings/judge-only"
+import { ConfirmationNotice, Reproducibility } from "@/components/findings/finding-badges"
 import { FindingHeader } from "@/components/findings/finding-header"
 import { FindingTabs } from "@/components/findings/finding-tabs"
 import { EmptyState } from "@/components/layout/empty-state"
@@ -59,7 +60,7 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
       <Card title={title}>
         <p className="text-sm text-muted-foreground">
           {rating
-            ? "Not rated yet: the severity is the one of its test definition until a campaign run has been evaluated."
+            ? "Not rated yet."
             : "Loading…"}
         </p>
       </Card>
@@ -72,11 +73,10 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
       <dl className="divide-y">
         <Row term={`Impact · level ${impact.level}`}>
           <span className="font-medium">{impact.label}</span>
-          <p className="text-xs text-muted-foreground">{impact.sentence}</p>
         </Row>
         {exploitability && (
           <Row term={`Exploitability · level ${exploitability.level}`}>
-            {exploitability.sentences.map((sentence) => (
+            {exploitability.sentences.slice(0, 1).map((sentence) => (
               <p key={sentence} className="text-xs text-muted-foreground">
                 {sentence}
               </p>
@@ -86,20 +86,25 @@ function WhySevere({ code, severity }: { code: string; severity: string }) {
         {reproducibility && (
           <Row term="Reproducibility">
             <span className="tabular">{Math.round(Number(reproducibility.value) * 100)} %</span>
-            <p className="text-xs text-muted-foreground">{reproducibility.sentence}</p>
           </Row>
         )}
         {likelihood && <Row term="Likelihood">{`Level ${likelihood.level}`}</Row>}
       </dl>
       <p className="text-xs text-muted-foreground">
-        Calculated with Sentra&apos;s fixed rating matrix, so the same factors always give the same severity.
-        {rating.provisional ? " It is provisional until the repetitions of the measurement are complete." : ""}
+        Fixed rating matrix.
+        {rating.provisional ? " Provisional until the repetitions finish." : ""}
         {rating.adjusted && rating.calculated_severity
-          ? ` An analyst set this severity; the matrix gave ${rating.calculated_severity}.`
+          ? ` Set by an analyst; the matrix gave ${rating.calculated_severity}.`
           : ""}
       </p>
     </Card>
   )
+}
+
+/** The first sentence of a longer text: the main thing, without the reasons behind it. */
+function brief(text: string): string {
+  const first = text.match(/^[\s\S]*?[.!?](?=\s|$)/)
+  return first ? first[0] : text
 }
 
 /** A run as a sentence names it: BR-012 is a benchmark run, and a retest has no code of its own. */
@@ -164,7 +169,6 @@ export function FindingView({ code }: { code: string }) {
     return (
       <EmptyState
         title="Finding not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/findings">Back to findings</Link>
@@ -226,11 +230,11 @@ export function FindingView({ code }: { code: string }) {
 
       {finding.merged_into && (
         <p role="status" className="mb-5 rounded-[10px] border bg-card p-4 text-sm">
-          This finding was merged into{" "}
+          Merged into{" "}
           <Link href={`/findings/${finding.merged_into}`} className="text-link underline underline-offset-2">
             {finding.merged_into}
           </Link>
-          , which has the same root cause. Its evidence and history are read there as well.
+          .
         </p>
       )}
 
@@ -238,33 +242,22 @@ export function FindingView({ code }: { code: string }) {
         <p role="status" className="mb-5 rounded-[10px] border bg-card p-4 text-sm">
           <span className="font-medium">Marked a false positive</span>
           {finding.closed_by ? ` by ${finding.closed_by}` : ""}
-          {finding.closed_at ? ` on ${formatDate(finding.closed_at)}` : ""}: {finding.close_reason} It is kept, so
-          that the quality of Sentra&apos;s detection can be measured.
+          {finding.closed_at ? ` on ${formatDate(finding.closed_at)}` : ""}: {finding.close_reason}
         </p>
       )}
 
       {detection?.requires_confirmation && (OPEN_STATUSES as readonly string[]).includes(finding.status) && (
-        <p
-          role="status"
-          className="mb-5 flex items-start gap-2 rounded-[10px] border border-warning/40 bg-warning/5 p-4 text-sm text-warning"
-        >
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          Only the LLM judge supports this finding, so an analyst confirms or rejects it before it counts towards the
-          target&apos;s risk score.
-        </p>
+        <ConfirmationNotice judgeOnly={onlyJudgeSupports(detection)} className="mb-5" />
       )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card title="What happened">
-              <p className="text-sm text-text-secondary">{finding.description}</p>
-            </Card>
+          <div className="grid gap-4 md:grid-cols-2">
             <Card title="Why it matters">
-              <p className="text-sm text-text-secondary">{finding.test.objective}</p>
+              <p className="text-sm text-text-secondary">{brief(finding.test.objective)}</p>
             </Card>
             <Card title="How to fix it">
-              <p className="text-sm text-text-secondary">{finding.test.recommended_mitigation}</p>
+              <p className="text-sm text-text-secondary">{brief(finding.test.recommended_mitigation)}</p>
             </Card>
           </div>
 
@@ -295,14 +288,13 @@ export function FindingView({ code }: { code: string }) {
                   ))}
                 </ul>
                 <p className="text-xs text-muted-foreground">
-                  From attempt {detection.attempt_no} of {runName(detection.run.code)}.
                   {detection.disagreement
-                    ? " The LLM judge disagreed with the deterministic methods; the deterministic evidence decided."
-                    : ""}
+                    ? "The LLM judge disagreed; the deterministic evidence decided."
+                    : `Attempt ${detection.attempt_no} of ${runName(detection.run.code)}.`}
                 </p>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">The attempt behind this finding has not been evaluated.</p>
+              <p className="text-sm text-muted-foreground">Not evaluated yet.</p>
             )}
             <Button asChild variant="outline" size="sm" className="h-8 w-fit">
               <Link href={`/findings/${finding.code}/evidence`}>Open the evidence</Link>
@@ -325,9 +317,6 @@ export function FindingView({ code }: { code: string }) {
               <Row term="Test definition">
                 <span className="font-mono text-xs">{finding.test.code}</span> v{finding.test.version}
               </Row>
-              <Row term="Success condition">
-                <span className="text-xs text-muted-foreground">{finding.test.success_condition}</span>
-              </Row>
               <Row term="Reproducibility">
                 <Reproducibility value={finding.reproducibility} className="ml-auto" />
                 {finding.repetitions && (
@@ -349,9 +338,6 @@ export function FindingView({ code }: { code: string }) {
                   </Link>
                 ) : (
                   "Not started"
-                )}
-                {remediation && !remediation.current && remediation.blocker && (
-                  <div className="text-xs text-muted-foreground">{remediation.blocker}</div>
                 )}
               </Row>
               <Row term="Attack path">
@@ -379,11 +365,9 @@ export function FindingView({ code }: { code: string }) {
               <Row term="Evidence records">{finding.evidence_count}</Row>
               <Row term="First seen">
                 {formatDateTime(finding.first_seen_at)}
-                <div className="font-mono text-xs text-muted-foreground">{finding.first_run.code}</div>
               </Row>
               <Row term="Last seen">
                 {formatDateTime(finding.last_seen_at)}
-                <div className="font-mono text-xs text-muted-foreground">{finding.last_run.code}</div>
               </Row>
             </dl>
           </Card>
@@ -420,9 +404,6 @@ export function FindingView({ code }: { code: string }) {
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-muted-foreground">
-              A weakness found again adds its evidence to this finding instead of a second one.
-            </p>
           </Card>
         </div>
       </div>
