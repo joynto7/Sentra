@@ -31,9 +31,11 @@ class LLMTask(StrEnum):
     LLM_JUDGE = "llm_judge"  # FR-6.1
     THREAT_MODELING = "threat_modeling"  # FR-3.1
     REMEDIATION = "remediation"  # FR-8.1
+    ASSISTANT = "assistant"  # the chat assistant that guides people and does their work for them
 
 
 TASK_LABELS = {
+    LLMTask.ASSISTANT: "the assistant",
     LLMTask.ADAPTIVE_TESTING: "the adaptive testing agent",
     LLMTask.LLM_JUDGE: "the LLM judge",
     LLMTask.THREAT_MODELING: "threat model generation",

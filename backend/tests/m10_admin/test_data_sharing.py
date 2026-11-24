@@ -93,7 +93,13 @@ def test_the_page_shows_where_each_task_sends_the_data(client, db, halcyon):
     body = client.get(URL).json()
 
     rows = {row["task"]: row for row in body["tasks"]}
-    assert list(rows) == ["adaptive_testing", "llm_judge", "threat_modeling", "remediation"]
+    assert list(rows) == [
+        "adaptive_testing",
+        "llm_judge",
+        "threat_modeling",
+        "remediation",
+        "assistant",
+    ]
     assert (rows["adaptive_testing"]["provider"], rows["adaptive_testing"]["model"]) == (
         "Anthropic",
         "claude-sonnet-5-5",
@@ -106,6 +112,7 @@ def test_the_page_shows_where_each_task_sends_the_data(client, db, halcyon):
         "llm_judge": 1,
         "threat_modeling": 0,
         "remediation": 0,
+        "assistant": 0,
     }
     assert body["local_models_only"] is False
     assert all(row["available"] for row in rows.values())
@@ -113,6 +120,7 @@ def test_the_page_shows_where_each_task_sends_the_data(client, db, halcyon):
         "adaptive_testing",
         "threat_modeling",
         "remediation",
+        "assistant",
     ]
     assert (
         body["masking"] == "Secrets and personal data are masked before any request leaves Sentra."
@@ -149,6 +157,7 @@ def test_local_models_only_applies_to_the_next_request(client, db, halcyon):
         "llm_judge": True,
         "threat_modeling": False,
         "remediation": False,
+        "assistant": False,
     }
     with pytest.raises(LLMUnavailable, match="uses local models only"):
         agent(db, halcyon.id)  # the external model is refused in the LLM layer itself
@@ -188,6 +197,7 @@ def test_the_change_is_recorded_and_the_platform_administrators_are_told(client,
         "Adaptive testing agent",
         "Threat Model generation",
         "Remediation generation",
+        "Assistant",
     ]
     assert client.get(URL).json()["changed_by"] == "Tom"
     message = outbox[-1]

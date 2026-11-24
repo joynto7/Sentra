@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     email_backend: str = "smtp"
     smtp_host: str = "localhost"
     smtp_port: int = 1025
+    # A login needs a confirmed e-mail address (UC-1.2). Switched off only in local sample stacks.
+    require_email_verification: bool = True
     mail_from: str = "Sentra <no-reply@sentra.local>"
 
     # Sessions (NFR-3.5)

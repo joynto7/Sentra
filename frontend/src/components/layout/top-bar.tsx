@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 import { usePageCrumbsValue } from "@/components/layout/breadcrumbs"
+import { AssistantButton } from "@/components/assistant/assistant-launcher"
 import { HelpPanel } from "@/components/layout/help-panel"
 import { SearchBox } from "@/components/layout/search-box"
 import {
@@ -83,6 +84,7 @@ export function TopBar({ platform = false }: { platform?: boolean }) {
 
       <div className="ml-auto flex items-center gap-1">
         {!platform && <SearchBox />}
+        {!platform && <AssistantButton />}
         <ThemeToggle />
         <NotificationBell />
         <HelpPanel />

@@ -40,6 +40,7 @@ FUNCTIONS = {
     LLMTask.LLM_JUDGE: "LLM judge",
     LLMTask.THREAT_MODELING: "Threat Model generation",
     LLMTask.REMEDIATION: "Remediation generation",
+    LLMTask.ASSISTANT: "Assistant",
 }
 KINDS = {
     ProviderKind.ANTHROPIC: "Anthropic",
