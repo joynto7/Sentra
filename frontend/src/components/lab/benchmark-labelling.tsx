@@ -260,6 +260,8 @@ export function BenchmarkLabelling({ code }: { code: string }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
+  // What the last label did, said in the page: kept only after the server answered, or not kept
+  const [saveNote, setSaveNote] = useState<{ ok: boolean; text: string } | null>(null)
   const canLabel = useCan("use_security_lab") !== false
   usePageCrumbs([{ label: code, href: `/lab/benchmarks/${code}` }, { label: "Labelling" }])
 
@@ -293,10 +295,15 @@ export function BenchmarkLabelling({ code }: { code: string }) {
   async function label(verdict: AttemptVerdict, note: string) {
     if (!item) return
     setBusy(true)
+    setSaveNote(null)
     try {
-      setItem(await labelAttempt(code, item.attempt_id, verdict, note))
+      const next = await labelAttempt(code, item.attempt_id, verdict, note)
+      setItem(next)
+      setSaveNote({ ok: true, text: `Saved: attempt ${item.place} is marked ${verdict}. ${next ? `${next.labelled} of ${next.total} attempts are labelled.` : "Every attempt of the sample is labelled."}` })
     } catch (failed) {
-      toast.error(failed instanceof ApiError ? failed.message : "That label could not be saved.")
+      const why = failed instanceof ApiError ? failed.message : "That label could not be saved."
+      setSaveNote({ ok: false, text: `Attempt ${item.place} was not labelled, because it could not be saved: ${why} It is still unlabelled. Try again.` })
+      toast.error(why)
     } finally {
       setBusy(false)
     }
@@ -330,10 +337,7 @@ export function BenchmarkLabelling({ code }: { code: string }) {
     <div className="min-w-0">
       <div className="mb-4">
         <h1 className="text-2xl font-semibold tracking-tight">{code} — Labelling</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Your own judgement of what the benchmark run produced. It is what the detection is then
-          measured against.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Your judgement, which detection is measured against.</p>
       </div>
 
       {!canLabel && (
@@ -362,7 +366,7 @@ export function BenchmarkLabelling({ code }: { code: string }) {
 
       {loaded && (
         <Tabs defaultValue="attempts">
-          <TabsList>
+          <TabsList className="h-auto max-w-full flex-wrap justify-start">
             <TabsTrigger value="attempts">
               Blind attempt sample ({labelled} of {total} labelled)
             </TabsTrigger>
@@ -397,6 +401,16 @@ export function BenchmarkLabelling({ code }: { code: string }) {
               Detection results are hidden so that your labels stay independent.
             </p>
 
+            {saveNote && (
+              <p
+                role={saveNote.ok ? "status" : "alert"}
+                aria-live="polite"
+                className={saveNote.ok ? "text-[13px] text-muted-foreground" : "rounded-[7px] border border-destructive/40 bg-destructive/5 p-3 text-[13px] text-destructive"}
+              >
+                {saveNote.text}
+              </p>
+            )}
+
             {item ? (
               <LabellingCard
                 key={item.attempt_id}
@@ -408,7 +422,7 @@ export function BenchmarkLabelling({ code }: { code: string }) {
             ) : total > 0 ? (
               <EmptyState
                 title="Every attempt of the sample is labelled"
-                description="The agreement figures on the results page rest on these labels."
+                description="Labels feed the results page."
                 action={
                   <Button asChild>
                     <Link href={`/lab/benchmarks/${code}/results`}>See the results</Link>
@@ -418,7 +432,6 @@ export function BenchmarkLabelling({ code }: { code: string }) {
             ) : (
               <EmptyState
                 title="There is nothing to label yet"
-                description="The sample is drawn from the attempts the benchmark run's campaign runs replied to."
               />
             )}
           </TabsContent>

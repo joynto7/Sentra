@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { runConcerns } from "@/components/lab/benchmark-checks"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +29,7 @@ import {
   duration,
   pauseBenchmark,
   readBenchmark,
+  securityLab,
   resumeBenchmark,
   startBenchmark,
   stopBenchmark,
@@ -94,6 +96,9 @@ export function BenchmarkProgress({ code }: { code: string }) {
   const [error, setError] = useState(false)
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
+  // The lab as it is now, and when it was read: a benchmark that is "running" is checked against both
+  const [labCards, setLabCards] = useState<{ name: string; state: string }[] | null>(null)
+  const [readAt, setReadAt] = useState(0)
   usePageCrumbs([{ label: code }])
 
   useEffect(() => {
@@ -101,6 +106,7 @@ export function BenchmarkProgress({ code }: { code: string }) {
     readBenchmark(code, controller.signal)
       .then((found) => {
         setData(found)
+        setReadAt(Date.now())
         setError(false)
       })
       .catch(() => !controller.signal.aborted && setError(true))
@@ -108,6 +114,15 @@ export function BenchmarkProgress({ code }: { code: string }) {
   }, [code, reloads])
 
   const reload = useCallback(() => setReloads((n) => n + 1), [])
+
+  useEffect(() => {
+    if (data?.status !== "running") return
+    const controller = new AbortController()
+    securityLab(controller.signal)
+      .then((lab) => setLabCards(lab.cards.map((card) => ({ name: card.name, state: card.state ?? "not_deployed" }))))
+      .catch(() => setLabCards(null))
+    return () => controller.abort()
+  }, [data?.status, reloads])
   const going = data?.status === "running"
 
   // While it runs, the page asks again, so the matrix follows the experiment (UC-11.4 step 6).
@@ -221,6 +236,25 @@ export function BenchmarkProgress({ code }: { code: string }) {
               )}
             </div>
           </div>
+
+          {runConcerns(
+            {
+              status: data.status,
+              started_at: data.started_at,
+              ended_at: data.ended_at,
+              estimate_minutes: data.estimate?.minutes ?? 0,
+              lab_targets: data.lab_targets,
+            },
+            labCards,
+            readAt,
+          ).map((concern) => (
+            <Alert key={concern} role="alert" className="mb-4 border-warning">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>
+                {concern} <Link href="/lab" className="font-medium text-link underline underline-offset-2">Open the Security Lab</Link>
+              </AlertDescription>
+            </Alert>
+          ))}
 
           {data.status === "paused" && (
             <Alert role="alert" className="mb-4 border-warning">

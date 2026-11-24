@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { Bug, CircleCheck, CircleHelp, FlaskConical, Info, KeyRound, Loader2, TriangleAlert } from "lucide-react"
+import { TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { EmptyState } from "@/components/layout/empty-state"
 import { KnownVulnerabilitiesDialog } from "@/components/lab/known-vulnerabilities-dialog"
+import { LabTargetCard } from "@/components/lab/lab-card"
+import { LabZone } from "@/components/lab/lab-zone"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,162 +22,11 @@ import {
   type LabCard,
   deployLabTarget,
   listBenchmarks,
-  memory,
   resetLabTarget,
   securityLab,
 } from "@/lib/lab"
 import { useCan } from "@/lib/permissions"
-import { TYPE_LABEL } from "@/lib/targets"
 import { cn } from "@/lib/utils"
-
-const WHEN = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-/** Readiness in words as well as in colour (WCAG 1.4.1), with a spinner while a reset runs. */
-function Readiness({ card }: { card: LabCard }) {
-  if (!card.deployed) {
-    return (
-      <Badge variant="outline" className="gap-1.5">
-        <CircleHelp className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        Not deployed
-      </Badge>
-    )
-  }
-  if (card.state === "deploying" || card.state === "resetting") {
-    return (
-      <Badge variant="outline" className="gap-1.5">
-        <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
-        {card.state_label}
-      </Badge>
-    )
-  }
-  const ready = card.state === "ready"
-  return (
-    <Badge variant="outline" className={cn("gap-1.5", !ready && "border-destructive text-destructive")}>
-      {ready ? (
-        <CircleCheck className="size-3.5 text-success" aria-hidden="true" />
-      ) : (
-        <TriangleAlert className="size-3.5" aria-hidden="true" />
-      )}
-      {card.state_label}
-    </Badge>
-  )
-}
-
-function LabTargetCard({
-  card,
-  busy,
-  canUse,
-  onDeploy,
-  onReset,
-  onVulnerabilities,
-}: {
-  card: LabCard
-  busy: boolean
-  canUse: boolean
-  onDeploy: () => void
-  onReset: () => void
-  onVulnerabilities: () => void
-}) {
-  return (
-    <section aria-label={card.name} className="flex flex-col rounded-[10px] border bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <FlaskConical className="size-4 text-muted-foreground" aria-hidden="true" />
-            {card.name}
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">{TYPE_LABEL[card.type] ?? card.type}</p>
-        </div>
-        <Readiness card={card} />
-      </div>
-
-      <p className="mt-2 text-sm text-muted-foreground">{card.about}</p>
-
-      {card.deployed ? (
-        <dl className="mt-3 space-y-2 text-sm">
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <dt className="flex items-center gap-1.5 text-muted-foreground">
-              <Bug className="size-3.5" aria-hidden="true" />
-              Known vulnerabilities
-            </dt>
-            <dd className="tabular">{card.vulnerabilities}</dd>
-            <dd className="flex flex-wrap gap-1">
-              {card.categories.map((category) => (
-                <Badge key={category} variant="outline" className="font-mono text-xs">
-                  {category}
-                </Badge>
-              ))}
-            </dd>
-          </div>
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <dt className="flex items-center gap-1.5 text-muted-foreground">
-              <KeyRound className="size-3.5" aria-hidden="true" />
-              Planted canary tokens
-            </dt>
-            <dd className="tabular">{card.canaries}</dd>
-          </div>
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <dt className="text-muted-foreground">Last reset</dt>
-            <dd className="tabular">
-              {card.last_reset_at ? WHEN.format(new Date(card.last_reset_at)) : "Not reset yet"}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          About {card.minutes} minutes · needs {memory(card.memory_mb)} memory
-        </p>
-      )}
-
-      {card.last_error && (
-        <Alert variant="destructive" role="alert" className="mt-3">
-          <TriangleAlert aria-hidden="true" />
-          <AlertDescription>{card.last_error}</AlertDescription>
-        </Alert>
-      )}
-      {card.active_run && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          {card.active_run} is running against it, so it can&apos;t be reset now.
-        </p>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2 pt-1">
-        {card.deployed ? (
-          <>
-            <Button variant="outline" size="sm" asChild>
-              <a href={`/targets/${card.target_id}`}>
-                Open
-                <span className="sr-only"> {card.name}</span>
-              </a>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onReset}
-              disabled={busy || !canUse || card.state !== "ready" || !!card.active_run}
-            >
-              Reset
-              <span className="sr-only"> {card.name}</span>
-            </Button>
-            <Button variant="outline" size="sm" onClick={onVulnerabilities} disabled={!card.vulnerabilities}>
-              Known vulnerabilities
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" onClick={onDeploy} disabled={busy || !canUse}>
-            {busy ? "Deploying…" : "Deploy"}
-            <span className="sr-only"> {card.name}</span>
-          </Button>
-        )}
-      </div>
-    </section>
-  )
-}
 
 /**
  * Screen 65: the Security Lab (FR-11.1, FR-11.2). Deploying is one action (UC-11.1), a reset puts
@@ -190,6 +41,8 @@ export function SecurityLabPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [showing, setShowing] = useState<LabCard | null>(null)
   const [runs, setRuns] = useState<BenchmarkItem[] | null>(null)
+  const [show, setShow] = useState<"all" | "deployed" | "waiting">("all")
+  const [flash, setFlash] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -211,8 +64,10 @@ export function SecurityLabPage() {
   }, [reloads])
 
   const reload = useCallback(() => setReloads((n) => n + 1), [])
-  const working =
-    data?.cards.some((card) => card.state === "deploying" || card.state === "resetting") ?? false
+  const working = data?.cards.some((card) => card.state === "deploying" || card.state === "resetting") ?? false
+
+  const deployed = data?.cards.filter((card) => card.deployed) ?? []
+  const shownCards = (data?.cards ?? []).filter((card) => show === "all" || (show === "deployed" ? card.deployed : !card.deployed))
 
   // While a worker deploys or resets, the page asks again, so the card becomes "Ready" by itself
   // (UC-11.1 step 6, UC-11.2 step 6).
@@ -221,6 +76,14 @@ export function SecurityLabPage() {
     const timer = setTimeout(reload, 3000)
     return () => clearTimeout(timer)
   }, [working, reload, reloads])
+
+  /** A node of the zone picture: go to its card and light it for a moment. */
+  function pick(key: string) {
+    setShow("all")
+    window.setTimeout(() => document.getElementById(`lab-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50)
+    setFlash(key)
+    window.setTimeout(() => setFlash(null), 1800)
+  }
 
   async function deploy(card: LabCard) {
     setBusy(card.key)
@@ -260,10 +123,7 @@ export function SecurityLabPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Security Lab</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Intentionally vulnerable lab targets in an isolated zone — synthetic data, simulated
-            tools, no internet access.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Vulnerable lab targets in an isolated zone, with synthetic data.</p>
         </div>
         {canUse !== false && (
           <Button asChild>
@@ -286,8 +146,7 @@ export function SecurityLabPage() {
 
       {canUse === false && (
         <p role="note" className="mb-4 rounded-[10px] border bg-card p-4 text-sm text-muted-foreground">
-          You can read everything here. Only Security Analysts deploy and reset lab targets, and start
-          benchmark runs.
+          Only Security Analysts deploy, reset or benchmark.
         </p>
       )}
 
@@ -310,31 +169,74 @@ export function SecurityLabPage() {
           )}
 
           {data && data.cards.length === 0 && (
-            <EmptyState
-              title="The Security Lab isn't enabled in this deployment"
-              description="Whoever runs Sentra starts the Lab zone and names its hosts in LAB_HOSTS. Until then there is no lab target to deploy."
-            />
+            <EmptyState title="The Security Lab isn't enabled in this deployment" description="Start the Lab zone and set LAB_HOSTS." />
           )}
 
           {data && data.cards.length > 0 && (
             <>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {data.cards.map((card) => (
-                  <LabTargetCard
-                    key={card.key}
-                    card={card}
-                    busy={busy === card.key}
-                    canUse={canUse !== false}
-                    onDeploy={() => void deploy(card)}
-                    onReset={() => void reset(card)}
-                    onVulnerabilities={() => setShowing(card)}
-                  />
+              <LabZone cards={data.cards} isolation={data.isolation} onPick={pick} />
+              <ul className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[
+                  { id: "all", label: "Lab targets", value: data.cards.length, note: "In the zone", press: true },
+                  { id: "deployed", label: "Deployed", value: deployed.length, note: "Yours to test", press: true },
+                  {
+                    id: "waiting",
+                    label: "Not deployed",
+                    value: data.cards.length - deployed.length,
+                    note: "One click to deploy",
+                    press: true,
+                  },
+                  {
+                    id: "tokens",
+                    label: "Canary tokens",
+                    value: deployed.reduce((sum, card) => sum + card.canaries, 0),
+                    note: "Planted now",
+                    press: false,
+                  },
+                ].map((tile) => {
+                  const body = (
+                    <>
+                      <span className="text-xs text-muted-foreground">{tile.label}</span>
+                      <span className="tabular mt-1 text-3xl leading-none font-semibold">{tile.value}</span>
+                      <span className="mt-2 text-xs text-muted-foreground">{tile.note}</span>
+                    </>
+                  )
+                  return (
+                    <li key={tile.id}>
+                      {tile.press ? (
+                        <button
+                          type="button"
+                          aria-pressed={show === tile.id}
+                          onClick={() => setShow(tile.id as typeof show)}
+                          className={cn(
+                            "flex h-full w-full flex-col rounded-2xl border bg-card p-4 text-left outline-none transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring",
+                            show === tile.id ? "border-primary shadow-[0_0_0_1px_var(--primary)]" : "hover:border-border-strong",
+                          )}
+                        >
+                          {body}
+                        </button>
+                      ) : (
+                        <div className="flex h-full flex-col rounded-2xl border bg-card p-4">{body}</div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+              <ul className="grid gap-4 lg:grid-cols-2">
+                {shownCards.map((card) => (
+                  <li key={card.key} id={`lab-${card.key}`} className="min-w-0 scroll-mt-24">
+                    <LabTargetCard
+                      card={card}
+                      busy={busy === card.key}
+                      canUse={canUse !== false}
+                      flash={flash === card.key}
+                      onDeploy={() => void deploy(card)}
+                      onReset={() => void reset(card)}
+                      onVulnerabilities={() => setShowing(card)}
+                    />
+                  </li>
                 ))}
-              </div>
-              <p className="mt-4 flex items-start gap-2 text-sm text-muted-foreground">
-                <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                {data.isolation}
-              </p>
+              </ul>
             </>
           )}
         </TabsContent>
@@ -346,10 +248,7 @@ export function SecurityLabPage() {
           {runs === null ? (
             <Skeleton className="h-28 w-full" />
           ) : runs.length === 0 ? (
-            <EmptyState
-              title="No benchmark run yet"
-              description="A benchmark run compares testing strategies on the same lab targets under equal conditions."
-            />
+            <EmptyState title="No benchmark run yet" description="Compare testing strategies on lab targets." />
           ) : (
             <ul className="space-y-2">
               {runs.map((run) => (
@@ -363,8 +262,7 @@ export function SecurityLabPage() {
                         {run.code} — {run.name}
                       </span>
                       <span className="block text-xs text-muted-foreground">
-                        {run.lab_targets.join(", ")} · {run.strategies.length} strategies ·{" "}
-                        {run.repetitions} repetitions
+                        {run.lab_targets.join(", ")} · {run.strategies.length} strategies · {run.repetitions} repetitions
                       </span>
                     </span>
                     <span className="flex items-center gap-3">
