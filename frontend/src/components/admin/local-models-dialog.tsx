@@ -90,10 +90,7 @@ export function LocalModelsDialog({
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 No local model is configured for: {listNames(missing.map((t) => t.function))}.
               </h3>
-              <p className="mt-1 text-sm text-text-secondary">
-                These functions are unavailable until a Platform Administrator assigns local models; the Platform
-                Administrators are told. Until then:
-              </p>
+              <p className="mt-1 text-sm text-text-secondary">Unavailable until a Platform Administrator assigns local models:</p>
               <ul className="mt-2 space-y-1.5">
                 {missing.map((t) => (
                   <li key={t.task} className="text-sm text-text-secondary">

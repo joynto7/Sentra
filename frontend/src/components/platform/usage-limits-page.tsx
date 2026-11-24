@@ -27,7 +27,7 @@ const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
 function Used({ limit, nextMonth }: { limit: Limit; nextMonth: string }) {
   const tone = limit.reached ? "bg-destructive" : limit.warning ? "bg-warning" : "bg-primary"
   return (
-    <div className="min-w-32">
+    <div className="min-w-24">
       <div className="tabular flex items-baseline gap-1.5 text-sm">
         {against(limit)}
         {(limit.warning || limit.reached) && (
@@ -144,7 +144,7 @@ export function UsageLimitsPage() {
             {data.organizations.length === 0 ? (
               <EmptyState
                 title="No organization yet"
-                description="An organization appears here as soon as someone creates one."
+                description="Organizations appear here."
               />
             ) : (
               <div className="overflow-x-auto">

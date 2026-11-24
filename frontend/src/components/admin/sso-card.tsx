@@ -93,8 +93,8 @@ export function SsoCard({
       onChange(saved)
       setDetails(blank(saved))
       setTested(null)
-      toast.success("Single sign-on is connected", {
-        description: `Members with an @${saved.email_domain} address can log in through your identity provider.`,
+      toast.success("Single sign-on settings are saved", {
+        description: `Members with an @${saved.email_domain} address are sent to your identity provider at login. Ask one of them to log in once to confirm it works.`,
       })
     } catch (error) {
       problem(error)
@@ -133,9 +133,19 @@ export function SsoCard({
               : "rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-text-secondary"
           }
         >
-          {connection.connected ? `Connected · @${connection.email_domain}` : "Not connected"}
+          {connection.connected ? `Saved · @${connection.email_domain}` : "Not connected"}
         </span>
       </div>
+
+      {connection.connected && (
+        <p role="status" className="rounded-[7px] border bg-muted/40 p-3 text-[13px] text-text-secondary">
+          {connection.tested_at
+            ? `The connection test passed when these settings were saved (${new Date(connection.tested_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}).`
+            : "These settings were saved without a connection test."}{" "}
+          That shows the provider answers, not that a member can log in: Sentra records no login through the provider,
+          so one member&apos;s first login is the only proof.
+        </p>
+      )}
 
       <p className="text-sm text-text-secondary">
         Sentra connects an identity provider over <strong className="font-medium">OpenID Connect</strong>.
@@ -155,9 +165,7 @@ export function SsoCard({
             aria-invalid={errors.email_domain ? true : undefined}
             aria-describedby="sso-domain-help"
           />
-          <p id="sso-domain-help" className="mt-1.5 text-xs text-muted-foreground">
-            Members with an address at this domain are sent to your provider.
-          </p>
+          <p id="sso-domain-help" className="mt-1.5 text-xs text-muted-foreground">This domain logs in through your provider.</p>
         </FormField>
         <FormField id="sso-issuer" label="Issuer URL" error={errors.issuer} announce>
           <Input
@@ -196,17 +204,13 @@ export function SsoCard({
             autoComplete="off"
             invalid={!!errors.client_secret}
           />
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Stored encrypted. You won&apos;t be able to view it again.
-          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Stored encrypted. Not shown again.</p>
         </FormField>
       </div>
 
       <div className="rounded-[10px] border bg-muted/40 p-4">
         <h3 className="text-sm font-medium">Copy this into your identity provider</h3>
-        <p className="mt-1 text-xs text-text-secondary">
-          The one address Sentra accepts an answer at. A provider that may answer anywhere else is a way in.
-        </p>
+        <p className="mt-1 text-xs text-text-secondary">The only address Sentra accepts answers at.</p>
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <code className="min-w-0 flex-1 rounded-[7px] border bg-background px-3 py-2 font-mono text-[13px] break-all">
             {connection.redirect_uri}

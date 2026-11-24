@@ -71,7 +71,8 @@ export function AppSidebar({ platform = false }: { platform?: boolean }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  // The platform Overview is only its own page; the other items sit under /platform too
+                  const active = item.href === "/platform" ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton

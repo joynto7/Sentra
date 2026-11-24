@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 
 // The Administration sub-menu of the UI brief, in its order.
 const ITEMS = [
+  { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/members", label: "Members" },
   { href: "/admin/security", label: "Organization Security" },
   { href: "/admin/data-and-ai", label: "Data and AI" },
@@ -21,9 +22,9 @@ export function AdminNav() {
       <h2 id="admin-nav-heading" className="mb-2 px-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
         Administration
       </h2>
-      <ul className="flex gap-1 lg:flex-col">
+      <ul className="flex flex-wrap gap-1 lg:flex-col">
         {ITEMS.map((item) => {
-          const current = pathname.startsWith(item.href)
+          const current = "exact" in item && item.exact ? pathname === item.href : pathname.startsWith(item.href)
           return (
             <li key={item.href}>
               <Link

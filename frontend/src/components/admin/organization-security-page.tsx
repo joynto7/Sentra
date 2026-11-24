@@ -26,6 +26,7 @@ import {
   saveOrganizationSecurity,
 } from "@/lib/mfa"
 import { useCan } from "@/lib/permissions"
+import { listCampaigns } from "@/lib/campaigns"
 
 const MINUTE = 60_000
 
@@ -50,6 +51,8 @@ export function OrganizationSecurityPage() {
   const [approval, setApproval] = useState(false)
   const [approvalError, setApprovalError] = useState<string>()
   const [now, setNow] = useState(0)
+  // The campaigns that wait for a decision now: turning the requirement off releases them
+  const [waiting, setWaiting] = useState<string[] | null>(null)
   const [password, setPassword] = useState("")
   const [passwordError, setPasswordError] = useState<string>()
   const [confirming, setConfirming] = useState(false)
@@ -75,6 +78,13 @@ export function OrganizationSecurityPage() {
     if (canManage) load()
   }, [canManage, load])
 
+  useEffect(() => {
+    if (!canManage) return
+    listCampaigns()
+      .then((rows) => setWaiting(rows.filter((one) => one.approval_status === "awaiting_approval").map((one) => one.code)))
+      .catch(() => setWaiting(null))
+  }, [canManage, security?.requires_scope_approval])
+
   // "N minutes ago" stays right, and the page notices when the confirmation runs out.
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 15_000)
@@ -95,7 +105,7 @@ export function OrganizationSecurityPage() {
     return (
       <EmptyState
         title="Only Organization Administrators change organization security"
-        description="Ask an Organization Administrator of your organization if a setting should change."
+        description="Ask an Organization Administrator."
       />
     )
   }
@@ -195,6 +205,15 @@ export function OrganizationSecurityPage() {
           </p>
         </div>
 
+        {security && (
+          <p role="status" className="max-w-4xl rounded-[10px] border bg-muted/40 p-3 text-[13px]" aria-label="Active now">
+            <span className="font-medium">Active now:</span> two-step verification{" "}
+            {security.mfa_required ? "is required" : "is not required"} · scope approval {security.requires_scope_approval ? "is on" : "is off"} · single
+            sign-on {security.sso.connected ? `is saved for @${security.sso.email_domain}` : "is not connected"}. A change below takes effect only after
+            you save it.
+          </p>
+        )}
+
         {failed && (
           <Alert variant="destructive">
             <AlertDescription className="flex items-center justify-between gap-4">
@@ -293,7 +312,11 @@ export function OrganizationSecurityPage() {
                         {approval !== security.requires_scope_approval
                           ? approval
                             ? "When you save, a new campaign waits for a decision, and campaigns that were never submitted have to be submitted before they run."
-                            : "When you save, the campaigns that are waiting can run again."
+                            : waiting === null
+                            ? "When you save, the campaigns that are waiting can run again, without anyone's decision."
+                            : waiting.length === 0
+                              ? "No campaign is waiting for a decision now, so nothing is released by this."
+                              : `When you save, the ${waiting.length === 1 ? "1 campaign that is" : `${waiting.length} campaigns that are`} waiting for a decision (${waiting.slice(0, 5).join(", ")}${waiting.length > 5 ? ", …" : ""}) can run without anyone's decision. A later decision is not asked for.`
                           : approval
                             ? "A campaign waits for a decision before it can run. Every decision is recorded with the manager who made it."
                             : "Campaigns run as soon as a Security Analyst launches them."}
@@ -359,20 +382,14 @@ export function OrganizationSecurityPage() {
                 <h2 id="help-heading" className="text-sm font-semibold text-foreground">
                   What does it change?
                 </h2>
-                <p>After their password, members enter a 6-digit code from an authenticator app on their phone, so a stolen password alone is not enough to log in.</p>
-                <p>Members who haven&apos;t set it up are asked to at their next login. Sessions that are open now continue until they end.</p>
+                <p>Members enter a 6-digit authenticator code after their password.</p>
+                <p>Members without it are asked at their next login.</p>
                 <p>A member who loses their phone logs in with one of their recovery codes.</p>
                 <h2 id="sso-help-heading" className="pt-2 text-sm font-semibold text-foreground">
                   What does single sign-on change?
                 </h2>
-                <p>
-                  Members with an address at the domain you enter log in through your identity provider instead of
-                  with a Sentra password. Sentra accepts only signed responses from the issuer you configure.
-                </p>
-                <p>
-                  It is not a way into Sentra by itself: a person still has to be a member of this organization, so
-                  invite them first. Your two-step requirement above still applies to them.
-                </p>
+                <p>Members with this domain log in through your identity provider.</p>
+                <p>They must still be invited first.</p>
               </aside>
             </div>
           </>

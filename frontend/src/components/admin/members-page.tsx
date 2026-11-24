@@ -237,7 +237,7 @@ function MembersFromAddress({ onOutside }: { onOutside: () => void }) {
     return (
       <EmptyState
         title="Only Organization Administrators manage members"
-        description="Ask an Organization Administrator of your organization to invite people or change roles."
+        description="Ask an Organization Administrator."
       />
     )
   }
@@ -471,7 +471,7 @@ function MembersFromAddress({ onOutside }: { onOutside: () => void }) {
         <div className="p-4">
           <EmptyState
             title="No pending invitations"
-            description="Invitations that haven't been accepted yet appear here."
+            description="Unaccepted invitations appear here."
             action={
               <Button variant="outline" className="h-9" onClick={() => setInviting(true)}>
                 Invite member

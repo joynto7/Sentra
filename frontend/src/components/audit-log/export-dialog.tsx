@@ -89,9 +89,7 @@ export function ExportDialog({
                 Include hashes for external verification
                 <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
               </label>
-              <p id="export-hashes-note" className="text-sm text-muted-foreground">
-                Always included, so the export can be checked against the hash chain.
-              </p>
+              <p id="export-hashes-note" className="text-sm text-muted-foreground">Always included, to check the hash chain.</p>
             </div>
           </div>
           {broken && (

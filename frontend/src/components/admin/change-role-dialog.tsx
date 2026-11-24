@@ -23,6 +23,7 @@ import { ApiError, fieldErrors } from "@/lib/api"
 import { type Member, changeRole, firstName } from "@/lib/members"
 import { type RoleInfo, loadRoles } from "@/lib/permissions"
 import { initials } from "@/lib/session"
+import { useSession } from "@/components/session-provider"
 
 /** Screen 14: UC-10.1 Change Member Role. Shows what the member gains and loses (step 3). */
 export function ChangeRoleDialog({
@@ -36,6 +37,7 @@ export function ChangeRoleDialog({
   onClose: () => void
   onChanged: (member: Member) => void
 }) {
+  const organization = useSession().organization?.name ?? "this organization"
   const [roles, setRoles] = useState<RoleInfo[]>([])
   const [role, setRole] = useState("")
   const [password, setPassword] = useState("")
@@ -194,7 +196,8 @@ export function ChangeRoleDialog({
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              The new role applies from {who}&apos;s next request. {who} is told by e-mail.
+              This changes {who}&apos;s role in {organization} only. The new role applies from {who}&apos;s next request.
+              {" "}{who} is told by e-mail, and the change is recorded in the audit log.
             </p>
             <DialogFooter>
               <DialogClose asChild>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import {
   Activity,
   Bot,
@@ -89,19 +90,32 @@ export function SystemHealthPage() {
   const [error, setError] = useState(false)
   const [reloads, setReloads] = useState(0)
   const [editing, setEditing] = useState(false)
+  // When the reading was made (here, when the answer arrived) and what time it is now: the page does
+  // not refresh by itself, so how old the reading is must always be visible.
+  const [readAt, setReadAt] = useState<number | null>(null)
+  const [now, setNow] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
     systemHealth(controller.signal)
       .then((found) => {
         setData(found)
+        setReadAt(Date.now())
+        setNow(Date.now())
         setError(false)
       })
       .catch(() => !controller.signal.aborted && setError(true))
     return () => controller.abort()
   }, [reloads])
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
   const reload = useCallback(() => setReloads((n) => n + 1), [])
+  const ageMinutes = readAt && now ? Math.max(0, Math.floor((now - readAt) / 60_000)) : 0
+  const stale = ageMinutes >= 5
   // UC-10.9 step 5: where an alert can be followed up. The operator configures these; without
   // them the row says so instead of carrying a dead link.
   const links = [
@@ -127,7 +141,7 @@ export function SystemHealthPage() {
         <Alert variant="destructive" role="alert" className="mb-4">
           <TriangleAlert aria-hidden="true" />
           <AlertDescription className="flex flex-wrap items-center justify-between gap-4">
-            The health of the platform could not be read, so what it says may be out of date.
+            The health of the platform could not be read{readAt ? `, so what is shown below is the reading of ${WHEN.format(new Date(readAt))}` : ""} and may be out of date.
             <Button variant="outline" size="sm" onClick={reload}>
               Try again
             </Button>
@@ -142,8 +156,19 @@ export function SystemHealthPage() {
         </div>
       )}
 
+      {data && readAt && (
+        <p role="status" className={cn("mb-4 text-xs", stale || error ? "font-medium text-warning" : "text-muted-foreground")}>
+          Read at {new Date(readAt).toLocaleTimeString("en-GB")} from the platform&apos;s own monitoring.
+          {error
+            ? " The last attempt to read it again failed."
+            : stale
+              ? ` This reading is ${ageMinutes} minutes old, so nothing below is current. Press Check again.`
+              : " It does not refresh by itself: press Check again for a new one."}
+        </p>
+      )}
+
       {data && (
-        <div className="space-y-6">
+        <div className={cn("space-y-6", (stale || error) && "opacity-80")}>
           <Alert
             variant={data.status === "alert" ? "destructive" : "default"}
             role="status"
@@ -263,7 +288,12 @@ export function SystemHealthPage() {
               <p className="mt-3 text-xs text-muted-foreground">
                 {data.thresholds.custom
                   ? `Set by ${data.thresholds.set_by ?? "a Platform Administrator"}.`
-                  : "The platform's defaults; nobody has changed them."}
+                  : "The platform's defaults; nobody has changed them."}{" "}
+                Changes are recorded in the{" "}
+                <Link href="/platform/audit-log" className="text-link underline underline-offset-2 hover:no-underline">
+                  platform audit log
+                </Link>
+                .
               </p>
             </section>
 

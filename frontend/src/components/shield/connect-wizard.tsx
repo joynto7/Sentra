@@ -201,7 +201,6 @@ export function ConnectWizard({ targetId }: { targetId: string }) {
     return (
       <EmptyState
         title="Target not found"
-        description="It doesn't exist, or it belongs to another organization."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/shield">Back to Sentra Shield</Link>
@@ -214,7 +213,7 @@ export function ConnectWizard({ targetId }: { targetId: string }) {
     return (
       <EmptyState
         title="Only the application's developer connects a gateway"
-        description="Connecting Sentra Shield changes how the application's traffic flows, so it belongs to the people who can change its deployment."
+        description="Ask the application's developer."
         action={
           <Button asChild variant="outline" className="h-9">
             <Link href="/shield">Back to Sentra Shield</Link>
@@ -313,10 +312,7 @@ export function ConnectWizard({ targetId }: { targetId: string }) {
 
           {step === 1 && (
             <>
-              <p className="mt-1 text-sm text-text-secondary">
-                A gateway can only enforce rules about traffic it sees, so this choice decides
-                which approved fixes it can carry.
-              </p>
+              <p className="mt-1 text-sm text-text-secondary">This choice decides which fixes the gateway can carry.</p>
               <RadioGroup
                 className="mt-4 gap-3"
                 value={position}
