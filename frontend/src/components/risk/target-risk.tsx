@@ -50,14 +50,14 @@ function NotScored({ rows, canVerify }: { rows: TargetRiskRow[]; canVerify: bool
         {rows.map((row, index) => (
           <span key={row.id}>
             {index > 0 && "; "}
-            <Link href={`/targets/${row.id}`} className="text-link underline underline-offset-2">
+            <Link href={`/targets/${row.id}`} className="inline-flex min-h-6 items-center text-link underline underline-offset-2">
               {row.name}
             </Link>
             <span className="text-muted-foreground"> — {notScoredText(row.not_scored_reason).replace(/^Not scored — /, "")}</span>
             {verify(row) && canVerify && (
               <>
                 {" · "}
-                <Link href={`/targets/${row.id}/verify`} className="text-link underline underline-offset-2">
+                <Link href={`/targets/${row.id}/verify`} className="inline-flex min-h-6 items-center text-link underline underline-offset-2">
                   Verify ownership
                 </Link>
               </>

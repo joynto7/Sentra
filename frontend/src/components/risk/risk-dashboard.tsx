@@ -8,10 +8,12 @@ import { RefreshCw } from "lucide-react"
 import { StatusBadge } from "@/components/findings/finding-badges"
 import { EmptyState } from "@/components/layout/empty-state"
 import { ReportDialog } from "@/components/reports/report-dialog"
-import { CategoryChart, SeverityChart, StatusChart } from "@/components/risk/breakdown-charts"
-import { CategoryTable } from "@/components/risk/category-table"
+import { SeverityChart, StatusChart } from "@/components/risk/breakdown-charts"
 import { CriticalFindings } from "@/components/risk/critical-findings"
 import { DEFAULT_DAYS, DashboardFilters, focusFilters } from "@/components/risk/dashboard-filters"
+import { Flow } from "@/components/risk/overview/flow"
+import { Heatmap } from "@/components/risk/overview/heatmap"
+import { Posture } from "@/components/risk/overview/posture"
 import { NeedsAttention } from "@/components/risk/needs-attention"
 import { RiskTiles } from "@/components/risk/risk-tiles"
 import { TargetRisk } from "@/components/risk/target-risk"
@@ -25,7 +27,7 @@ import type { FindingStatus } from "@/lib/findings"
 import { ApiError } from "@/lib/api"
 import { useCan } from "@/lib/permissions"
 import { CLOSED_STATUSES, OPEN_STATUSES, PERIODS, type RiskDashboard as Dashboard, getRiskDashboard } from "@/lib/risk"
-import { formatDateTime, listTargets } from "@/lib/targets"
+import { listTargets } from "@/lib/targets"
 import { cn } from "@/lib/utils"
 
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
@@ -185,25 +187,12 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
   // Before any run has ended, a run that is going on is what there is to see
   const firstRun = data?.targets.find((row) => row.live_run)
   const since = data ? shortDate(data.changes.since) : ""
-  const calculated = data?.targets
-    .map((row) => row.calculated_at)
-    .filter((at): at is string => at !== null)
-    .sort()
-    .at(-1)
-  const freshness = [
-    "Updated after every campaign run, triage action and retest",
-    data?.last_run_at ? `last campaign run ${formatDateTime(data.last_run_at)}` : null,
-    calculated ? `scores calculated ${formatDateTime(calculated)}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ")
 
   return (
     <div className="@container/dash">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1 basis-80">
           <h1 className="text-2xl font-semibold tracking-tight">Risk Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{freshness}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -359,14 +348,21 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
                 periodDays={data.period_days}
                 filterQuery={filterQuery}
                 changes={data.changes}
+                overview={data.overview}
               />
               {data.category_filtered && (
                 <p className="text-[13px] text-muted-foreground">
-                  The counts, the status list and the charts are narrowed to {data.category}. The category table keeps
-                  every category, so that another one can be chosen. A risk score covers all of a target&apos;s
-                  findings, so the scores and their lines stay as they are.
+                  The counts, the status list and the charts are narrowed to {data.category}. Choose another category, or
+                  all of them, in the Category filter. A risk score covers all of a target&apos;s findings, so the
+                  scores and their lines stay as they are.
                 </p>
               )}
+              {/* The overview: where the risk sits, how the findings stand, and which target had what when */}
+              <div className="grid items-stretch gap-3 @min-[58rem]/dash:grid-cols-12">
+                <Posture className="@min-[58rem]/dash:col-span-6" data={data} targetQuery={targetQuery} />
+                <Flow className="@min-[58rem]/dash:col-span-6" data={data} filterQuery={filterQuery} />
+              </div>
+              <Heatmap key={`${target}|${days}|${category}`} data={data} />
               {/* The working area: the most serious findings, and what needs this person now */}
               <div className="grid items-start gap-3 @min-[58rem]/dash:grid-cols-12">
                 <CriticalFindings
@@ -403,16 +399,6 @@ function DashboardFromAddress({ onOutside }: { onOutside: () => void }) {
                   since={data.changes.since}
                 />
                 <StatusChart key={`${target}|${days}|${category}`} className="@min-[58rem]/dash:col-span-7" data={data} filterQuery={filterQuery} />
-              </div>
-              <div className="grid gap-3 @min-[58rem]/dash:grid-cols-12">
-                <CategoryTable
-                  className="@min-[58rem]/dash:col-span-7"
-                  rows={data.by_category}
-                  targetQuery={targetQuery}
-                  chosen={data.category}
-                  onChoose={(code) => setCategory((chosen) => (chosen === code ? "" : code))}
-                />
-                <CategoryChart key={`${target}|${days}|${category}`} className="@min-[58rem]/dash:col-span-5" data={data} targetQuery={targetQuery} />
               </div>
             </>
           )}
