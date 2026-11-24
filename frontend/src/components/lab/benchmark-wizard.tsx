@@ -7,6 +7,7 @@ import { Info, Plus, TriangleAlert, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { FormField } from "@/components/auth/form-field"
+import { benchmarkReview } from "@/components/lab/benchmark-checks"
 import { usePageCrumbs } from "@/components/layout/breadcrumbs"
 import { EmptyState } from "@/components/layout/empty-state"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -147,6 +148,15 @@ export function BenchmarkWizard() {
     }
   }, [key, complete, body])
   const estimate = complete && found?.key === key ? found.estimate : null
+  const review = benchmarkReview({
+    readyTargets: ready.map((card) => card.name),
+    chosenTargets: ready.filter((card) => card.target_id && targets.includes(card.target_id)).map((card) => card.name),
+    strategies: rows.map((row) => ({ key: row.key, name: row.name.trim(), suites: row.suites.length, adaptive: row.adaptive_agent })),
+    budget: Number(budget) || 0,
+    repetitions: Number(repetitions) || 0,
+    judgeEvery,
+    estimate: estimate ? { runs: estimate.runs, minutes: estimate.minutes, attempts: estimate.attempts, cost: costRange(estimate.llm_cost_low_usd, estimate.llm_cost_high_usd) } : null,
+  })
 
   const setRow = useCallback((index: number, change: Partial<Row>) => {
     setRows((current) => current.map((row, i) => (i === index ? { ...row, ...change } : row)))
@@ -191,7 +201,7 @@ export function BenchmarkWizard() {
     return (
       <EmptyState
         title="Only a Security Analyst runs benchmarks"
-        description="The Security Lab and its benchmark runs belong to the analysts of this organization."
+        description="Ask a Security Analyst."
       />
     )
   }
@@ -200,9 +210,7 @@ export function BenchmarkWizard() {
     <div className="min-w-0">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">New benchmark run</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The same lab targets, the same budget and the same repetitions for every strategy.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Same targets, budget and repetitions for every strategy.</p>
       </div>
 
       {failed && (
@@ -500,9 +508,7 @@ export function BenchmarkWizard() {
               Summary
             </h2>
             {!estimate ? (
-              <p className="text-sm text-muted-foreground">
-                Choose lab targets and give every strategy a suite to see the estimate.
-              </p>
+              <p className="text-sm text-muted-foreground">Choose targets and a suite per strategy for an estimate.</p>
             ) : (
               <dl className="space-y-2.5 text-sm">
                 <div>
@@ -544,10 +550,24 @@ export function BenchmarkWizard() {
               <p className="text-sm text-success">Within this month&apos;s limits.</p>
             ) : null}
 
-            <p className="border-t pt-3 text-xs text-muted-foreground">
-              The configuration and the versions of the suites, the tests and the models are fixed
-              when the run starts.
-            </p>
+            <section aria-label="What each button will do" aria-live="polite" className="space-y-1.5 border-t pt-3 text-[13px]">
+              <h3 className="font-medium">What each button will do</h3>
+              <ul className="list-disc space-y-1 pl-4 text-text-secondary">
+                {review.lines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              {review.missing.length > 0 && (
+                <div role="status" className="rounded-[7px] border border-warning/40 bg-warning/5 p-2 text-warning">
+                  <p className="font-medium">Before either button works:</p>
+                  <ul className="list-disc pl-4">
+                    {review.missing.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
 
             <div className="flex flex-wrap gap-2 pt-1">
               <Button type="button" disabled={!!pending || !complete} onClick={() => void submit("start")}>

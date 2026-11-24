@@ -259,7 +259,7 @@ export function BenchmarkResults({ code }: { code: string }) {
           {strategies.length === 0 ? (
             <EmptyState
               title="This benchmark run has measured nothing yet"
-              description="Its figures appear once its campaign runs have ended."
+              description="Figures appear when the runs end."
             />
           ) : (
             <>
@@ -367,9 +367,7 @@ export function BenchmarkResults({ code }: { code: string }) {
                       {labels === 1 ? "" : "s"}.
                     </p>
                     {labels === 0 ? (
-                      <p className="text-sm">
-                        No attempt of the sample is labelled yet, so there is nothing to compare.
-                      </p>
+                      <p className="text-sm">Nothing labelled yet.</p>
                     ) : (
                       <>
                         {data.agreement.map((row) => (
@@ -440,9 +438,7 @@ export function BenchmarkResults({ code }: { code: string }) {
                 </div>
 
                 {shown.length === 0 ? (
-                  <p className="px-4 py-6 text-sm text-muted-foreground">
-                    No repetition has finished yet, so there is nothing to plot.
-                  </p>
+                  <p className="px-4 py-6 text-sm text-muted-foreground">No repetition finished yet.</p>
                 ) : asTable ? (
                   <div
                     role="region"
@@ -514,11 +510,6 @@ export function BenchmarkResults({ code }: { code: string }) {
                         )
                       })}
                     </div>
-                    <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-                      Each dot is one completed repetition; the bar is the mean. The first strategy
-                      is drawn as an outline and the others filled, and every row is labelled with
-                      its strategy.
-                    </p>
                   </>
                 )}
               </section>
