@@ -140,9 +140,7 @@ export function ConnectApp({
           className="h-9 w-40 font-mono tracking-widest"
         />
       </FormField>
-      <p id="setup-code-hint" className="-mt-3 text-xs text-muted-foreground">
-        Works with any authenticator app that supports time-based codes (TOTP).
-      </p>
+      <p id="setup-code-hint" className="-mt-3 text-xs text-muted-foreground">Any authenticator app works.</p>
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         {secondary}
         <Button type="submit" className="h-9 hover:bg-primary-hover" disabled={pending}>

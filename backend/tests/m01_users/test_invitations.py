@@ -21,9 +21,7 @@ from tests.m01_users.test_organizations import PASSWORD, log_in, new_user
 from tests.m01_users.test_permissions import membership_of, organization_with
 
 INVITATIONS = "/api/v1/organizations/current/invitations"
-NO_LONGER_VALID = (
-    "This invitation is no longer valid. Ask your Organization Administrator to send a new one."
-)
+WITHDRAWN = "This invitation was withdrawn by the organization."
 
 
 def invite(client: TestClient, email: str = "priya@example.com", role: str = "security_analyst"):
@@ -99,7 +97,7 @@ def test_resending_replaces_the_link_and_revoking_ends_it(client, db):
     assert details(client, second).status_code == 200
 
     assert client.post(f"{INVITATIONS}/{invitation_id}/revoke").status_code == 204
-    assert details(client, second).json()["error"]["message"] == NO_LONGER_VALID
+    assert details(client, second).json()["error"]["message"].startswith(WITHDRAWN)
     assert client.get(INVITATIONS).json() == []
 
 
@@ -160,6 +158,7 @@ def test_a_new_person_creates_an_account_and_joins_in_one_step(client, db):
     assert client.get("/api/v1/auth/me").json()["organization"]["name"] == "Halcyon Bank"
     assert [m["To"] for m in outbox] == ["tom@example.com"]  # the inviter is told (step 5)
     assert details(client, token).status_code == 410  # the link works once
+    assert details(client, token).json()["error"]["code"] == "invitation_used"
 
 
 def test_registering_through_an_invitation_checks_terms_and_password(client, db):
@@ -261,3 +260,56 @@ def test_the_administrator_cannot_remove_themselves(client, db):
     response = remove(client, membership_of(db, "tom@example.com"))
     assert response.status_code == 409
     assert response.json()["error"]["message"] == "You can't remove yourself from the organization."
+
+
+def error_code(client: TestClient, token: str) -> str:
+    response = details(client, token)
+    assert response.status_code == 410
+    return response.json()["error"]["code"]
+
+
+def test_each_way_an_invitation_can_fail_says_which(client, db):
+    organization_with(db, client, {})
+    invitation_id = invite(client).json()["id"]
+    token = token_from_last_email()
+
+    assert error_code(client, "this-link-was-never-sent") == "invitation_invalid"
+
+    invitation = db.scalar(select(Invitation))
+    invitation.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.flush()
+    assert error_code(client, token) == "invitation_expired"
+    invitation.expires_at = datetime.now(UTC) + timedelta(days=1)
+    db.flush()
+
+    assert client.post("/api/v1/invitations/decline", json={"token": token}).status_code == 204
+    assert error_code(client, token) == "invitation_declined"
+
+    invite(client, "second@example.com")
+    second = token_from_last_email()
+    second_id = db.scalar(select(Invitation.id).where(Invitation.email == "second@example.com"))
+    assert client.post(f"{INVITATIONS}/{second_id}/revoke").status_code == 204
+    assert error_code(client, second) == "invitation_revoked"
+    assert invitation_id  # the first invitation was the one declined above
+
+
+def test_a_person_without_a_workspace_sees_the_invitations_sent_to_their_address(client, db):
+    organization_with(db, client, {})
+    assert invite(client, "priya@example.com").status_code == 201
+    invite(client, "someone-else@example.com")
+    client.post("/api/v1/auth/logout")
+
+    new_user(db, "priya@example.com")
+    log_in(client, "priya@example.com")
+    found = client.get("/api/v1/invitations/mine").json()
+
+    assert [(i["organization"], i["role_label"], i["invited_by"]) for i in found] == [
+        ("Halcyon Bank", "Security Analyst", "Tom")
+    ]
+    assert (
+        "token" not in found[0] and "link" not in str(found[0]).lower()
+    )  # the link is only in the e-mail
+
+
+def test_the_invitations_of_a_person_need_a_login(client):
+    assert client.get("/api/v1/invitations/mine").status_code == 401

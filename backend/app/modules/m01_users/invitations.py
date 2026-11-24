@@ -30,9 +30,29 @@ from app.modules.m01_users.models import (
 from app.modules.m01_users.security import hash_password, hash_token, new_token, verify_password
 
 VALID_FOR = timedelta(days=7)
-NO_LONGER_VALID = (
-    "This invitation is no longer valid. Ask your Organization Administrator to send a new one."
-)
+# Why a link doesn't work, in words the person can act on. The holder of the link already has its
+# secret, so telling them whether it expired or was used reveals nothing about the organization.
+_ASK = "Ask your Organization Administrator to send a new one."
+INVALID_REASONS = {
+    "invalid": (
+        "invitation_invalid",
+        "This link is not a valid invitation. Check that you opened the whole link from the "
+        "e-mail. If you were sent a newer e-mail, use the link in that one.",
+    ),
+    "expired": (
+        "invitation_expired",
+        f"This invitation has expired: invitations work for 7 days. {_ASK}",
+    ),
+    "used": (
+        "invitation_used",
+        "This invitation has already been used. If it was you, log in to reach your workspace.",
+    ),
+    "declined": ("invitation_declined", f"This invitation was declined. {_ASK}"),
+    "revoked": (
+        "invitation_revoked",
+        f"This invitation was withdrawn by the organization. {_ASK}",
+    ),
+}
 
 
 def _now() -> datetime:
@@ -214,15 +234,44 @@ def _pending_invitation(db: Session, admin: Membership, invitation_id: uuid.UUID
 
 
 def find(db: Session, raw: str) -> Invitation:
-    """A pending, unexpired invitation for the link, or the "no longer valid" error (2a)."""
+    """A pending, unexpired invitation for the link, or an error that says which way it is not (2a):
+    never opened by this link, expired, already used, declined or withdrawn."""
     invitation = db.scalar(select(Invitation).where(Invitation.token_hash == hash_token(raw)))
-    if (
-        invitation is None
-        or invitation.status != InvitationStatus.PENDING
-        or is_expired(invitation)
-    ):
-        raise AppError(NO_LONGER_VALID, code="invitation_invalid", status_code=410)
+    reason = None
+    if invitation is None:
+        reason = "invalid"
+    elif is_expired(invitation):
+        reason = "expired"
+    elif invitation.status == InvitationStatus.ACCEPTED:
+        reason = "used"
+    elif invitation.status == InvitationStatus.DECLINED:
+        reason = "declined"
+    elif invitation.status == InvitationStatus.REVOKED:
+        reason = "revoked"
+    if reason is not None:
+        code, message = INVALID_REASONS[reason]
+        raise AppError(message, code=code, status_code=410)
     return invitation
+
+
+def pending_for(db: Session, user: User) -> list[tuple[Invitation, str, str | None]]:
+    """The open invitations sent to this person's own address, newest first, with the organization's
+    name and the inviter's. No link is included: the link only ever travels in the e-mail."""
+    rows = db.scalars(
+        select(Invitation)
+        .where(
+            Invitation.email == user.email,
+            Invitation.status == InvitationStatus.PENDING,
+            Invitation.expires_at > _now(),
+        )
+        .order_by(Invitation.created_at.desc())
+    ).all()
+    out = []
+    for invitation in rows:
+        organization = db.get_one(Organization, invitation.organization_id)
+        inviter = db.get(User, invitation.invited_by_id) if invitation.invited_by_id else None
+        out.append((invitation, organization.name, inviter.name if inviter else None))
+    return out
 
 
 def accept(

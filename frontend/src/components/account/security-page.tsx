@@ -152,9 +152,7 @@ export function SecurityPage() {
       <div className="min-w-0 flex-1 space-y-5">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Security</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Your password, two-step verification, where you are logged in, and what happened recently.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Password, two-step verification and sessions.</p>
         </div>
 
         {!profile || !sessions || !activity || !mfa ? (

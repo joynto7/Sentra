@@ -158,3 +158,10 @@ export function expiresIn(iso: string, now = new Date()): string {
 export function firstName(name: string): string {
   return name.split(" ")[0] || name
 }
+
+/** An open invitation to the logged-in person's own address. The link itself is only in the e-mail. */
+export type MyInvitation = { organization: string; role: string; role_label: string; invited_by: string | null; expires_at: string }
+
+export function listMyInvitations() {
+  return apiFetch<MyInvitation[]>("/v1/invitations/mine")
+}

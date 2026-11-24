@@ -2,7 +2,17 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -216,6 +226,9 @@ class Membership(UUIDPrimaryKey, Timestamps, Base):
     # Set when the whole account was suspended (UC-10.2, 1a), so reactivating the account
     # restores exactly these memberships and not those an organization suspended itself.
     suspended_by_platform: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # Where this person is in the first-run setup of this organization and what they chose there
+    # (see onboarding.py). Empty until they start; memberships older than the setup count as done.
+    onboarding: Mapped[dict | None] = mapped_column(JSON)
 
     @property
     def active(self) -> bool:

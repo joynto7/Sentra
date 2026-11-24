@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { TriangleAlert } from "lucide-react"
+import { toast } from "sonner"
 
 import { FormField } from "@/components/auth/form-field"
 import { PasswordChecklist } from "@/components/auth/password-checklist"
@@ -22,9 +23,18 @@ import {
   registerAndAccept,
 } from "@/lib/members"
 import { initials } from "@/lib/session"
+import { OutcomeNote } from "@/components/wizard/summary"
 import { forgetKeptLists } from "@/lib/kept-lists"
 
-const NO_LONGER_VALID = "This invitation is no longer valid. Ask your Organization Administrator to send a new one."
+/** The title of each way an invitation link can fail; the server's own message says what to do. */
+const FAILED: Record<string, string> = {
+  invitation_expired: "This invitation has expired",
+  invitation_used: "This invitation has already been used",
+  invitation_declined: "This invitation was declined",
+  invitation_revoked: "This invitation was withdrawn",
+  invitation_invalid: "This link is not a valid invitation",
+}
+const NO_LINK = "Open the invitation from the e-mail you were sent: the link has a token that this page needs."
 
 type State = "loading" | "ready" | "invalid" | "declined"
 
@@ -38,6 +48,8 @@ export function AcceptInvitation({ token }: { token?: string }) {
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [pending, setPending] = useState(false)
+  // Why the link does not work, when it does not: the code says which way, the message what to do
+  const [failure, setFailure] = useState<{ code: string; message: string }>({ code: "invitation_invalid", message: NO_LINK })
   // After "Decline" or "Switch account" the button is gone, so focus moves to the new heading.
   const heading = useRef<HTMLHeadingElement>(null)
   const moveFocus = useRef(false)
@@ -49,7 +61,10 @@ export function AcceptInvitation({ token }: { token?: string }) {
         setDetails(d)
         setState("ready")
       })
-      .catch(() => setState("invalid"))
+      .catch((error) => {
+        if (error instanceof ApiError && error.code.startsWith("invitation_")) setFailure({ code: error.code, message: error.message })
+        setState("invalid")
+      })
   }, [token])
   useEffect(load, [load])
 
@@ -66,11 +81,19 @@ export function AcceptInvitation({ token }: { token?: string }) {
       const result = await action()
       // A new account in an organization that requires two-step verification sets it up first.
       const setupFirst = (result as { step?: string } | null)?.step === "mfa_setup"
+      // Said only now that the server has joined the person, never before
+      if (details) {
+        toast.success(`You joined ${details.organization}`, {
+          description: `As ${/^[AEIOU]/.test(details.role_label) ? "an" : "a"} ${details.role_label}.${setupFirst ? " Set up two-step verification to start." : ""}`,
+        })
+      }
       router.replace(setupFirst ? secondStepPath("mfa_setup") : "/dashboard") // step 6: the workspace
     } catch (error) {
       const fields = fieldErrors(error)
-      if (error instanceof ApiError && error.code === "invitation_invalid") setState("invalid")
-      else setErrors(Object.keys(fields).length ? fields : { form: error instanceof ApiError ? error.message : "Something went wrong. Try again." })
+      if (error instanceof ApiError && error.code.startsWith("invitation_")) {
+        setFailure({ code: error.code, message: error.message })
+        setState("invalid")
+      } else setErrors(Object.keys(fields).length ? fields : { form: error instanceof ApiError ? error.message : "Something went wrong. Try again." })
       setPending(false)
     }
   }
@@ -110,11 +133,13 @@ export function AcceptInvitation({ token }: { token?: string }) {
     return (
       <Shell>
         <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none">
-          Invitation not valid
+          {token ? (FAILED[failure.code] ?? "Invitation not valid") : "No invitation to open"}
         </h1>
-        <p className="mt-3 text-sm">{NO_LONGER_VALID}</p>
+        <p className="mt-3 text-sm" role="status">
+          {token ? failure.message : NO_LINK}
+        </p>
         <Link href="/login" className="mt-6 inline-flex min-h-6 items-center text-sm font-medium text-link hover:underline">
-          Go to login
+          {failure.code === "invitation_used" ? "Log in to reach your workspace" : "Go to login"}
         </Link>
       </Shell>
     )
@@ -137,6 +162,7 @@ export function AcceptInvitation({ token }: { token?: string }) {
   const newPerson = !details.logged_in_as && !details.has_account
   const loginHref = `/login?next=${encodeURIComponent(`/invitations/accept?token=${token}`)}`
   const article = /^[AEIOU]/.test(details.role_label) ? "an" : "a"
+  const youJoin = `You join ${details.organization} as ${article} ${details.role_label}, with what that role allows there. Your other organizations are not affected.`
 
   return (
     <Shell>
@@ -185,6 +211,7 @@ export function AcceptInvitation({ token }: { token?: string }) {
       {sameAccount && (
         <div className="mt-5 space-y-3">
           <p className="text-sm text-muted-foreground">You&apos;re logged in as {details.email}.</p>
+          <OutcomeNote operation="Accept invitation" effect={youJoin} />
           <Button className="h-9 w-full hover:bg-primary-hover" disabled={pending} onClick={() => run(() => acceptInvitation(token!))}>
             {pending ? "Joining…" : "Accept invitation"}
           </Button>
@@ -194,6 +221,7 @@ export function AcceptInvitation({ token }: { token?: string }) {
       {!details.logged_in_as && details.has_account && (
         <div className="mt-5 space-y-3">
           <p className="text-sm text-muted-foreground">You already have a Sentra account. Log in with it to accept.</p>
+          <OutcomeNote operation="Log in to accept" effect={`You log in as ${details.email} and come back here. Nothing changes until you press Accept invitation.`} />
           <Button asChild className="h-9 w-full hover:bg-primary-hover">
             <Link href={loginHref}>Log in to accept</Link>
           </Button>
@@ -217,9 +245,7 @@ export function AcceptInvitation({ token }: { token?: string }) {
           <FormField id="email" label="Work e-mail">
             {/* Filled in and locked (WCAG 3.3.7); "username" lets a password manager save the new password for it. */}
             <Input id="email" name="email" value={details.email} readOnly autoComplete="username" aria-describedby="email-help" className="h-9 bg-muted" />
-            <p id="email-help" className="text-xs text-muted-foreground">
-              Confirmed by your invitation — no verification e-mail needed.
-            </p>
+            <p id="email-help" className="text-xs text-muted-foreground">Confirmed by your invitation.</p>
           </FormField>
           <FormField id="name" label="Full name" error={errors.name}>
             <Input
@@ -257,6 +283,10 @@ export function AcceptInvitation({ token }: { token?: string }) {
               </p>
             )}
           </div>
+          <OutcomeNote
+            operation="Create account and join"
+            effect={`${youJoin} It creates your Sentra account for ${details.email} and logs you in. If ${details.organization} requires two-step verification, you set it up before you start.`}
+          />
           <Button type="submit" className="h-9 w-full hover:bg-primary-hover" disabled={pending}>
             {pending ? "Creating account…" : "Create account and join"}
           </Button>
